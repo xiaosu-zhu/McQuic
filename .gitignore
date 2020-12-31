@@ -1,3 +1,17 @@
+# User-defined paths
+log/
+data
+data/
+.vscode/
+saved*/
+*.aux
+*.bbl
+*.blg
+*.brf
+*.log
+*.synctex.gz
+BUILD
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
