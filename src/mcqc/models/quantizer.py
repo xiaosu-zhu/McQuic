@@ -32,38 +32,35 @@ class _incResBlock(nn.Module):
         x1 = self._fc1(x)
         # d // 4
         x2 = self._fc2(x1)
-        # d // 4
-        x1 = self._res2(x1)
         # d // 2
+        x1 = self._res2(x1)
+        # d // 4
         x2 = self._res1(x2)
         # d
         x3 = self._res3(x)
-        return x + x3 + self._fc4(self._fc3(x1) + x2)
+        return x + x3 + self._fc4(self._fc3(x2) + x1)
 
 
 class Quantizer(Module):
     def __init__(self, k: int, cin: int, rate: float = 0.1):
         super().__init__()
-        self._net = nn.Sequential(_incResBlock(cin, rate), _incResBlock(cin, rate), nn.Linear(cin, k))
+        self._net = nn.Linear(cin, k)
         self._codebook = nn.Parameter(torch.randn(k, cin))
-        self._functions.update({
-            "forward": self._ff,
-            "quantize": self._quantize
-        })
 
-    def _ff(self, x, temperature):
+    @Module.register("forward")
+    def _ff(self, x, temperature, hard):
+        x = x.permute(0, 2, 3, 1)
         # [N, h, w, k]
         logits = self._net(x)
-        if temperature < 0:
-            samples = F.gumbel_softmax(logits, 1.0, True)
-        else:
-            samples = F.gumbel_softmax(logits, temperature, False)
+        samples = F.gumbel_softmax(logits, temperature, hard)
         # [N, h, w, C] <- [N, h, w, k] @ [k, C]
         quantized = samples @ self._codebook
-        return quantized, samples, logits
+        return quantized.permute(0, 3, 1, 2), samples, logits.permute(0, 3, 1, 2)
 
-    def _quantize(self, logits):
-        samples = F.gumbel_softmax(logits, 1.0, True)
+    @Module.register("quantize")
+    def _quantize(self, logits, temperature, hard):
+        logits = logits.permute(0, 2, 3, 1)
+        samples = F.gumbel_softmax(logits, temperature, hard)
         # [N, h, w, C] <- [N, h, w, k] @ [k, C]
         quantized = samples @ self._codebook
-        return quantized
+        return quantized.permute(0, 3, 1, 2)

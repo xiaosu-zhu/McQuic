@@ -71,18 +71,18 @@ def main(_):
 #     runner.Test()
 
 def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
-    queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1)
+    gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1)
 
     saver = Saver(saveDir, config, reserve=FLAGS.get_flag_value("continue", False))
 
     logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if FLAGS.debug else "INFO", rotateLogs=-1)
 
-    logger.info(, "Config", summary(config))
+    logger.info("\r\n%s", summary(config))
 
     model = Compressor()
-    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 1e-3, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.95), 10)
+    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 1e-4, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.95), saver, logger, 10)
 
-    method.Run(torch.utils.data.DataLoader(torchvision.datasets.ImageFolder("data/ImageNet", transform=getTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=config.GPUs * 4, pin_memory=True))
+    method.Run(torch.utils.data.DataLoader(torchvision.datasets.ImageFolder("data/ImageNet", transform=getTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True))
 
 
 if __name__ == "__main__":

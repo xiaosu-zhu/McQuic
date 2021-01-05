@@ -7,7 +7,7 @@ class LayerGroup(nn.Module):
         super().__init__()
         seq = [nn.Linear(din, dout), nn.LayerNorm(dout, 1e-6), nn.Dropout(rate, inplace=True)]
         if relu:
-            seq.insert(1, nn.ReLU(inplace=True))
+            seq.insert(1, nn.LeakyReLU(inplace=True))
         self._seq = nn.Sequential(*seq)
 
     def forward(self, x):
