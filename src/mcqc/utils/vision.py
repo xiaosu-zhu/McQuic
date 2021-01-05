@@ -8,5 +8,5 @@ def getTransform():
         T.RandomCrop(512),
         T.ToTensor(),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        T.Lambda(lambda x : x + torch.randn_like(x)),
+        # T.Lambda(lambda x : x + torch.randn_like(x)),
     ])
