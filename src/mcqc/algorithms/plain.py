@@ -34,18 +34,18 @@ class Plain(Algorithm):
         for i in range(self._epoch):
             for j, (images, _) in enumerate(dataLoader):
                 images = images.to(self._device, non_blocking=True)
-                restored, codes, latents, logitsCompressed = self._model("forward", images, initTemp, j % 2 == 0)
-                logitsConsistency = self._model("consistency", logitsCompressed.detach(), initTemp, j % 2 == 0)
+                restored, codes, latents, logitsCompressed, logitsConsistency = self._model(images, initTemp, j % 2 == 0)
                 loss = self._loss(images, restored, codes, latents, logitsCompressed, logitsConsistency)
                 # if j % 2 == 0:
                 #     loss *= 0.1
                 self._model.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
                 self._optimizer.step()
                 self._saver.add_scalar("loss", loss, global_step=step)
                 if j % 100 == 0:
-                    self._saver.add_image("raw", self._deTrans(images[0]), global_step=step)
-                    self._saver.add_image("res", self._deTrans(restored[0]), global_step=step)
+                    self._saver.add_images("i/raw", self._deTrans(images), global_step=step)
+                    self._saver.add_images("i/res", self._deTrans(restored), global_step=step)
                 step += 1
             self._scheduler.step()
             initTemp *= 0.9

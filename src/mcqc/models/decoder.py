@@ -11,7 +11,7 @@ class Decoder(nn.Module):
             ResidualBlock(channel, channel),
             # AttentionBlock(channel),
             ResidualBlockUpsample(channel, channel, 2),
-            # ResidualBlock(channel, channel),
+            ResidualBlock(channel, channel),
             # AttentionBlock(channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
