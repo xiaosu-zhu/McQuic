@@ -8,7 +8,7 @@ class Encoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(
-            ResidualBlockWithStride(3, channel, stride=2),
+            ResidualBlockWithStride(6, channel, stride=2),
             ResidualBlock(channel, channel),
             # AttentionBlock(channel),
             ResidualBlockWithStride(channel, channel, stride=2),
