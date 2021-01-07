@@ -14,7 +14,7 @@ class Compressor(nn.Module):
     def __init__(self):
         super().__init__()
         self._encoder = Encoder(512)
-        self._quantizer = Quantizer(256, 512, 0.1)
+        self._quantizer = Quantizer(2048, 512, 0.1)
         self._decoder = Decoder(512)
 
     def forward(self, x: torch.Tensor, temperature: float, hard: bool):

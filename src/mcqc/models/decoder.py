@@ -19,7 +19,7 @@ class Decoder(nn.Module):
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
             # AttentionBlock(channel),
-            subPixelConv3x3(channel, 3, 2),
+            subPixelConv3x3(channel, 6, 2),
         )
 
     def forward(self, x: torch.Tensor):

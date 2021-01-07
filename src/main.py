@@ -80,7 +80,7 @@ def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
     logger.info("\r\n%s", summary(config))
 
     model = Compressor()
-    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 1e-4, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.95), saver, logger, 10)
+    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 1e-4, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.99), saver, logger, 10)
 
     method.Run(torch.utils.data.DataLoader(torchvision.datasets.ImageFolder("data/ImageNet", transform=getTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True))
 
