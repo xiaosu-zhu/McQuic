@@ -147,3 +147,27 @@ class AttentionBlock(nn.Module):
         out = a * torch.sigmoid(b)
         out += identity
         return out
+
+
+class DownSample(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            ResidualBlockWithStride(channel, channel, stride=2),
+            ResidualBlock(channel, channel)
+        )
+
+    def forward(self, x):
+        return self._net(x)
+
+
+class UpSample(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+        )
+
+    def forward(self, x):
+        return self._net(x)

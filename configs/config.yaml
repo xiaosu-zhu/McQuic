@@ -1,6 +1,6 @@
 epoch: 10000
-gpus: 1
-vRam: -1
-wantsMore: true
+gpus: 3
+vRam: 20000
+wantsMore: false
 dataset: ImageNetC
-batchSize: 9
+batchSize: 6
