@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, List
 
 import torch
 from torch import nn
@@ -46,6 +46,7 @@ class _incResBlock(nn.Module):
 class Quantizer(nn.Module):
     def __init__(self, k: int, cin: int, rate: float = 0.1):
         super().__init__()
+        self._net = nn.Transformer(cin, 8, 1, 1, cin)
         self._net = nn.Linear(cin, k)
         self._codebook = nn.Parameter(torch.randn(k, cin))
 
@@ -57,6 +58,66 @@ class Quantizer(nn.Module):
         # [N, h, w, C] <- [N, h, w, k] @ [k, C]
         quantized = samples @ self._codebook
         return quantized.permute(0, 3, 1, 2), samples, logits.permute(0, 3, 1, 2)
+
+
+class MultiCodebookQuantizer(nn.Module):
+    def __init__(self, k: List[int], cin: int, rate: float = 0.1):
+        super().__init__()
+        self._net = nn.ModuleList([nn.Linear(cin, numCodewords) for numCodewords in k])
+        self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
+        self._k = k
+        self._d = float(cin) ** 0.5
+
+    def forward(self, latents, temperature, hard):
+        quantizeds = list()
+        samples = list()
+        logits = list()
+        for x, net, codebook in zip(latents, self._net, self._codebook):
+            x = x.permute(0, 2, 3, 1)
+            # [N, h, w, k]
+            logit = net(x)
+            sample = F.gumbel_softmax(logit * self._d, temperature, hard)
+            # [N, h, w, C] <- [N, h, w, k] @ [k, C]
+            quantized = codebook(sample)
+
+            quantizeds.append(quantized.permute(0, 3, 1, 2))
+            samples.append(sample)
+            logits.append(logit.permute(0, 3, 1, 2))
+
+        return quantizeds, samples, logits
+
+
+class TransformerQuantizer(nn.Module):
+    def __init__(self, k: List[int], cin: int, rate: float = 0.1):
+        super().__init__()
+        self._prob = nn.ModuleList([nn.Linear(cin, numCodewords) for numCodewords in k])
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
+        self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
+        self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
+        self._k = k
+        self._d = float(cin) ** 0.5
+
+    def forward(self, latents, temperature, hard):
+        quantizeds = list()
+        samples = list()
+        logits = list()
+        for x, net, codebook, k in zip(latents, self._prob, self._codebook, self._k):
+            n, c, h, w = x.shape
+            # [n, c, h, w] -> [h, w, n, c] -> [h*w, n, c]
+            x = self._encoder(x.permute(2, 3, 0, 1).reshape(-1, n, c))
+            # [h*w, n, k] -> [n, h*w, k]
+            logit = net(x).permute(1, 0, 2)
+            sample = F.gumbel_softmax(logit * self._d, temperature, hard)
+            # [N, h*w, c] <- [N, h*w, k] @ [k, C]
+            quantized = codebook(sample)
+            # [n, h*w, c] -> [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+            deTransformed = self._decoder(quantized.permute(1, 0, 2)).permute(1, 0, 2).reshape(n, h, w, c)
+            # [n, c, h, w]
+            quantizeds.append(deTransformed.permute(0, 3, 1, 2))
+            samples.append(sample)
+            logits.append(logit.reshape(n, h, w, k).permute(0, 3, 1, 2))
+
+        return quantizeds, samples, logits
 
     # @Module.register("quantize")
     # def _quantize(self, logits, temperature, hard):

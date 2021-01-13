@@ -11,10 +11,11 @@ from cfmUtils.runtime import queryGPU
 from cfmUtils.logger import configLogging
 from cfmUtils.saver import Saver
 from cfmUtils.config import read, summary
+from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
 from mcqc.algorithms import Plain
-from mcqc.models.compressor import Compressor
+from mcqc.models.compressor import Compressor, MultiScaleCompressor
 from mcqc.utils import getTransform
 
 torch.backends.cudnn.benchmark = True
@@ -79,8 +80,8 @@ def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
 
     logger.info("\r\n%s", summary(config))
 
-    model = Compressor()
-    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 1e-4, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.99), saver, logger, 10)
+    model = MultiScaleCompressor()
+    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 2e-5, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.95), saver, logger, config.Epoch)
 
     method.Run(torch.utils.data.DataLoader(torchvision.datasets.ImageFolder("data/ImageNet", transform=getTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True))
 
