@@ -92,7 +92,7 @@ class TransformerQuantizer(nn.Module):
         super().__init__()
         self._prob = nn.ModuleList([nn.Linear(cin, numCodewords) for numCodewords in k])
         self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
-        self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
         self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
         self._k = k
         self._d = float(cin) ** 0.5
@@ -101,23 +101,29 @@ class TransformerQuantizer(nn.Module):
         quantizeds = list()
         samples = list()
         logits = list()
-        for x, net, codebook, k in zip(latents, self._prob, self._codebook, self._k):
-            n, c, h, w = x.shape
+        targets = list()
+        for xRaw, net, codebook, k in zip(latents, self._prob, self._codebook, self._k):
+            targets.append(xRaw)
+            n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c] -> [h*w, n, c]
-            x = self._encoder(x.permute(2, 3, 0, 1).reshape(-1, n, c))
+            encoderIn = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
+            x = self._encoder(encoderIn)
             # [h*w, n, k] -> [n, h*w, k]
             logit = net(x).permute(1, 0, 2)
             sample = F.gumbel_softmax(logit * self._d, temperature, hard)
             # [N, h*w, c] <- [N, h*w, k] @ [k, C]
             quantized = codebook(sample)
-            # [n, h*w, c] -> [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
-            deTransformed = self._decoder(quantized.permute(1, 0, 2)).permute(1, 0, 2).reshape(n, h, w, c)
+            # [n, h*w, c] -> [h*w, n, c]
+            quantized = quantized.permute(1, 0, 2)
+            mixed = temperature * encoderIn / (temperature + 1) + quantized / (temperature + 1)
+            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+            deTransformed = self._decoder(mixed, quantized).permute(1, 0, 2).reshape(n, h, w, c)
             # [n, c, h, w]
             quantizeds.append(deTransformed.permute(0, 3, 1, 2))
             samples.append(sample)
             logits.append(logit.reshape(n, h, w, k).permute(0, 3, 1, 2))
 
-        return quantizeds, samples, logits
+        return quantizeds, targets, samples, logits
 
     # @Module.register("quantize")
     # def _quantize(self, logits, temperature, hard):
