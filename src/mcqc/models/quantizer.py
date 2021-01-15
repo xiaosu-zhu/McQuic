@@ -96,6 +96,38 @@ class TransformerQuantizer(nn.Module):
         self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
         self._k = k
         self._d = float(cin) ** 0.5
+        self._c = cin
+
+    def encode(self, latents):
+        samples = list()
+        for xRaw, net, k in zip(latents, self._prob, self._k):
+            n, c, h, w = xRaw.shape
+            # [h*w, n, c] = [n, c, h, w] -> [h, w, n, c] -> [h*w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
+            # [h*w, n, c]
+            x = self._encoder(encoderIn)
+            # [n, k, h, w] = [h*w, n, k] -> [n, k, h*w] -> [n, k, h, w]
+            logit = net(x).permute(1, 2, 0).reshape(n, k, h, w)
+            sample = logit.argmax(-1)
+            samples.append(sample)
+
+        return samples
+
+    def quantize(self, codes):
+        quantizeds = list()
+        for bRaw, codebook, k in zip(codes, self._prob, self._codebook):
+            n, k, h, w = bRaw.shape
+            # [n, h*w, k] = [n, k, h, w] -> [n, h, w, k] -> [n, h*w, k]
+            b = bRaw.permute(0, 2, 3, 1).reshape(n, -1, k)
+            # [N, h*w, c] <- [N, h*w, k] @ [k, C]
+            quantized = codebook(b)
+            # [n, h*w, c] -> [h*w, n, c]
+            quantized = quantized.permute(1, 0, 2)
+            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+            deTransformed = self._decoder(quantized, quantized).permute(1, 0, 2).reshape(n, h, w, self._c)
+            # [n, c, h, w]
+            quantizeds.append(deTransformed.permute(0, 3, 1, 2))
+        return quantizeds
 
     def forward(self, latents, temperature, hard):
         quantizeds = list()
