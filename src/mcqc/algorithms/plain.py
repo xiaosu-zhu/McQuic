@@ -38,11 +38,12 @@ class Plain(Algorithm):
         step = 0
         for i in range(self._epoch):
             try:
+                self._model.train()
                 for j, (images, _) in enumerate(dataLoader):
                     images = images.to(self._device, non_blocking=True)
                     hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
-                    restored, codes, latents, logitsCompressed, logitsConsistency = self._model(torch.cat([images, hsvImages], axis=1), initTemp, True) # j % 2 == 0)
-                    loss = self._loss(images, hsvImages, restored, codes, latents, logitsCompressed, logitsConsistency)
+                    restored, codes, latents, logits, quantizeds, targets = self._model(torch.cat([images, hsvImages], axis=1), initTemp, True) # j % 2 == 0)
+                    loss = self._loss(images, hsvImages, restored, codes, latents, logits, quantizeds, targets)
                     # if j % 2 == 0:
                     #     loss *= 0.1
                     self._model.zero_grad()
@@ -61,22 +62,40 @@ class Plain(Algorithm):
                         break
                 self._scheduler.step()
                 initTemp *= 0.9
-                self._logger.info("an epoch")
+                self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp)
+                self._eval(dataLoader, step)
             except OSError:
+                self._logger.debug("Catch image corrupted, jump to next loop.")
                 continue
 
+    def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
+        self._model.eval()
+        images, _ = next(iter(dataLoader))
+        images = images.to(self._device, non_blocking=True)
+        hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
+        restored, _, _, _, _, _ = self._model(torch.cat([images, hsvImages], axis=1), 1e-10, True) # j % 2 == 0)
+        self._saver.add_images("eval/res", self._deTrans(restored[:, 3:]), global_step=step)
+
     @staticmethod
-    def _loss(images, hsvImages, restored, codes, latents, logitsCompressed, logitsConsistency):
+    def _loss(images, hsvImages, restored, codes, latents, logits, quantizeds, targets):
         hsvR, rgbR = torch.chunk(restored, 2, 1)
         # combined = torch.cat([images, hsvImages], axis=1)
         l2Loss = torch.nn.functional.mse_loss(rgbR, images) + torch.nn.functional.mse_loss(hsvR, hsvImages)
         l1Loss = torch.nn.functional.l1_loss(rgbR, images) + torch.nn.functional.l1_loss(hsvR, hsvImages)
         ssimLoss = 2 - ms_ssim((rgbR + 1), (images + 1), data_range=2.0) - ms_ssim((hsvR + 1), (hsvImages + 1), data_range=2.0)
 
+        # transformerL2 = list()
+        # transformerL1 = list()
+        # for q, t in zip(quantizeds, targets):
+        #     transformerL2.append(torch.nn.functional.mse_loss(q, t))
+        #     transformerL1.append(torch.nn.functional.l1_loss(q, t))
+        # transformerL2 = sum(transformerL2)
+        # transformerL1 = sum(transformerL1)
+
         # ssimLoss = _ssimExp((rgbR + 1), (images + 1), 2.0) + _ssimExp((hsvR + 1), (hsvImages + 1), 2.0)
 
         entropies = list()
-        for logit in logitsCompressed:
+        for logit in logits:
             # N, K, H, W -> N, H, W, K -> NHW, K
             distributions = Categorical(logit.permute(0, 2, 3, 1).reshape(-1, logit.shape[1]))
 
@@ -90,6 +109,7 @@ class Plain(Algorithm):
         return l2Loss \
              + l1Loss \
              + ssimLoss \
+           # + transformerL1 + transformerL2 \
            # - 1e-3 * sum(entropies) \
            # + 1e-3 * (crossL2Loss + crossSSIM) \
            # + 1e-6 * klLoss \

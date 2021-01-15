@@ -10,7 +10,7 @@ class Consts:
     CheckpointName = "saved.ckpt"
     DumpConfigName = "config.json"
     NewestDir = "latest"
-    LoggerName = ""
+    LoggerName = "main"
     RootDir = srcRoot
     LogDir = os.path.join(srcRoot, "../log")
     TempDir = "/tmp/mcqc/"

@@ -74,7 +74,7 @@ def main(_):
 def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
     gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1)
 
-    saver = Saver(saveDir, config, reserve=FLAGS.get_flag_value("continue", False))
+    saver = Saver(saveDir, "saved.ckpt", config, reserve=FLAGS.get_flag_value("continue", False))
 
     logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if FLAGS.debug else "INFO", rotateLogs=-1)
 
