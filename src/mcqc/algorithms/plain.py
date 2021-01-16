@@ -9,6 +9,7 @@ from cfmUtils.vision.colorSpace import rgb2hsv, hsv2rgb
 from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
+from mcqc.evaluation.helpers import evalSSIM, psnr
 
 def _ssimExp(source, target, datarange):
     return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
@@ -33,48 +34,59 @@ class Plain(Algorithm):
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
-    def Run(self, dataLoader: torch.utils.data.DataLoader):
+    def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
         initTemp = 10.0
         step = 0
         for i in range(self._epoch):
-            try:
-                self._model.train()
-                for j, (images, _) in enumerate(dataLoader):
-                    images = images.to(self._device, non_blocking=True)
-                    hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
-                    restored, codes, latents, logits, quantizeds, targets = self._model(torch.cat([images, hsvImages], axis=1), initTemp, True) # j % 2 == 0)
-                    loss = self._loss(images, hsvImages, restored, codes, latents, logits, quantizeds, targets)
-                    # if j % 2 == 0:
-                    #     loss *= 0.1
-                    self._model.zero_grad()
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
-                    self._optimizer.step()
-                    self._saver.add_scalar("loss", loss, global_step=step)
-                    # if j % 100 == 0:
-                    #     self._saver.add_images("hard/raw", self._deTrans(images), global_step=step)
-                    #     self._saver.add_images("hard/res", self._deTrans(restored), global_step=step)
-                    if (j + 1) % 100 == 0:
-                        self._saver.add_images("soft/raw", self._deTrans(images), global_step=step)
-                        self._saver.add_images("soft/res", self._deTrans(restored[:, 3:]), global_step=step)
-                    step += 1
-                    if (j + 1) % 1000 == 0:
-                        break
-                self._scheduler.step()
-                initTemp *= 0.9
-                self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp)
-                self._eval(dataLoader, step)
-            except OSError:
-                self._logger.debug("Catch image corrupted, jump to next loop.")
-                continue
+            self._model.train()
+            for images in trainLoader:
+                images = images.to(self._device, non_blocking=True)
+                hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
+                restored, codes, latents, logits, quantizeds, targets = self._model(torch.cat([images, hsvImages], axis=1), initTemp, True)
+                loss = self._loss(images, hsvImages, restored, codes, latents, logits, quantizeds, targets)
+                self._model.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                self._optimizer.step()
+                self._saver.add_scalar("loss", loss, global_step=step)
+                if (step + 1) % 100 == 0:
+                    self._saver.add_images("soft/raw", self._deTrans(images), global_step=step)
+                    self._saver.add_images("soft/res", self._deTrans(restored[:, 3:]), global_step=step)
+                if (step + 1) % 1000 == 0:
+                    self._eval(testLoader, step)
+                    initTemp *= 0.9
+                    self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp)
+                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp)
+                if (step + 1) % 10000 == 0:
+                    self._scheduler.step()
+                step += 1
 
+    @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
         self._model.eval()
-        images, _ = next(iter(dataLoader))
-        images = images.to(self._device, non_blocking=True)
-        hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
-        restored, _, _, _, _, _ = self._model(torch.cat([images, hsvImages], axis=1), 1e-10, True) # j % 2 == 0)
-        self._saver.add_images("eval/res", self._deTrans(restored[:, 3:]), global_step=step)
+        ssims = list()
+        psnrs = list()
+        if isinstance(self._model, nn.DataParallel):
+            model = self._model.module
+        else:
+            model = self._model
+        model = model.cuda()
+        for raw in dataLoader:
+            raw = raw.to(self._device, non_blocking=True)
+            hsvRaw = (rgb2hsv((raw + 1.) / 2.) - 0.5) / 0.5
+            latents = model._encoder(torch.cat([raw, hsvRaw], axis=1))
+            b = model._quantizer.encode(latents)
+            quantized = model._quantizer.decode(b)
+            restored = model._decoder(quantized)
+            raw = self._deTrans(raw)
+            restored = self._deTrans(restored[:, 3:])
+            ssims.append(evalSSIM(restored.detach(), raw.detach(), True))
+            psnrs.append(psnr(restored.detach(), raw.detach()))
+        ssims = torch.cat(ssims, 0)
+        psnrs = torch.cat(psnrs, 0)
+        self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
+        self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
+        self._saver.add_images("eval/res", restored, global_step=step)
 
     @staticmethod
     def _loss(images, hsvImages, restored, codes, latents, logits, quantizeds, targets):

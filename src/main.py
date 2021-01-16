@@ -14,9 +14,10 @@ from cfmUtils.config import read, summary
 from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
+from mcqc.datasets import Basic
 from mcqc.algorithms import Plain
 from mcqc.models.compressor import Compressor, MultiScaleCompressor
-from mcqc.utils import getTransform
+from mcqc.utils import getTrainingTransform, getEvalTransform
 
 torch.backends.cudnn.benchmark = True
 FLAGS = flags.FLAGS
@@ -81,9 +82,9 @@ def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
     logger.info("\r\n%s", summary(config))
 
     model = MultiScaleCompressor()
-    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 2e-5, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.95), saver, logger, config.Epoch)
+    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 2e-5, amsgrad=True), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.66666666667), saver, logger, config.Epoch)
 
-    method.Run(torch.utils.data.DataLoader(torchvision.datasets.ImageFolder("data/ImageNet", transform=getTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True))
+    method.run(torch.utils.data.DataLoader(Basic("data/clic/train", transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True), torch.utils.data.DataLoader(Basic("data/clic/valid", transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True))
 
 
 if __name__ == "__main__":

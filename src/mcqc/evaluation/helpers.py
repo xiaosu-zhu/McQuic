@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from scipy import signal
 from scipy.ndimage.filters import convolve
+from pytorch_msssim import ms_ssim
 
 
 def _FSpecialGauss(size, sigma):
@@ -89,8 +90,8 @@ def _SSIMForMultiScale(img1, img2, max_val=255, filter_size=11,
     cs = np.mean(v1 / v2)
     return ssim, cs
 
-
-def ms_ssim(img1: np.ndarray, img2: np.ndarray, max_val=255, filter_size=11, filter_sigma=1.5,
+""" TODO: May not correct """
+def _ms_ssim(img1: np.ndarray, img2: np.ndarray, max_val=255, filter_size=11, filter_sigma=1.5,
                    k1=0.01, k2=0.03, weights=None):
     """Return the MS-SSIM score between `img1` and `img2`.
     This function implements Multi-Scale Structural Similarity (MS-SSIM) Image
@@ -100,8 +101,8 @@ def ms_ssim(img1: np.ndarray, img2: np.ndarray, max_val=255, filter_size=11, fil
     Author's MATLAB implementation:
     http://www.cns.nyu.edu/~lcv/ssim/msssim.zip
     Arguments:
-      img1: Numpy array holding the first RGB image batch.
-      img2: Numpy array holding the second RGB image batch.
+      img1: [N, H, W, C] Numpy array holding the first RGB image batch.
+      img2: [N, H, W, C] Numpy array holding the second RGB image batch.
       max_val: the dynamic range of the images (i.e., the difference between the
         maximum the and minimum allowed values).
       filter_size: Size of blur kernel to use (will be reduced for small images).
@@ -147,6 +148,16 @@ def ms_ssim(img1: np.ndarray, img2: np.ndarray, max_val=255, filter_size=11, fil
             (mssim[levels-1] ** weights[levels-1]))
 
 
+def evalSSIM(img1, img2, dB = False):
+    # convert nchw -> nhwc
+    # res = _ms_ssim(img1.transpose(0, 2, 3, 1), img2.transpose(0, 2, 3, 1))
+
+    res = ms_ssim(img1.float(), img2.float(), size_average=False)
+    if dB:
+      return 20 * (1.0 / (1.0 - res).sqrt()).log10()
+    return res
+
+
 def psnr(img1: np.ndarray, img2: np.ndarray):
-    mse = ((img1 - img2) ** 2).mean()
-    return 20 * np.log10(255.0 / np.sqrt(mse))
+    mse = ((img1.float() - img2.float()) ** 2).mean(axis=(1, 2, 3))
+    return 20 * (255.0 / mse.sqrt()).log10()
