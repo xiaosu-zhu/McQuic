@@ -108,15 +108,24 @@ class TransformerQuantizer(nn.Module):
             x = self._encoder(encoderIn)
             # [n, k, h, w] = [h*w, n, k] -> [n, k, h*w] -> [n, k, h, w]
             logit = net(x).permute(1, 2, 0).reshape(n, k, h, w)
-            sample = logit.argmax(-1)
+            # [n, h, w]
+            sample = logit.argmax(1)
             samples.append(sample)
 
         return samples
 
-    def quantize(self, codes):
+    def _oneHotEncode(self, b, k):
+        # [n, h, w, k]
+        oneHot = F.one_hot(b, k).float()
+        # [n, k, h, w]
+        return oneHot.permute(0, 3, 1, 2)
+
+    def decode(self, codes):
         quantizeds = list()
-        for bRaw, codebook, k in zip(codes, self._prob, self._codebook):
-            n, k, h, w = bRaw.shape
+        for bRaw, codebook, k in zip(codes, self._codebook, self._k):
+            n, h, w = bRaw.shape
+            # [n, k, h, w], k is the one hot embedding
+            bRaw = self._oneHotEncode(bRaw, k)
             # [n, h*w, k] = [n, k, h, w] -> [n, h, w, k] -> [n, h*w, k]
             b = bRaw.permute(0, 2, 3, 1).reshape(n, -1, k)
             # [N, h*w, c] <- [N, h*w, k] @ [k, C]
