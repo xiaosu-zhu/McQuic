@@ -8,7 +8,8 @@ class Config:
     gpus: int = 1
     vRam: int = 8000
     wantsMore: bool = False
-    dataset: str = "ImageNetC"
+    dataset: str = "clic/train"
+    valDataset: str = "clic/valid"
 
     @property
     def BatchSize(self) -> int:
@@ -33,3 +34,7 @@ class Config:
     @property
     def Dataset(self) -> str:
         return self.dataset
+
+    @property
+    def ValDataset(self) -> str:
+        return self.valDataset

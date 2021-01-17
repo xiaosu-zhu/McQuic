@@ -16,7 +16,7 @@ def _ssimExp(source, target, datarange):
 
 
 class Plain(Algorithm):
-    def __init__(self, model: nn.Module, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, logger: Logger, epoch: int):
+    def __init__(self, model: nn.Module, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger, epoch: int):
         super().__init__()
         self._model = model
         if device == "cuda" and torch.cuda.device_count() > 1:
@@ -30,6 +30,8 @@ class Plain(Algorithm):
         self._saver = saver
         self._logger = logger
 
+        self._continue = continueTrain
+
     @staticmethod
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
@@ -37,6 +39,12 @@ class Plain(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
         initTemp = 10.0
         step = 0
+
+        if self._continue:
+            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp)
+            initTemp = loaded["temp"]
+            step = loaded["step"]
+
         for i in range(self._epoch):
             self._model.train()
             for images in trainLoader:
@@ -54,7 +62,7 @@ class Plain(Algorithm):
                     self._saver.add_images("soft/res", self._deTrans(restored[:, 3:]), global_step=step)
                 if (step + 1) % 1000 == 0:
                     self._eval(testLoader, step)
-                    initTemp *= 0.9
+                    initTemp *= 0.5
                     self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp)
                     self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp)
                 if (step + 1) % 10000 == 0:
@@ -74,6 +82,8 @@ class Plain(Algorithm):
         for raw in dataLoader:
             raw = raw.to(self._device, non_blocking=True)
             hsvRaw = (rgb2hsv((raw + 1.) / 2.) - 0.5) / 0.5
+
+            # restored, codes, latents, logits, quantizeds, targets = self._model(torch.cat([raw, hsvRaw], axis=1), 1e-10, True)
             latents = model._encoder(torch.cat([raw, hsvRaw], axis=1))
             b = model._quantizer.encode(latents)
             quantized = model._quantizer.decode(b)
