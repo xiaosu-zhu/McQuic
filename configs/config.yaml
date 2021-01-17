@@ -2,5 +2,6 @@ epoch: 10000
 gpus: 3
 vRam: 20000
 wantsMore: false
-dataset: ImageNetC
+dataset: clic/train
+valDataset: clic/valid
 batchSize: 6
