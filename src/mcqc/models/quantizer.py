@@ -7,7 +7,8 @@ from cfmUtils.base import Module
 
 from mcqc.layers.layerGroup import LayerGroup
 from mcqc.layers.gumbelSoftmax import GumbelSoftmax
-
+from mcqc.layers.positional import PositionalEncoding2D
+from mcqc import Consts
 
 class _resBlock(nn.Module):
     def __init__(self, d: int, rate: float = 0.1, activationFn: Callable = None):
@@ -87,9 +88,10 @@ class MultiCodebookQuantizer(nn.Module):
         return quantizeds, samples, logits
 
 
-class TransformerQuantizer(nn.Module):
+class TransformerQuantizerBak(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
+        self._squeeze = nn.ModuleList([nn.Linear(numCodewords, cin) for numCodewords in k])
         self._prob = nn.ModuleList([nn.Linear(cin, numCodewords) for numCodewords in k])
         self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
         self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, 1e-6))
@@ -97,6 +99,7 @@ class TransformerQuantizer(nn.Module):
         self._k = k
         self._d = float(cin) ** 0.5
         self._c = cin
+        self._position = PositionalEncoding(cin)
 
     def encode(self, latents):
         samples = list()
@@ -143,22 +146,28 @@ class TransformerQuantizer(nn.Module):
         samples = list()
         logits = list()
         targets = list()
-        for xRaw, net, codebook, k in zip(latents, self._prob, self._codebook, self._k):
+        for xRaw, prob, squeeze, codebook, k in zip(latents, self._prob, self._squeeze, self._codebook, self._k):
             targets.append(xRaw)
             n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c] -> [h*w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
+            encoderIn = self._position(encoderIn)
+            # [h*w, n, c] @ [c, k] -> [h*w, n, k]
+            # encoderIn = torch.matmul(encoderIn, codebook.weight)
+            # encoderIn = squeeze(encoderIn)
             x = self._encoder(encoderIn)
             # [h*w, n, k] -> [n, h*w, k]
-            logit = net(x).permute(1, 0, 2)
-            sample = F.gumbel_softmax(logit * self._d, temperature, hard)
+            logit = prob(x).permute(1, 0, 2)
+            sample = F.gumbel_softmax(logit * self._d, 1.0, hard)
             # [N, h*w, c] <- [N, h*w, k] @ [k, C]
             quantized = codebook(sample)
             # [n, h*w, c] -> [h*w, n, c]
             quantized = quantized.permute(1, 0, 2)
-            mixed = temperature * encoderIn / (temperature + 1) + quantized / (temperature + 1)
+            # mixin = temperature / 100.0
+            # mixed = (temperature * encoderIn / (temperature + 1)) + (quantized / (temperature + 1))
+
             # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
-            deTransformed = self._decoder(mixed, quantized).permute(1, 0, 2).reshape(n, h, w, c)
+            deTransformed = self._decoder(self._position(quantized), quantized).permute(1, 0, 2).reshape(n, h, w, c)
             # [n, c, h, w]
             quantizeds.append(deTransformed.permute(0, 3, 1, 2))
             samples.append(sample)
@@ -166,10 +175,100 @@ class TransformerQuantizer(nn.Module):
 
         return quantizeds, targets, samples, logits
 
-    # @Module.register("quantize")
-    # def _quantize(self, logits, temperature, hard):
-    #     logits = logits.permute(0, 2, 3, 1)
-    #     samples = F.gumbel_softmax(logits, temperature, hard)
-    #     # [N, h, w, C] <- [N, h, w, k] @ [k, C]
-    #     quantized = samples @ self._codebook
-    #     return quantized.permute(0, 3, 1, 2)
+
+class TransformerQuantizer(nn.Module):
+    def __init__(self, k: List[int], cin: int, rate: float = 0.1):
+        super().__init__()
+        self._squeeze = nn.ModuleList([nn.Linear(numCodewords, cin) for numCodewords in k])
+        self._prob = nn.ModuleList([nn.Linear(cin, numCodewords) for numCodewords in k])
+        self._encoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, Consts.Eps))
+        self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, nn.LayerNorm(cin, Consts.Eps))
+        self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
+        self._k = k
+        self._d = float(cin) ** 0.5
+        self._c = cin
+        self._position = PositionalEncoding2D(cin, 120, 120)
+
+    def encode(self, latents):
+        samples = list()
+        for xRaw, codebook, prob, k in zip(latents,  self._codebook, self._prob, self._k):
+            n, c, h, w = xRaw.shape
+            # [c, k] -> [k, c]
+            codewords = codebook.weight.t()
+            # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            posisted = self._position(encoderIn).reshape(-1, n, c)
+            # [h*w, n, c]
+            x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
+            # [h*w, n, k] -> [n, h*w, k]
+            logit = prob(x).permute(1, 0, 2) # .reshape(n, h, w, k)
+            sample = F.gumbel_softmax(logit, 1e-10, True)
+            # [n, h, w]
+            sample = sample.reshape(n, h, w, k).argmax(-1)
+            samples.append(sample)
+        return samples
+
+    def _oneHotEncode(self, b, k):
+        # [n, h, w, k]
+        oneHot = F.one_hot(b, k).float()
+        # [n, k, h, w]
+        return oneHot.permute(0, 3, 1, 2)
+
+    def decode(self, codes):
+        quantizeds = list()
+        for bRaw, squeeze, k in zip(codes, self._squeeze, self._k):
+            n, h, w = bRaw.shape
+            # [n, k, h, w], k is the one hot embedding
+            bRaw = self._oneHotEncode(bRaw, k)
+            # [n, h*w, k] = [n, k, h, w] -> [n, h, w, k] -> [n, h*w, k]
+            b = bRaw.permute(0, 2, 3, 1).reshape(n, -1, k)
+            # [n, h*w, k] -> [h*w, n, k]
+            quantized = b.permute(1, 0, 2)
+            quantized /= (k - 0.5) / (2 * k - 2)
+            quantized -= 0.5 / (k - 1)
+            # [h*w, n, c]
+            quantized = squeeze(quantized)
+            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+            deTransformed = self._decoder(quantized).permute(1, 0, 2).reshape(n, h, w, self._c)
+            # [n, c, h, w]
+            quantizeds.append(deTransformed.permute(0, 3, 1, 2))
+        return quantizeds
+
+    def forward(self, latents, temperature, hard, mixin):
+        quantizeds = list()
+        codes = list()
+        logits = list()
+        targets = list()
+        for xRaw, prob, squeeze, codebook, k in zip(latents, self._prob, self._squeeze, self._codebook, self._k):
+            targets.append(xRaw)
+            n, c, h, w = xRaw.shape
+            # [c, k] -> [k, c]
+            codewords = codebook.weight.t()
+            # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            posisted = self._position(encoderIn).reshape(-1, n, c)
+            encoderIn = encoderIn.reshape(-1, n, c)
+            # [h*w, n, c]
+            x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
+            # [h*w, n, k] -> [n, h*w, k]
+            logit = prob(x).permute(1, 0, 2)
+            sample = F.gumbel_softmax(logit, temperature, hard)
+            # [N, h*w, c] <- [N, h*w, k] @ [k, C]
+            # quantized = codebook(sample)
+            # [n, h*w, k] -> [h*w, n, k]
+            quantized = sample.permute(1, 0, 2)
+            quantized /= (k - 0.5) / (2 * k - 2)
+            quantized -= 0.5 / (k - 1)
+            # [h*w, n, c]
+            quantized = squeeze(quantized)
+            mixed = (mixin * encoderIn / (mixin + 1)) + (quantized / (mixin + 1))
+
+            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+            deTransformed = self._decoder(mixed).permute(1, 0, 2).reshape(n, h, w, c)
+            # [n, c, h, w]
+            quantizeds.append(deTransformed.permute(0, 3, 1, 2))
+            codes.append(sample)
+            logits.append(logit.reshape(n, h, w, k))
+        return quantizeds, targets, codes, logits
