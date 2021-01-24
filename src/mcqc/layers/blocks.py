@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from mcqc import Consts
+
 from .gdn import GenDivNorm
 from .convs import conv1x1, conv3x3, subPixelConv3x3
 
@@ -18,7 +20,7 @@ class ResidualBlockWithStride(nn.Module):
         self.conv1 = conv3x3(in_ch, out_ch, stride=stride)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
         self.conv2 = conv3x3(out_ch, out_ch)
-        self.gdn = GenDivNorm(out_ch)
+        self.gdn = GenDivNorm(out_ch, beta_min=Consts.Eps)
         if stride != 1 or in_ch != out_ch:
             self.skip = conv1x1(in_ch, out_ch, stride=stride)
         else:
@@ -51,7 +53,7 @@ class ResidualBlockUpsample(nn.Module):
         self.subpel_conv = subPixelConv3x3(in_ch, out_ch, upsample)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
         self.conv = conv3x3(out_ch, out_ch)
-        self.igdn = GenDivNorm(out_ch, inverse=True)
+        self.igdn = GenDivNorm(out_ch, inverse=True, beta_min=Consts.Eps)
         self.upsample = subPixelConv3x3(in_ch, out_ch, upsample)
 
     def forward(self, x):

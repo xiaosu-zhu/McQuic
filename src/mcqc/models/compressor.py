@@ -37,9 +37,9 @@ class MultiScaleCompressor(nn.Module):
         self._quantizer = TransformerQuantizer([2048], 512, 0.1)
         self._decoder = MultiScaleDecoder(512, 1)
 
-    def forward(self, x: torch.Tensor, temperature: float, hard: bool):
+    def forward(self, x: torch.Tensor, temperature: float, hard: bool, mixin: float):
         latents = self._encoder(x)
-        quantizeds, targets, codes, logits = self._quantizer(latents, temperature, hard)
+        quantizeds, targets, codes, logits = self._quantizer(latents, temperature, hard, mixin)
         restored = self._decoder(quantizeds)
 
         # restoredC = self._decoder(quantized.detach())
