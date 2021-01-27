@@ -82,9 +82,9 @@ def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
     logger.info("\r\n%s", summary(config))
 
     model = MultiScaleCompressor()
-    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 5e-5, amsgrad=True, weight_decay=1e-4, eps=Consts.Eps), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.66666666667), saver, FLAGS.get_flag_value("continue", False), logger, config.Epoch)
+    method = Plain(model, "cuda", lambda params: torch.optim.Adam(params, 1e-4, amsgrad=True, weight_decay=0.0e-4, eps=Consts.Eps), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.66666666667), saver, FLAGS.get_flag_value("continue", False), logger, config.Epoch)
 
-    method.run(torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True), torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True))
+    method.run(torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True), torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True, drop_last=True))
 
 
 if __name__ == "__main__":

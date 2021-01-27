@@ -12,7 +12,7 @@ class Encoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(
-            ResidualBlockWithStride(6, channel, stride=2),
+            ResidualBlockWithStride(3, channel, stride=2),
             ResidualBlock(channel, channel),
             # AttentionBlock(channel),
             ResidualBlockWithStride(channel, channel, stride=2),
@@ -34,7 +34,7 @@ class MultiScaleEncoder(nn.Module):
         super().__init__()
         # 1/4, 1/4
         self._preProcess = nn.Sequential(
-            ResidualBlockWithStride(6, channel, stride=2),
+            ResidualBlockWithStride(3, channel, stride=2),
             ResidualBlock(channel, channel),
             ResidualBlockWithStride(channel, channel, stride=2),
             ResidualBlock(channel, channel),
