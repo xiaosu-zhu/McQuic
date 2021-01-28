@@ -3,6 +3,7 @@ from typing import Callable, List
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.distributions import Bernoulli
 from cfmUtils.base import Module
 
 from mcqc.layers.layerGroup import LayerGroup
@@ -267,6 +268,8 @@ class TransformerQuantizer(nn.Module):
         quantizeds = list()
         codes = list()
         logits = list()
+        prob = mixin / (mixin + 1.0)
+        rolloutDistribution = Bernoulli(probs=torch.tensor(prob).to(latents[0].device))
         for xRaw, prob, squeeze, codebook, k in zip(latents, self._prob, self._squeeze, self._codebook, self._k):
             n, c, h, w = xRaw.shape
             # [c, k] -> [k, c]
@@ -275,7 +278,7 @@ class TransformerQuantizer(nn.Module):
             encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
             posisted = self._position(encoderIn).reshape(-1, n, c)
-            # encoderIn = encoderIn.reshape(-1, n, c)
+            encoderIn = encoderIn.reshape(-1, n, c)
             # [h*w, n, c]
             x = self._encoder(posisted)
             # x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
@@ -289,15 +292,19 @@ class TransformerQuantizer(nn.Module):
             quantized = sample
 
             # normalize
-            quantized /= (k - 0.5) / (2 * k - 2)
-            quantized -= 0.5 / (k - 1)
+            # quantized /= (k - 0.5) / (2 * k - 2)
+            # quantized -= 0.5 / (k - 1)
             # [h*w, n, c]
             quantized = squeeze(quantized, h, w)
             # posistedQuantized = self._position(quantized.reshape(h, w, n, c))
             # mixed = (mixin * encoderIn / (mixin + 1)) + (quantized / (mixin + 1))
 
+            mask = rolloutDistribution.sample((h*w, n, 1)).bool()
+
+            mixed = mask * encoderIn.detach() + torch.logical_not(mask) * quantized
+
             # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
-            deTransformed = self._decoder(quantized, quantized).permute(1, 2, 0).reshape(n, c, h, w)
+            deTransformed = self._decoder(mixed, quantized).permute(1, 2, 0).reshape(n, c, h, w)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
             codes.append(sample)
