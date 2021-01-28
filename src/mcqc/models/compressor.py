@@ -1,4 +1,5 @@
 from typing import Any
+import sys
 
 import torch
 from torch import nn
@@ -37,19 +38,18 @@ class MultiScaleCompressor(nn.Module):
         self._quantizer = TransformerQuantizer([2048], 512, 0.1)
         self._decoder = MultiScaleDecoder(512, 1)
 
-    def forward(self, x: torch.Tensor, temperature: float, hard: bool, mix: bool, mixin: float):
+    def forward(self, x: torch.Tensor, temperature: float, hard: bool, mixin: float):
         latents = self._encoder(x)
         quantizeds, codes, logits = self._quantizer(latents, temperature, hard, mixin)
 
-        if mix:
-            mixeds = list()
-            for latent, quantized in zip(latents, quantizeds):
-                mixed = (mixin * latent.detach() / (mixin + 1)) + (quantized / (mixin + 1))
-                mixeds.append(mixed)
-            restored = self._decoder(mixeds)
-        else:
-            restored = self._decoder(latents)
-
+        # if mix:
+        #     mixeds = list()
+        #     for latent, quantized in zip(latents, quantizeds):
+        #         mixed = (mixin * latent.detach() / (mixin + 1)) + (quantized / (mixin + 1))
+        #         mixeds.append(mixed)
+        #     restored = self._decoder(mixeds)
+        # else:
+        restored = self._decoder(latents)
         # restoredC = self._decoder(quantized.detach())
         # newLatents = self._encoder(restoredC)
         # _, _, newLogits = self._quantizer(newLatents, temperature, hard)

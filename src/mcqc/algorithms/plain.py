@@ -42,8 +42,7 @@ class Plain(Algorithm):
         initTemp = 1.0
         minTemp = 0.5
         step = 0
-        mixin = 10.0
-        mix = False
+        mixin = 1000.0
 
         if self._continue:
             loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp, mixin=mixin)
@@ -56,9 +55,8 @@ class Plain(Algorithm):
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
                 # hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
-                restored, codes, latents, logits, quantizeds = self._model(images, initTemp, True, False, mixin)
-                # print(quantizeds[0][0, :3, 4:10, 4:10])
-                loss, mix = self._loss(step, images, restored, codes, latents, logits, quantizeds)
+                restored, codes, latents, logits, quantizeds = self._model(images, initTemp, True, mixin)
+                loss = self._loss(step, images, restored, codes, latents, logits, quantizeds)
                 self._model.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
@@ -76,8 +74,7 @@ class Plain(Algorithm):
                 if (step + 1) % 10000 == 0:
                     self._scheduler.step()
                 step += 1
-                if mix:
-                    mixin *= 0.995
+                mixin *= 0.998
 
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
@@ -91,13 +88,12 @@ class Plain(Algorithm):
         model = model.cuda()
         for raw in dataLoader:
             raw = raw.to(self._device, non_blocking=True)
-            # hsvRaw = (rgb2hsv((raw + 1.) / 2.) - 0.5) / 0.5
 
-            # restored, codes, latents, logits, quantizeds, targets = self._model(raw, 0.5, True, 0.0)
-            latents = model._encoder(raw)
-            b = model._quantizer.encode(latents)
-            quantized = model._quantizer.decode(b)
-            restored = model._decoder(quantized)
+            restored, _, _, _, _ = self._model(raw, 0.5, True, True, 0.0)
+            # latents = model._encoder(raw)
+            # b = model._quantizer.encode(latents)
+            # quantized = model._quantizer.decode(b)
+            # restored = model._decoder(quantized)
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
             ssims.append(evalSSIM(restored.detach(), raw.detach(), True))
@@ -118,32 +114,40 @@ class Plain(Algorithm):
         self._saver.add_scalar("loss/l1", l1Loss, global_step=step)
         self._saver.add_scalar("loss/ssim", ssimLoss, global_step=step)
 
-        transformerL2 = list()
-        transformerL1 = list()
-        commitL2 = list()
-        commitL1 = list()
-        for q, t in zip(quantizeds, latents):
-            transformerL2.append(torch.nn.functional.mse_loss(q, t.detach()))
-            transformerL1.append(torch.nn.functional.l1_loss(q, t.detach()))
-            commitL2.append(torch.nn.functional.mse_loss(t, q.detach()))
-            commitL1.append(torch.nn.functional.l1_loss(t, q.detach()))
-        transformerL2 = sum(transformerL2)
-        transformerL1 = sum(transformerL1)
-        commitL2 = sum(commitL2)
-        commitL1 = sum(commitL1)
-        self._saver.add_scalar("loss/tl2", transformerL2, global_step=step)
-        self._saver.add_scalar("loss/tl1", transformerL1, global_step=step)
+        # transformerL2 = list()
+        # transformerL1 = list()
+        # commitL2 = list()
+        # commitL1 = list()
+        # for q, t in zip(quantizeds, latents):
+        #     transformerL2.append(torch.nn.functional.mse_loss(q, t.detach()))
+        #     transformerL1.append(torch.nn.functional.l1_loss(q, t.detach()))
+        #     commitL2.append(torch.nn.functional.mse_loss(t, q.detach()))
+        #     commitL1.append(torch.nn.functional.l1_loss(t, q.detach()))
+        # transformerL2 = sum(transformerL2)
+        # transformerL1 = sum(transformerL1)
+        # commitL2 = sum(commitL2)
+        # commitL1 = sum(commitL1)
+        # self._saver.add_scalar("loss/tl2", transformerL2, global_step=step)
+        # self._saver.add_scalar("loss/tl1", transformerL1, global_step=step)
+        # self._saver.add_scalar("stat/lnorm", (t**2).mean(), global_step=step)
+        # self._saver.add_scalar("stat/lvar", t.std(), global_step=step)
+        # self._saver.add_scalar("stat/qnorm", (q**2).mean(), global_step=step)
+        # self._saver.add_scalar("stat/qvar", q.std(), global_step=step)
 
         # ssimLoss = _ssimExp((rgbR + 1), (images + 1), 2.0) + _ssimExp((hsvR + 1), (hsvImages + 1), 2.0)
 
         regs = list()
-        for logit in logits:
+        for logit, q, latent in zip(logits, quantizeds, latents):
             # N, H, W, K -> NHW, K
             logit = logit.reshape(-1, logit.shape[-1])
             # distributions = Categorical(logit.permute(0, 2, 3, 1).reshape(-1, logit.shape[1]))
             # entropies.append(distributions.entropy().mean())
-            reg = compute_penalties(logit, global_entropy_coeff=0.01, cv_coeff=0.01, eps=Consts.Eps)
+            # varReg = ((latent.std(0) - 1) ** 2).mean()
+            # matchReg = ((q.mean(0) - latent.detach().mean(0)) ** 2).mean() + ((q.std(0) - latent.detach().std(0)) ** 2).mean()
+            reg = compute_penalties(logit, global_entropy_coeff=0.005, cv_coeff=0.005, eps=Consts.Eps)
             regs.append(reg)
+            # regs.append(varReg)
+            # regs.append(matchReg)
 
         regs = sum(regs)
 
@@ -153,9 +157,9 @@ class Plain(Algorithm):
         return ssimLoss \
              + 0.1 * (l1Loss + l2Loss) \
              + 0.5 * regs \
-             + 1.0 * (transformerL1 + transformerL2) \
-             + 1e-1 * (commitL1 + commitL2), \
-             bool(transformerL2 < 0.05)
+             # + 1.0 * (transformerL1 + transformerL2) \
+             # + 1e-2 * (commitL1 + commitL2), \
+             # bool(transformerL2 < 0.05)
            # + 1e-6 * klLoss \
 
 
