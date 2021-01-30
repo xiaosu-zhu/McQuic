@@ -42,7 +42,7 @@ class Plain(Algorithm):
         initTemp = 1.0
         minTemp = 0.5
         step = 0
-        mixin = 1000.0
+        mixin = 100.0
 
         if self._continue:
             loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp, mixin=mixin)
@@ -65,16 +65,16 @@ class Plain(Algorithm):
                 if (step + 1) % 100 == 0:
                     self._saver.add_images("soft/raw", self._deTrans(images), global_step=step)
                     self._saver.add_images("soft/res", self._deTrans(restored), global_step=step)
-                    self._saver.add_histogram("code", codes[0].argmax(-1), global_step=step)
+                    self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
                 if (step + 1) % 1000 == 0:
-                    initTemp = max(initTemp * 0.9, minTemp)
+                    # initTemp = max(initTemp * 0.9, minTemp)
                     self._eval(testLoader, step)
                     self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp, mixin=mixin)
                     self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, M = %.2e", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, mixin)
                 if (step + 1) % 10000 == 0:
                     self._scheduler.step()
                 step += 1
-                mixin *= 0.998
+                # mixin *= 0.9999
 
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
@@ -89,7 +89,7 @@ class Plain(Algorithm):
         for raw in dataLoader:
             raw = raw.to(self._device, non_blocking=True)
 
-            restored, _, _, _, _ = self._model(raw, 0.5, True, True, 0.0)
+            restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
             # latents = model._encoder(raw)
             # b = model._quantizer.encode(latents)
             # quantized = model._quantizer.decode(b)
@@ -139,29 +139,56 @@ class Plain(Algorithm):
         regs = list()
         for logit, q, latent in zip(logits, quantizeds, latents):
             # N, H, W, K -> NHW, K
-            logit = logit.reshape(-1, logit.shape[-1])
-            # distributions = Categorical(logit.permute(0, 2, 3, 1).reshape(-1, logit.shape[1]))
+            unNormlogit = logit.reshape(-1, logit.shape[-1])
+            if False:
+                distributions = Categorical(logits=unNormlogit)
+                minSingle = 0.01 * distributions.entropy().mean()
+                regs.append(minSingle)
+                self._saver.add_scalar("stat/single", minSingle, global_step=step)
+            else:
+                maxGlobal = compute_penalties(unNormlogit, cv_coeff=0.02, eps=Consts.Eps)
+                regs.append(maxGlobal)
+                self._saver.add_scalar("stat/global", maxGlobal, global_step=step)
+            # reg = -0.001 * spatialKL(logit)
             # entropies.append(distributions.entropy().mean())
-            # varReg = ((latent.std(0) - 1) ** 2).mean()
+            # varReg = ((latent.norm() - 10) ** 2).mean()
             # matchReg = ((q.mean(0) - latent.detach().mean(0)) ** 2).mean() + ((q.std(0) - latent.detach().std(0)) ** 2).mean()
-            reg = compute_penalties(logit, global_entropy_coeff=0.005, cv_coeff=0.005, eps=Consts.Eps)
-            regs.append(reg)
-            # regs.append(varReg)
-            # regs.append(matchReg)
-
         regs = sum(regs)
 
-        self._saver.add_scalar("loss/reg", regs, global_step=step)
+        # qe = quantizationError(highOrders, softs, hards)
+        # self._saver.add_scalar("loss/qe", qe, global_step=step)
 
         # klLoss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(logitsConsistency, -1), torch.nn.functional.log_softmax(logitsCompressed.detach(), -1), reduction="batchmean", log_target=True)
         return ssimLoss \
              + 0.1 * (l1Loss + l2Loss) \
-             + 0.5 * regs \
+             + regs \
+            #  + qe \
              # + 1.0 * (transformerL1 + transformerL2) \
              # + 1e-2 * (commitL1 + commitL2), \
              # bool(transformerL2 < 0.05)
            # + 1e-6 * klLoss \
 
+
+def spatialKL(logit):
+    lenLogits = logit.shape[1] * logit.shape[2]
+    logit = logit.reshape(logit.shape[0], lenLogits, -1)
+    logProb = torch.nn.functional.log_softmax(logit, -1)
+    randIdx1 = torch.randperm(lenLogits)
+    randIdx2 = torch.randperm(lenLogits)
+    shuffle1 = logProb[:, randIdx1]
+    shuffle2 = logProb[:, randIdx2]
+    return torch.nn.functional.kl_div(shuffle1, shuffle2, reduction="batchmean", log_target=True)
+
+
+def quantizationError(raws, softs, hards):
+    softQE = list()
+    hardQE = list()
+    jointQE = list()
+    for r, s, h in zip(raws, softs, hards):
+        softQE.append(torch.nn.functional.mse_loss(s, r))
+        hardQE.append(torch.nn.functional.mse_loss(h, r))
+        jointQE.append(torch.nn.functional.mse_loss(s, h))
+    return sum(softQE) + 0.1 * sum(jointQE) + sum(hardQE)
 
 
 def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_entropy=0.0, global_entropy_coeff=0.0,
@@ -180,16 +207,16 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_entropy=0.0,
     logp = torch.log_softmax(logits, dim=-1)
     # [batch_size, ..., codebook_size]
 
-    individual_entropy_values = -torch.sum(p * logp, dim=-1)
-    clipped_entropy = torch.nn.functional.relu(allowed_entropy - individual_entropy_values + eps).mean()
-    individual_entropy = (individual_entropy_values.mean() - clipped_entropy).detach() + clipped_entropy
+    # individual_entropy_values = -torch.sum(p * logp, dim=-1)
+    # clipped_entropy = torch.nn.functional.relu(allowed_entropy - individual_entropy_values + eps).mean()
+    # individual_entropy = (individual_entropy_values.mean() - clipped_entropy).detach() + clipped_entropy
 
-    global_p = torch.mean(p, dim=0)  # [..., codebook_size]
-    global_logp = torch.logsumexp(logp, dim=0) - np.log(float(logp.shape[0]))  # [..., codebook_size]
-    global_entropy = -torch.sum(global_p * global_logp, dim=-1).mean()
+    # global_p = torch.mean(p, dim=0)  # [..., codebook_size]
+    # global_logp = torch.logsumexp(logp, dim=0) - np.log(float(logp.shape[0]))  # [..., codebook_size]
+    # global_entropy = -torch.sum(global_p * global_logp, dim=-1).mean()
 
     load = torch.mean(p, dim=0)  # [..., codebook_size]
     mean = load.mean()
     variance = torch.mean((load - mean) ** 2)
     cvPenalty = variance / (mean ** 2 + eps)
-    return individual_entropy_coeff * individual_entropy + global_entropy_coeff * global_entropy + cv_coeff * cvPenalty
+    return cv_coeff * cvPenalty

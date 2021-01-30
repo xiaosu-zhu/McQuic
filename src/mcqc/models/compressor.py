@@ -9,7 +9,7 @@ from pytorch_msssim import ms_ssim
 
 from .encoder import Encoder, MultiScaleEncoder
 from .decoder import Decoder, MultiScaleDecoder
-from .quantizer import Quantizer, MultiCodebookQuantizer, TransformerQuantizer
+from .quantizer import Quantizer, MultiCodebookQuantizer, TransformerQuantizer, VQuantizer
 
 
 class Compressor(nn.Module):
@@ -35,7 +35,7 @@ class MultiScaleCompressor(nn.Module):
     def __init__(self):
         super().__init__()
         self._encoder = MultiScaleEncoder(512, 1)
-        self._quantizer = TransformerQuantizer([2048], 512, 0.1)
+        self._quantizer = TransformerQuantizer([256], 512, 0.1)
         self._decoder = MultiScaleDecoder(512, 1)
 
     def forward(self, x: torch.Tensor, temperature: float, hard: bool, mixin: float):
@@ -49,7 +49,7 @@ class MultiScaleCompressor(nn.Module):
         #         mixeds.append(mixed)
         #     restored = self._decoder(mixeds)
         # else:
-        restored = self._decoder(latents)
+        restored = self._decoder(quantizeds)
         # restoredC = self._decoder(quantized.detach())
         # newLatents = self._encoder(restoredC)
         # _, _, newLogits = self._quantizer(newLatents, temperature, hard)
