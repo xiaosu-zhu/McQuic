@@ -10,6 +10,7 @@ from pytorch_msssim import ms_ssim
 from .encoder import Encoder, MultiScaleEncoder
 from .decoder import Decoder, MultiScaleDecoder
 from .quantizer import Quantizer, MultiCodebookQuantizer, TransformerQuantizer, VQuantizer
+from mcqc.losses.structural import CompressionLoss
 
 
 class Compressor(nn.Module):
@@ -32,29 +33,15 @@ class Compressor(nn.Module):
 
 
 class MultiScaleCompressor(nn.Module):
-    def __init__(self):
+    def __init__(self, k , channel):
         super().__init__()
-        self._encoder = MultiScaleEncoder(512, 1)
-        self._quantizer = TransformerQuantizer([256], 512, 0.1)
-        self._decoder = MultiScaleDecoder(512, 1)
+        stage = len(k)
+        self._encoder = MultiScaleEncoder(channel, stage)
+        self._quantizer = TransformerQuantizer(k, channel, 0.1)
+        self._decoder = MultiScaleDecoder(channel, stage)
 
-    def forward(self, x: torch.Tensor, temperature: float, hard: bool, e2e: bool):
+    def forward(self, x: torch.Tensor, temperature: float, hard: bool):
         latents = self._encoder(x)
         quantizeds, codes, logits = self._quantizer(latents, temperature, hard)
-
-        # if mix:
-        #     mixeds = list()
-        #     for latent, quantized in zip(latents, quantizeds):
-        #         mixed = (mixin * latent.detach() / (mixin + 1)) + (quantized / (mixin + 1))
-        #         mixeds.append(mixed)
-        #     restored = self._decoder(mixeds)
-        # else:
-        if e2e:
-            restored = self._decoder(quantizeds)
-        else:
-            restored = self._decoder(latents)
-        # restoredC = self._decoder(quantized.detach())
-        # newLatents = self._encoder(restoredC)
-        # _, _, newLogits = self._quantizer(newLatents, temperature, hard)
-
+        restored = self._decoder(quantizeds)
         return restored, codes, latents, logits, quantizeds # newLogits

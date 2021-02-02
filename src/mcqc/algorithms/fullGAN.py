@@ -11,14 +11,15 @@ from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
+from mcqc.models.whole import Whole
 from mcqc import Consts
 
 def _ssimExp(source, target, datarange):
     return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
 
 
-class Plain(Algorithm):
-    def __init__(self, model: nn.Module, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger, epoch: int):
+class FullGAN(Algorithm):
+    def __init__(self, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger, epoch: int):
         super().__init__()
         self._model = model
         if device == "cuda" and torch.cuda.device_count() > 1:
@@ -26,8 +27,10 @@ class Plain(Algorithm):
         else:
             self._model = self._model.to(device)
         self._device = device
-        self._optimizer = optimizer(5e-5, self._model.parameters(), 0)
-        self._scheduler = scheduler(self._optimizer)
+        # self._optimizerD = optimizer(1e-4, self._model.module._discriminator.parameters(), 0)
+        self._optimizerG = optimizer(1e-4, self._model.module._compressor.parameters(), 0)
+        # self._schedulerD = scheduler(self._optimizerD)
+        self._schedulerG = scheduler(self._optimizerG)
         self._epoch = epoch
         self._saver = saver
         self._logger = logger
@@ -42,37 +45,49 @@ class Plain(Algorithm):
         initTemp = 1.0
         minTemp = 0.5
         step = 0
-        mixin = 100.0
 
         if self._continue:
-            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp, mixin=mixin)
+            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
             initTemp = loaded["temp"]
             step = loaded["step"]
-            mixin = loaded["mixin"]
+
+        dB = self._eval(testLoader, step)
 
         for i in range(self._epoch):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                # hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
-                restored, codes, latents, logits, quantizeds = self._model(images, initTemp, True, mixin)
-                loss = self._loss(step, images, restored, codes, latents, logits, quantizeds)
-                self._model.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
-                self._optimizer.step()
-                self._saver.add_scalar("loss", loss, global_step=step)
+                (ssimLoss, l1l2Loss, reg, dLoss, gLoss), (restored, codes, latents, logits, quantizeds) = self._model(step, images, initTemp, True)
+                if False:
+                    self._optimizerD.zero_grad()
+                    dLoss = dLoss.mean()
+                    dLoss.backward()
+                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                    self._optimizerD.step()
+                    self._saver.add_scalar("loss/dLoss", dLoss, global_step=step)
+                else:
+                    self._optimizerG.zero_grad()
+                    (ssimLoss + 0.1 * l1l2Loss + reg).mean().backward()
+                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                    self._optimizerG.step()
+                    # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
                 if (step + 1) % 100 == 0:
-                    self._saver.add_images("soft/raw", self._deTrans(images), global_step=step)
-                    self._saver.add_images("soft/res", self._deTrans(restored), global_step=step)
+                    self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
+                    self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
                     self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
                 if (step + 1) % 1000 == 0:
                     # initTemp = max(initTemp * 0.9, minTemp)
-                    self._eval(testLoader, step)
-                    self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, temp=initTemp, mixin=mixin)
-                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, M = %.2e", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, mixin)
+                    dB = self._eval(testLoader, step)
+                    # if dB > 28.5:
+                    #     e2e = True
+                    self._saver.save(self._logger, model=self._model, optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
+                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step + 1) // 1000, self._schedulerG.get_last_lr()[0], initTemp)
                 if (step + 1) % 10000 == 0:
-                    self._scheduler.step()
+                    # self._schedulerD.step()
+                    self._schedulerG.step()
                 step += 1
                 # mixin *= 0.9999
 
@@ -82,18 +97,18 @@ class Plain(Algorithm):
         ssims = list()
         psnrs = list()
         if isinstance(self._model, nn.DataParallel):
-            model = self._model.module
+            model = self._model.module._compressor
         else:
-            model = self._model
+            model = self._model._compressor
         model = model.cuda()
         for raw in dataLoader:
             raw = raw.to(self._device, non_blocking=True)
 
-            restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
-            # latents = model._encoder(raw)
-            # b = model._quantizer.encode(latents)
-            # quantized = model._quantizer.decode(b)
-            # restored = model._decoder(quantized)
+            # restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
+            latents = model._encoder(raw)
+            b = model._quantizer.encode(latents)
+            quantized = model._quantizer.decode(b)
+            restored = model._decoder(quantized)
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
             ssims.append(evalSSIM(restored.detach(), raw.detach(), True))
@@ -103,6 +118,7 @@ class Plain(Algorithm):
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._saver.add_images("eval/res", restored, global_step=step)
+        return float(psnrs.mean())
 
     def _loss(self, step, images, restored, codes, latents, logits, quantizeds):
         # hsvR, rgbR = torch.chunk(restored, 2, 1)
@@ -136,24 +152,6 @@ class Plain(Algorithm):
 
         # ssimLoss = _ssimExp((rgbR + 1), (images + 1), 2.0) + _ssimExp((hsvR + 1), (hsvImages + 1), 2.0)
 
-        regs = list()
-        for logit, q, latent in zip(logits, quantizeds, latents):
-            # N, H, W, K -> NHW, K
-            unNormlogit = logit.reshape(-1, logit.shape[-1])
-            if False:
-                distributions = Categorical(logits=unNormlogit)
-                minSingle = 0.01 * distributions.entropy().mean()
-                regs.append(minSingle)
-                self._saver.add_scalar("stat/single", minSingle, global_step=step)
-            else:
-                maxGlobal = compute_penalties(unNormlogit, cv_coeff=0.02, eps=Consts.Eps)
-                regs.append(maxGlobal)
-                self._saver.add_scalar("stat/global", maxGlobal, global_step=step)
-            # reg = -0.001 * spatialKL(logit)
-            # entropies.append(distributions.entropy().mean())
-            # varReg = ((latent.norm() - 10) ** 2).mean()
-            # matchReg = ((q.mean(0) - latent.detach().mean(0)) ** 2).mean() + ((q.std(0) - latent.detach().std(0)) ** 2).mean()
-        regs = sum(regs)
 
         # qe = quantizationError(highOrders, softs, hards)
         # self._saver.add_scalar("loss/qe", qe, global_step=step)
@@ -161,7 +159,7 @@ class Plain(Algorithm):
         # klLoss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(logitsConsistency, -1), torch.nn.functional.log_softmax(logitsCompressed.detach(), -1), reduction="batchmean", log_target=True)
         return ssimLoss \
              + 0.1 * (l1Loss + l2Loss) \
-             + regs \
+            #  + regs \
             #  + qe \
              # + 1.0 * (transformerL1 + transformerL2) \
              # + 1e-2 * (commitL1 + commitL2), \
@@ -204,7 +202,7 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_entropy=0.0,
         this value should typically be negative (e.g. -1), works similar to cv_coeff
     """
     p = torch.softmax(logits, dim=-1)
-    logp = torch.log_softmax(logits, dim=-1)
+    # logp = torch.log_softmax(logits, dim=-1)
     # [batch_size, ..., codebook_size]
 
     # individual_entropy_values = -torch.sum(p * logp, dim=-1)

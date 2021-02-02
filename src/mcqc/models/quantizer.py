@@ -181,26 +181,28 @@ class TransformerQuantizerBak(nn.Module):
 class Transit(nn.Module):
     def __init__(self, cin, cout, order="first"):
         super().__init__()
-        if order == "first":
-            self._preLinear = nn.Linear(cin, cin)
-            self._preActivation = nn.LeakyReLU(inplace=True)
-            self._block = ResidualBlock(cin, cin)
-            self._afterActivation = nn.LeakyReLU(inplace=True)
-            self._afterLinear = nn.Linear(cin, cout)
-        else:
-            self._preLinear = nn.Linear(cin, cout)
-            self._preActivation = nn.LeakyReLU(inplace=True)
-            self._block = ResidualBlock(cout, cout)
-            self._afterActivation = nn.LeakyReLU(inplace=True)
-            self._afterLinear = nn.Linear(cout, cout)
+        self._linear = nn.Linear(cin, cout)
+        # if order == "first":
+        #     self._preLinear = nn.Linear(cin, cin)
+        #     self._preActivation = nn.LeakyReLU(inplace=True)
+        #     self._block = ResidualBlock(cin, cin)
+        #     self._afterActivation = nn.LeakyReLU(inplace=True)
+        #     self._afterLinear = nn.Linear(cin, cout)
+        # else:
+        #     self._preLinear = nn.Linear(cin, cout)
+        #     self._preActivation = nn.LeakyReLU(inplace=True)
+        #     self._block = ResidualBlock(cout, cout)
+        #     self._afterActivation = nn.LeakyReLU(inplace=True)
+        #     self._afterLinear = nn.Linear(cout, cout)
 
     def forward(self, x, h, w):
-        hw, n, _ = x.shape
-        x = x.reshape(h, w, n, -1)
-        x = self._preActivation(self._preLinear(x)).permute(2, 3, 0, 1)
-        x = self._block(x).permute(2, 3, 0, 1)
-        x = self._afterActivation(self._afterLinear(x))
-        return x.reshape(hw, n, -1)
+        return self._linear(x)
+        # hw, n, _ = x.shape
+        # x = x.reshape(h, w, n, -1)
+        # x = self._preActivation(self._preLinear(x)).permute(2, 3, 0, 1)
+        # x = self._block(x).permute(2, 3, 0, 1)
+        # x = self._afterActivation(self._afterLinear(x))
+        # return x.reshape(hw, n, -1)
 
 
 class TransformerQuantizer(nn.Module):
@@ -211,8 +213,8 @@ class TransformerQuantizer(nn.Module):
         self._squeeze = nn.ModuleList([Transit(numCodewords, cin, order="last") for numCodewords in k])
         self._prob = nn.ModuleList([Transit(cin, numCodewords, order="first") for numCodewords in k])
         # self._encoder = nn.Transformer(cin, )
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate), 6, None) #nn.LayerNorm(cin, Consts.Eps))
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate), 6, None) #nn.LayerNorm(cin, Consts.Eps))
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate, "gelu"), 6, None)
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate, "gelu"), 6, None)
         self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
         self._k = k
         self._d = float(cin) ** 0.5
@@ -222,10 +224,10 @@ class TransformerQuantizer(nn.Module):
 
     def encode(self, latents):
         samples = list()
-        for xRaw, codebook, k in zip(latents,  self._codebook, self._k):
+        for xRaw, prob, k in zip(latents, self._prob, self._k):
             n, c, h, w = xRaw.shape
             # [c, k] -> [k, c]
-            codewords = codebook.weight
+            # codewords = codebook.weight
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
             # [h, w, n, c] -> [h*w, n, c]
@@ -234,7 +236,8 @@ class TransformerQuantizer(nn.Module):
             x = self._encoder(encoderIn)
             # x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
             # [h*w, n, k]
-            logit = torch.matmul(x, codewords)
+            # logit = torch.matmul(x, codewords)
+            logit = prob(x, h, w)
             # [n, h, w]
             sample = logit.permute(1, 0, 2).reshape(n, h, w, k).argmax(-1)
             # sample = sample.reshape(n, h, w, k).argmax(-1)
@@ -249,7 +252,7 @@ class TransformerQuantizer(nn.Module):
 
     def decode(self, codes):
         quantizeds = list()
-        for bRaw, codebook, k in zip(codes, self._codebook, self._k):
+        for bRaw, squeeze, k in zip(codes, self._squeeze, self._k):
             n, h, w = bRaw.shape
             # [n, k, h, w], k is the one hot embedding
             bRaw = self._oneHotEncode(bRaw, k)
@@ -260,7 +263,7 @@ class TransformerQuantizer(nn.Module):
             # quantized /= (k - 0.5) / (2 * k - 2)
             # quantized -= 0.5 / (k - 1)
             # [h*w, n, c]
-            quantized = codebook(quantized)
+            quantized = squeeze(quantized, h, w)
             # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
             deTransformed = self._decoder(quantized, quantized).permute(1, 2, 0).reshape(n, self._c, h, w)
             # [n, c, h, w]
@@ -276,7 +279,7 @@ class TransformerQuantizer(nn.Module):
         for xRaw, prob, squeeze, codebook, k in zip(latents, self._prob, self._squeeze, self._codebook, self._k):
             n, c, h, w = xRaw.shape
             # [c, k]
-            codewords = codebook.weight
+            # codewords = codebook.weight
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
@@ -286,12 +289,16 @@ class TransformerQuantizer(nn.Module):
             # x = self._encoder(posisted)
             x = self._encoder(encoderIn)
             # [h*w, n, k]
-            # logit = prob(encoderIn, h, w)
-            logit = torch.matmul(x, codewords)
+            logit = prob(x, h, w)
+            # logit = torch.matmul(x, codewords)
+            # soft = (logit / temperature).softmax(-1)
+            # hard = logit.argmax(-1)
+            # hard = F.one_hot(hard, k)
+            # sample = (hard - soft).detach() + soft
             sample = F.gumbel_softmax(logit, temperature, hard)
 
             # [h*w, N, c] <- [h*w, N, k] @ [k, C]
-            quantized = codebook(sample)
+            # quantized = codebook(sample)
 
             # quantized = sample
 
@@ -299,7 +306,7 @@ class TransformerQuantizer(nn.Module):
             # quantized /= (k - 0.5) / (2 * k - 2)
             # quantized -= 0.5 / (k - 1)
             # [h*w, n, c]
-            # quantized = squeeze(quantized, h, w)
+            quantized = squeeze(sample, h, w)
             # posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
 
             # mixed = (mixin * encoderIn / (mixin + 1)) + (quantized / (mixin + 1))
