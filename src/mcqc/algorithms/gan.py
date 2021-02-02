@@ -51,7 +51,7 @@ class PlainWithGAN(Algorithm):
         initTemp = 1.0
         minTemp = 0.5
         step = 0
-        e2e = False
+        e2e = True
 
         if self._continue:
             loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optimC=self._optimizerC, optimD=self._optimizerD, optimG=self._optimizerG, schdrC=self._schedulerC, schdrD=self._schedulerD, schdrG=self._schedulerG, step=step, temp=initTemp, e2e=e2e)
@@ -67,12 +67,15 @@ class PlainWithGAN(Algorithm):
                 images = images.to(self._device, non_blocking=True)
                 # hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
                 restored, codes, latents, logits, quantizeds = self._model(images, initTemp, True, e2e)
-                if step % 3 == 0:
-                    self._trainComp(step, images, restored, codes, latents, logits, quantizeds)
-                elif step % 3 == 1:
-                    self._trainD(step, latents, quantizeds)
+                if dB > 20:
+                    if step % 3 == 0:
+                        self._trainComp(step, images, restored, codes, latents, logits, quantizeds)
+                    elif step % 3 == 1:
+                        self._trainD(step, latents, quantizeds)
+                    else:
+                        self._trainG(step, latents, quantizeds, logits)
                 else:
-                    self._trainG(step, latents, quantizeds, logits)
+                    self._trainComp(step, images, restored, codes, latents, logits, quantizeds)
                 if (step + 1) % 100 == 0:
                     self._saver.add_images("soft/raw", self._deTrans(images), global_step=step)
                     self._saver.add_images("soft/res", self._deTrans(restored), global_step=step)
