@@ -222,10 +222,10 @@ class TransformerQuantizer(nn.Module):
 
     def encode(self, latents):
         samples = list()
-        for xRaw, codebook, prob, k in zip(latents,  self._codebook, self._prob, self._k):
+        for xRaw, codebook, k in zip(latents,  self._codebook, self._k):
             n, c, h, w = xRaw.shape
             # [c, k] -> [k, c]
-            codewords = codebook.weight.t()
+            codewords = codebook.weight
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
             # [h, w, n, c] -> [h*w, n, c]
@@ -234,7 +234,7 @@ class TransformerQuantizer(nn.Module):
             x = self._encoder(encoderIn)
             # x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
             # [h*w, n, k]
-            logit = prob(x, h, w)
+            logit = torch.matmul(x, codewords)
             # [n, h, w]
             sample = logit.permute(1, 0, 2).reshape(n, h, w, k).argmax(-1)
             # sample = sample.reshape(n, h, w, k).argmax(-1)
@@ -249,7 +249,7 @@ class TransformerQuantizer(nn.Module):
 
     def decode(self, codes):
         quantizeds = list()
-        for bRaw, squeeze, k in zip(codes, self._squeeze, self._k):
+        for bRaw, codebook, k in zip(codes, self._codebook, self._k):
             n, h, w = bRaw.shape
             # [n, k, h, w], k is the one hot embedding
             bRaw = self._oneHotEncode(bRaw, k)
@@ -260,14 +260,14 @@ class TransformerQuantizer(nn.Module):
             # quantized /= (k - 0.5) / (2 * k - 2)
             # quantized -= 0.5 / (k - 1)
             # [h*w, n, c]
-            quantized = squeeze(quantized, h, w)
+            quantized = codebook(quantized)
             # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
             deTransformed = self._decoder(quantized, quantized).permute(1, 2, 0).reshape(n, self._c, h, w)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
         return quantizeds
 
-    def forward(self, latents, temperature, hard, mixin):
+    def forward(self, latents, temperature, hard):
         quantizeds = list()
         codes = list()
         logits = list()
