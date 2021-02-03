@@ -27,8 +27,8 @@ class FullGAN(Algorithm):
         else:
             self._model = self._model.to(device)
         self._device = device
-        # self._optimizerD = optimizer(1e-4, self._model.module._discriminator.parameters(), 0)
-        self._optimizerG = optimizer(1e-4, self._model.module._compressor.parameters(), 0)
+        # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
+        self._optimizerG = optimizer(2e-5, self._model.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
         self._schedulerG = scheduler(self._optimizerG)
         self._epoch = epoch
@@ -62,13 +62,13 @@ class FullGAN(Algorithm):
                     self._optimizerD.zero_grad()
                     dLoss = dLoss.mean()
                     dLoss.backward()
-                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                    # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
                     self._optimizerD.step()
                     self._saver.add_scalar("loss/dLoss", dLoss, global_step=step)
                 else:
                     self._optimizerG.zero_grad()
-                    (ssimLoss + 0.1 * l1l2Loss + reg).mean().backward()
-                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                    (1 * ssimLoss + 1 * l1l2Loss + 0.1 * reg).mean().backward()
+                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=1.0)
                     self._optimizerG.step()
                     # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)

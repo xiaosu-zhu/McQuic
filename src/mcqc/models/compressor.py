@@ -43,5 +43,5 @@ class MultiScaleCompressor(nn.Module):
     def forward(self, x: torch.Tensor, temperature: float, hard: bool):
         latents = self._encoder(x)
         quantizeds, codes, logits = self._quantizer(latents, temperature, hard)
-        restored = self._decoder(quantizeds)
+        restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds # newLogits
