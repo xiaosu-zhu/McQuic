@@ -28,22 +28,13 @@ class Decoder(nn.Module):
 
 
 class MultiScaleDecoder(nn.Module):
-    def __init__(self, channel, scale):
+    def __init__(self, channel, postProcessNum, scale):
         super().__init__()
-        self._postProcess = nn.Sequential(
-            # ResidualBlock(channel, channel),
-            # # AttentionBlock(channel),
-            # ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
-            subPixelConv3x3(channel, 3, 2),
-        )
+        postProcess = []
+        for i in range(postProcessNum - 1):
+            postProcess += [ResidualBlock(channel, channel), ResidualBlockUpsample(channel, channel, 2)]
+        postProcess += [ResidualBlock(channel, channel), subPixelConv3x3(channel, 3, 2)]
+        self._postProcess = nn.Sequential(*postProcess)
         # Upsample -> 2x, 2x
         self._scales = nn.ModuleList([UpSample(channel) for _ in range(scale)])
 

@@ -83,8 +83,8 @@ def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
 
     logger.info("\r\n%s", summary(config))
 
-    model = Whole([256], 512)
-    method = FullGAN(model, "cuda", lambda lr, params, weight_decay: torch.optim.Adam(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.8), saver, FLAGS.get_flag_value("continue", False), logger, config.Epoch)
+    model = Whole(config.Model.k, config.Model.channel, config.Model.nPreLayers)
+    method = FullGAN(config, model, "cuda", lambda lr, params, weight_decay: torch.optim.Adam(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.8), saver, FLAGS.get_flag_value("continue", False), logger)
 
     method.run(torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True), torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True, drop_last=True))
 

@@ -5,3 +5,14 @@ wantsMore: false
 dataset: clic/train
 valDataset: clic/valid
 batchSize: 6
+lr: 1.0e-5
+coef:
+    ssim: 1.0
+    l1l2: 1.0
+    reg: 1.0
+    gen: 0.0
+    dis: 0.0
+model:
+    channel: 512
+    k: [2048]
+    nPreLayers: 3

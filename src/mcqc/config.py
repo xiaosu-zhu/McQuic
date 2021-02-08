@@ -1,8 +1,28 @@
+from typing import List
 from dataclasses import dataclass
 
 
 @dataclass
+class Coef:
+    ssim: float = 2.0
+    l1l2: float = 2.0
+    reg: float = 0.2
+    gen: float = 0.1
+    dis: float = 0.1
+
+
+@dataclass
+class ModelSpec:
+    k: List[int]
+    channel: int = 512
+    nPreLayers: int = 3
+
+
+@dataclass
 class Config:
+    lr: float = 5e-6
+    coef: Coef = Coef()
+    model: ModelSpec = ModelSpec(k=[256])
     batchSize: int = 32
     epoch: int = 10
     gpus: int = 1
@@ -10,6 +30,18 @@ class Config:
     wantsMore: bool = False
     dataset: str = "clic/train"
     valDataset: str = "clic/valid"
+
+    @property
+    def LearningRate(self) -> float:
+        return self.lr
+
+    @property
+    def Model(self) -> ModelSpec:
+        return self.model
+
+    @property
+    def Coef(self) -> Coef:
+        return self.coef
 
     @property
     def BatchSize(self) -> int:

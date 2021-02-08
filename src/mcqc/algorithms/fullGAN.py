@@ -12,14 +12,14 @@ from pytorch_msssim import ms_ssim
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.models.whole import Whole
-from mcqc import Consts
+from mcqc import Consts, Config
 
 def _ssimExp(source, target, datarange):
     return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
 
 
 class FullGAN(Algorithm):
-    def __init__(self, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger, epoch: int):
+    def __init__(self, config: Config, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger):
         super().__init__()
         self._model = model
         if device == "cuda" and torch.cuda.device_count() > 1:
@@ -28,13 +28,12 @@ class FullGAN(Algorithm):
             self._model = self._model.to(device)
         self._device = device
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
-        self._optimizerG = optimizer(2e-5, self._model.parameters(), 0)
+        self._optimizerG = optimizer(config.LearningRate, self._model.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
         self._schedulerG = scheduler(self._optimizerG)
-        self._epoch = epoch
         self._saver = saver
         self._logger = logger
-
+        self._config = config
         self._continue = continueTrain
 
     @staticmethod
@@ -43,7 +42,7 @@ class FullGAN(Algorithm):
 
     def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
         initTemp = 1.0
-        minTemp = 0.5
+        minTemp = 0.1
         step = 0
 
         if self._continue:
@@ -53,7 +52,7 @@ class FullGAN(Algorithm):
 
         dB = self._eval(testLoader, step)
 
-        for i in range(self._epoch):
+        for i in range(self._config.Epoch):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
@@ -67,8 +66,8 @@ class FullGAN(Algorithm):
                     self._saver.add_scalar("loss/dLoss", dLoss, global_step=step)
                 else:
                     self._optimizerG.zero_grad()
-                    (1 * ssimLoss + 1 * l1l2Loss + 0.1 * reg).mean().backward()
-                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=1.0)
+                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                    # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
                     self._optimizerG.step()
                     # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
@@ -79,7 +78,6 @@ class FullGAN(Algorithm):
                     self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
                     self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
                 if (step + 1) % 1000 == 0:
-                    # initTemp = max(initTemp * 0.9, minTemp)
                     dB = self._eval(testLoader, step)
                     # if dB > 28.5:
                     #     e2e = True
@@ -88,6 +86,7 @@ class FullGAN(Algorithm):
                 if (step + 1) % 10000 == 0:
                     # self._schedulerD.step()
                     self._schedulerG.step()
+                # initTemp = max(initTemp * 0.9999, minTemp)
                 step += 1
                 # mixin *= 0.9999
 
