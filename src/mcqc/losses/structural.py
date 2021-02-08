@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.distributions import Categorical
 from pytorch_msssim import ms_ssim
 
 from mcqc import Consts
@@ -16,8 +17,8 @@ class CompressionLoss(nn.Module):
         for logit, q, latent in zip(logits, quantizeds, latents):
             # N, H, W, K -> NHW, K
             unNormlogit = logit.reshape(-1, logit.shape[-1])
-            maxGlobal = compute_penalties(unNormlogit, cv_coeff=0.02, eps=Consts.Eps)
-            regs.append(maxGlobal)
+            reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.02, cv_coeff=0.05, eps=Consts.Eps)
+            regs.append(reg)
         regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, regs
 
@@ -34,7 +35,6 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_entropy=0.0,
     :param global_entropy_coeff: coefficient for entropy of mean probabilities over batch
         this value should typically be negative (e.g. -1), works similar to cv_coeff
     """
-    p = torch.softmax(logits, dim=-1)
     # logp = torch.log_softmax(logits, dim=-1)
     # [batch_size, ..., codebook_size]
 
@@ -45,9 +45,12 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_entropy=0.0,
     # global_p = torch.mean(p, dim=0)  # [..., codebook_size]
     # global_logp = torch.logsumexp(logp, dim=0) - np.log(float(logp.shape[0]))  # [..., codebook_size]
     # global_entropy = -torch.sum(global_p * global_logp, dim=-1).mean()
+    distributions = Categorical(logits=logits)
+    minSingle = individual_entropy_coeff * distributions.entropy().mean()
 
+    p = torch.softmax(logits, dim=-1)
     load = torch.mean(p, dim=0)  # [..., codebook_size]
     mean = load.mean()
     variance = torch.mean((load - mean) ** 2)
     cvPenalty = variance / (mean ** 2 + eps)
-    return cv_coeff * cvPenalty
+    return minSingle + cv_coeff * cvPenalty

@@ -30,21 +30,18 @@ class Encoder(nn.Module):
 
 
 class MultiScaleEncoder(nn.Module):
-    def __init__(self, channel, scale):
+    def __init__(self, channel, preProcessNum, scale):
         super().__init__()
+        preProcess = [ResidualBlockWithStride(3, channel, stride=2), ResidualBlock(channel, channel)]
+        preProcessNum -= 1
+        for i in range(preProcessNum):
+            preProcess += [ResidualBlockWithStride(channel, channel, stride=2), ResidualBlock(channel, channel)]
         # 1/4, 1/4
-        self._preProcess = nn.Sequential(
-            ResidualBlockWithStride(3, channel, stride=2),
-            ResidualBlock(channel, channel),
-            ResidualBlockWithStride(channel, channel, stride=2),
-            ResidualBlock(channel, channel),
-            # ResidualBlockWithStride(channel, channel, stride=2),
-            # ResidualBlock(channel, channel)
-        )
+        self._preProcess = nn.Sequential(*preProcess)
         # DownSample -> 1/2, 1/2
         self._scales = nn.ModuleList([DownSample(channel) for _ in range(scale)])
         # conv -> 1/2, 1/2
-        self._postProcess = nn.ModuleList([conv3x3(channel, channel, stride=2) for _ in range(scale)])
+        self._postProcess = nn.ModuleList([conv3x3(channel, channel, stride=1) for _ in range(scale)])
 
     def forward(self, x: torch.Tensor):
         # 1/4, 1/4

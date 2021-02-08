@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.distributions import Categorical
 
 from mcqc.losses.structural import CompressionLoss
 
@@ -23,9 +24,9 @@ def vanilla_d_loss(logits_real, logits_fake):
 
 
 class Whole(nn.Module):
-    def __init__(self, k, channel):
+    def __init__(self, k, channel, nPreLayers):
         super().__init__()
-        self._compressor = MultiScaleCompressor(k, channel)
+        self._compressor = MultiScaleCompressor(k, channel, nPreLayers)
         # self._discriminator = FullDiscriminator(channel // 4)
 
         self._cLoss = CompressionLoss()

@@ -33,12 +33,12 @@ class Compressor(nn.Module):
 
 
 class MultiScaleCompressor(nn.Module):
-    def __init__(self, k , channel):
+    def __init__(self, k , channel, nPreLayers):
         super().__init__()
         stage = len(k)
-        self._encoder = MultiScaleEncoder(channel, stage)
+        self._encoder = MultiScaleEncoder(channel, nPreLayers, stage)
         self._quantizer = TransformerQuantizer(k, channel, 0.1)
-        self._decoder = MultiScaleDecoder(channel, stage)
+        self._decoder = MultiScaleDecoder(channel, nPreLayers, stage)
 
     def forward(self, x: torch.Tensor, temperature: float, hard: bool):
         latents = self._encoder(x)

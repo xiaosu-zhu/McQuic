@@ -229,11 +229,14 @@ class TransformerQuantizer(nn.Module):
             # [c, k] -> [k, c]
             codewords = codebook.weight
             # [n, c, h, w] -> [h, w, n, c]
-            encoderIn = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
             # [h, w, n, c] -> [h*w, n, c]
             # posisted = self._position(encoderIn).reshape(-1, n, c)
             # [h*w, n, c]
             x = self._encoder(encoderIn)
+            # x = self._dePosition(x.reshape(h, w, n, c)).reshape(-1, n, c)
             # x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
             # [h*w, n, k]
             logit = torch.matmul(x, codewords)
@@ -264,8 +267,11 @@ class TransformerQuantizer(nn.Module):
             # quantized -= 0.5 / (k - 1)
             # [h*w, n, c]
             quantized = codebook(quantized)
+            posistedQuantized = self._position(quantized.reshape(h, w, n, self._c)).reshape(-1, n, self._c)
             # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
-            deTransformed = self._decoder(quantized, quantized).permute(1, 2, 0).reshape(n, self._c, h, w)
+            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
+            # deTransformed = quantized.permute(1, 2, 0).reshape(n, c, h, w)
+            # deTransformed = self._dePosition(deTransformed.reshape(h, w, n, self._c)).permute(2, 3, 0, 1)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
         return quantizeds
@@ -283,24 +289,24 @@ class TransformerQuantizer(nn.Module):
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
-            # posisted = self._position(encoderIn).reshape(-1, n, c)
-            encoderIn = encoderIn.reshape(-1, n, c)
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
             # [h*w, n, c]
             # x = self._encoder(posisted)
             x = self._encoder(encoderIn)
+            # x = self._dePosition(x.reshape(h, w, n, c)).reshape(-1, n, c)
             # x = encoderIn
             # [h*w, n, k]
             # logit = prob(x, h, w)
             logit = torch.matmul(x, codewords)
-            # soft = (logit / temperature).softmax(-1)
-            # if hard:
-            #     hard = logit.argmax(-1)
-            #     hard = F.one_hot(hard, k)
-            #     sample = (hard - soft).detach() + soft
-            # else:
-            #     sample = soft
-            sample = F.gumbel_softmax(logit, temperature, hard)
-
+            soft = (logit / temperature).softmax(-1)
+            if hard:
+                hard = logit.argmax(-1)
+                hard = F.one_hot(hard, k)
+                sample = (hard - soft).detach() + soft
+            else:
+                sample = soft
+            # sample = F.gumbel_softmax(logit, temperature, hard)
+            # sample = logit
             # [h*w, N, c] <- [h*w, N, k] @ [k, C]
             quantized = codebook(sample)
 
@@ -311,7 +317,7 @@ class TransformerQuantizer(nn.Module):
             # quantized -= 0.5 / (k - 1)
             # [h*w, n, c]
             # quantized = squeeze(sample, h, w)
-            # posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
+            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
 
             # mixed = (mixin * encoderIn / (mixin + 1)) + (quantized / (mixin + 1))
 
@@ -319,9 +325,9 @@ class TransformerQuantizer(nn.Module):
 
             # mixed = mask * encoderIn.detach() + torch.logical_not(mask) * quantized
             # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
-            deTransformed = self._decoder(quantized, quantized).permute(1, 2, 0).reshape(n, c, h, w)
+            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
             # deTransformed = quantized.permute(1, 2, 0).reshape(n, c, h, w)
-            # deTransformed = self._dePosition(deTransformed).permute(2, 3, 0, 1)
+            # deTransformed = self._dePosition(deTransformed.reshape(h, w, n, c)).permute(2, 3, 0, 1)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
             codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
