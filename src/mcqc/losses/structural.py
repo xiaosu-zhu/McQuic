@@ -17,7 +17,7 @@ class CompressionLoss(nn.Module):
         for logit, q, latent in zip(logits, quantizeds, latents):
             # N, H, W, K -> NHW, K
             unNormlogit = logit.reshape(-1, logit.shape[-1])
-            reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.02, cv_coeff=0.05, eps=Consts.Eps)
+            reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.02, cv_coeff=0.02, eps=Consts.Eps)
             regs.append(reg)
         regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, regs

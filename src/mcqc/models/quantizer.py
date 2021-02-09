@@ -298,14 +298,14 @@ class TransformerQuantizer(nn.Module):
             # [h*w, n, k]
             # logit = prob(x, h, w)
             logit = torch.matmul(x, codewords)
-            soft = (logit / temperature).softmax(-1)
-            if hard:
-                hard = logit.argmax(-1)
-                hard = F.one_hot(hard, k)
-                sample = (hard - soft).detach() + soft
-            else:
-                sample = soft
-            # sample = F.gumbel_softmax(logit, temperature, hard)
+            # soft = (logit / temperature).softmax(-1)
+            # if hard:
+            #     hard = logit.argmax(-1)
+            #     hard = F.one_hot(hard, k)
+            #     sample = (hard - soft).detach() + soft
+            # else:
+            #     sample = soft
+            sample = F.gumbel_softmax(logit, temperature, hard)
             # sample = logit
             # [h*w, N, c] <- [h*w, N, k] @ [k, C]
             quantized = codebook(sample)
