@@ -81,7 +81,7 @@ class FullGAN(Algorithm):
                     dB = self._eval(testLoader, step)
                     # if dB > 28.5:
                     #     e2e = True
-                    self._saver.save(self._logger, model=self._model, optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
+                    self._saver.save(self._logger, model=self._model, optimG=self._optimizerG, schdrG=self._schedulerG, step=step+1, temp=initTemp)
                     self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step + 1) // 1000, self._schedulerG.get_last_lr()[0], initTemp)
                 if (step + 1) % 10000 == 0:
                     # self._schedulerD.step()
