@@ -3,7 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from mcqc.losses.structural import CompressionLoss
+from mcqc.losses.structural import CompressionLoss, QError
 
 from .compressor import MultiScaleCompressor
 from .discriminator import FullDiscriminator
@@ -30,9 +30,14 @@ class Whole(nn.Module):
         # self._discriminator = FullDiscriminator(channel // 4)
 
         self._cLoss = CompressionLoss()
+        self._qLoss = QError()
 
-    def forward(self, step, image, temperature, hard):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, temperature, hard)
+    @property
+    def codebook(self):
+        return self._compressor._quantizer._codebook
+
+    def forward(self, step, image, temperature, hard, cv):
+        restored, codes, latents, logits, quantizeds, codebooks = self._compressor(image, temperature, hard)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())
@@ -40,6 +45,7 @@ class Whole(nn.Module):
         #     return (None, None, None, dLoss, None), (restored, codes, latents, logits, quantizeds)
 
         # fake = self._discriminator(restored)
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codes, latents, logits, quantizeds)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codes, latents, logits, quantizeds, cv)
+        qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()
-        return (ssimLoss, l1l2Loss, reg, None, None), (restored, codes, latents, logits, quantizeds)
+        return (ssimLoss, l1l2Loss, reg, qError, None, None), (restored, codes, latents, logits, quantizeds)

@@ -1,4 +1,5 @@
 # User-defined paths
+*.npy
 log/
 data
 data/

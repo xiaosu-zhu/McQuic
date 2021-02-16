@@ -280,6 +280,7 @@ class TransformerQuantizer(nn.Module):
         quantizeds = list()
         codes = list()
         logits = list()
+        allCodewords = list()
         # probability = mixin / (mixin + 1.0)
         # rolloutDistribution = Bernoulli(probs=torch.tensor(probability).to(latents[0].device))
         for xRaw, prob, squeeze, codebook, k in zip(latents, self._prob, self._squeeze, self._codebook, self._k):
@@ -297,19 +298,21 @@ class TransformerQuantizer(nn.Module):
             # x = encoderIn
             # [h*w, n, k]
             # logit = prob(x, h, w)
-            logit = torch.matmul(x, codewords)
-            # soft = (logit / temperature).softmax(-1)
-            # if hard:
-            #     hard = logit.argmax(-1)
-            #     hard = F.one_hot(hard, k)
-            #     sample = (hard - soft).detach() + soft
-            # else:
-            #     sample = soft
-            sample = F.gumbel_softmax(logit, temperature, hard)
+            # logit = torch.matmul(x / (x ** 2).sum(-1, keepdim=True), codewords / (codewords ** 2).sum(0, keepdim=True))
+            logit = x @ codewords
+            soft = (logit / temperature).softmax(-1)
+            if hard:
+                hard = logit.argmax(-1)
+                hard = F.one_hot(hard, k)
+                sample = (hard - soft).detach() + soft
+            else:
+                sample = soft
+            # sample = F.gumbel_softmax(logit, temperature, hard)
             # sample = logit
             # [h*w, N, c] <- [h*w, N, k] @ [k, C]
             quantized = codebook(sample)
 
+            quantized += torch.randn_like(quantized)
             # quantized = sample
 
             # normalize
@@ -332,7 +335,8 @@ class TransformerQuantizer(nn.Module):
             quantizeds.append(deTransformed)
             codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
             logits.append(logit.reshape(n, h, w, k))
-        return quantizeds, codes, logits
+            allCodewords.append(codewords.t())
+        return quantizeds, codes, logits, allCodewords
 
 
 class VQuantizer(nn.Module):
