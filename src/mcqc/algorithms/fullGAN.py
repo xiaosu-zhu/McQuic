@@ -49,18 +49,13 @@ class FullGAN(Algorithm):
         regCoeff = self._config.Coef.reg
         dB = 0.0
         target = 17.0
-        cv = 0.0004
+        cv = 1e-6
         maxCV = 0.01
 
         if self._continue:
-            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
-            initTemp = loaded["temp"]
-            step = loaded["step"]
-
-        # print(self._model.module.codebook[0].weight.mean(0))
-        # self._model.module.codebook[0].weight.data.copy_(self._reInitializeCodebook(testLoader, self._model.module.codebook[0].weight))
-        # print(self._model.module.codebook[0].weight.mean(0))
-        # exit()
+            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model)# , optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
+            # initTemp = loaded["temp"]
+            # step = loaded["step"]
 
         dB = self._eval(testLoader, step)
 
@@ -68,7 +63,7 @@ class FullGAN(Algorithm):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg, qError, dLoss, gLoss), (restored, codes, latents, logits, quantizeds) = self._model(step, images, initTemp, True, cv)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(step, images, initTemp, True, cv)
                 if False:
                     self._optimizerD.zero_grad()
                     dLoss = dLoss.mean()
@@ -91,13 +86,13 @@ class FullGAN(Algorithm):
                     self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
                 if (step + 1) % 1000 == 0:
                     dB = self._eval(testLoader, step)
-                    # dB = 0.0
+                    dB = 0.0
                     if dB > target:
                         count += 1
                     else: count = 0
                     if count > 3:
                         # self._model.module.codebook[0].weight.data.copy_(self._reInitializeCodebook(testLoader, self._model.module.codebook[0].weight))
-                        cv = min(cv * 10.0, maxCV)
+                        cv = min(cv * 2.0, maxCV)
                         target += 2.0
                         count = 0
                         self._logger.info("Re-init codebook and change target to %d", int(target))
@@ -136,15 +131,6 @@ class FullGAN(Algorithm):
         remain = c.shape[0] - len(unique)
         current = 0
         notUsedC = c[list(x for x in range(c.shape[0]) if x not in unique)]
-        # print(unique, count)
-        # print(remain)
-        # print(len(notUsedC))
-        # print(c[unique])
-        # print(c[unique].mean())
-        # print(c[unique].std())
-        # print(notUsedC)
-        # print(notUsedC.mean())
-        # print(notUsedC.std())
         std = c[unique].std()
         for u, thisCount in zip(unique, count):
             proportion = thisCount / total
@@ -153,9 +139,6 @@ class FullGAN(Algorithm):
             reinitCodewords = notUsedC[current:current+thisPiece]
             current += thisPiece
             reinitCodewords.data.copy_(torch.from_numpy(np.random.randn(thisPiece, c.shape[-1]) * (float(std) ** 2) + codeword.detach().cpu().numpy()))
-            # print(reinitCodewords)
-            # print(thisPiece)
-            # print(current)
         c[list(x for x in range(c.shape[0]) if x not in unique)] = notUsedC
         return c.t()
 
@@ -170,13 +153,16 @@ class FullGAN(Algorithm):
             model = self._model._compressor
         model = model.cuda()
         bs = list()
+        zs = list()
         for raw in dataLoader:
             raw = raw.to(self._device, non_blocking=True)
 
             # restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
             latents = model._encoder(raw)
-            b = model._quantizer.encode(latents)
+            b, z = model._quantizer.encode(latents)
             bs.append(b[0].detach().cpu())
+            zs.append(z[0].detach().cpu())
+
             quantized = model._quantizer.decode(b)
             restored = model._decoder(quantized)
             raw = self._deTrans(raw)
@@ -186,10 +172,13 @@ class FullGAN(Algorithm):
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         np.save("b.npy", torch.cat(bs, 0).cpu().numpy())
+        np.save("c.npy", self._model.module.codebook[0].weight.detach().cpu().numpy())
+        np.save("z.npy", torch.cat(zs, 0).cpu().numpy())
         # exit()
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._saver.add_images("eval/res", restored, global_step=step)
+        del bs, zs
         return float(psnrs.mean())
 
     def _loss(self, step, images, restored, codes, latents, logits, quantizeds):

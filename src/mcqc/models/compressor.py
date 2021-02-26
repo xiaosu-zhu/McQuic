@@ -45,3 +45,18 @@ class MultiScaleCompressor(nn.Module):
         quantizeds, codes, logits, codewords = self._quantizer(latents, temperature, hard)
         restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds, codewords # newLogits
+
+
+class MultiScaleVQCompressor(nn.Module):
+    def __init__(self, k , channel, nPreLayers):
+        super().__init__()
+        stage = len(k)
+        self._encoder = MultiScaleEncoder(channel, nPreLayers, stage)
+        self._quantizer = VQuantizer(k, channel, 0.1)
+        self._decoder = MultiScaleDecoder(channel, nPreLayers, stage)
+
+    def forward(self, x: torch.Tensor, temperature: float, hard: bool):
+        latents = self._encoder(x)
+        quantizeds, codes, zszq, codewords = self._quantizer(latents, temperature, hard)
+        restored = torch.tanh(self._decoder(quantizeds))
+        return restored, codes, latents, zszq, quantizeds, codewords # newLogits

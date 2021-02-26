@@ -17,7 +17,7 @@ from mcqc import Consts, Config
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain, PlainWithGAN, FullGAN
 from mcqc.models.compressor import Compressor, MultiScaleCompressor
-from mcqc.models.whole import Whole
+from mcqc.models.whole import Whole, WholeVQ
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
