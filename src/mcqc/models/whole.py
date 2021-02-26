@@ -5,7 +5,7 @@ from torch.distributions import Categorical
 
 from mcqc.losses.structural import CompressionLoss, QError
 
-from .compressor import MultiScaleCompressor
+from .compressor import MultiScaleCompressor, MultiScaleVQCompressor
 from .discriminator import FullDiscriminator
 
 
@@ -45,7 +45,35 @@ class Whole(nn.Module):
         #     return (None, None, None, dLoss, None), (restored, codes, latents, logits, quantizeds)
 
         # fake = self._discriminator(restored)
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codes, latents, logits, quantizeds, cv)
-        qError = self._qLoss(latents, codebooks, logits, codes)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codebooks, latents, logits, quantizeds, cv)
+        # qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()
-        return (ssimLoss, l1l2Loss, reg, qError, None, None), (restored, codes, latents, logits, quantizeds)
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
+
+
+class WholeVQ(nn.Module):
+    def __init__(self, k, channel, nPreLayers):
+        super().__init__()
+        self._compressor = MultiScaleVQCompressor(k, channel, nPreLayers)
+        # self._discriminator = FullDiscriminator(channel // 4)
+
+        self._cLoss = CompressionLoss()
+        self._qLoss = QError()
+
+    @property
+    def codebook(self):
+        return self._compressor._quantizer._codebook
+
+    def forward(self, step, image, temperature, hard, cv):
+        restored, codes, latents, (zs, zq, softs), quantizeds, codebooks = self._compressor(image, temperature, hard)
+        # if step % 2 == 0:
+        #     real = self._discriminator(image.detach())
+        #     fake = self._discriminator(restored.detach())
+        #     dLoss = hinge_d_loss(real, fake)
+        #     return (None, None, None, dLoss, None), (restored, codes, latents, logits, quantizeds)
+
+        # fake = self._discriminator(restored)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codebooks, latents, None, quantizeds, cv)
+        qError = self._qLoss(zs, zq, softs)
+        # gLoss = -1 * fake.mean()
+        return (ssimLoss, l1l2Loss, qError), (restored, codes, latents, None, quantizeds)
