@@ -15,8 +15,8 @@ class QError(nn.Module):
             commit = F.mse_loss(z, zq.detach(), reduction='none').mean(axis=(0, 2))
             softQE = F.mse_loss(z.detach(), soft, reduction='none').mean(axis=(0, 2))
             softCommit = F.mse_loss(z, soft.detach(), reduction='none').mean(axis=(0, 2))
-            # joint = F.mse_loss(soft, zq, reduction='none').mean(axis=(0, 2))
-            loss += qe + 0.01 * commit + 0.1 * (softQE + 0.01 * softCommit)
+            joint = F.mse_loss(soft, zq, reduction='none').mean(axis=(0, 2))
+            loss += qe + softQE + 0.1 * joint # + 0.01 * commit + 0.1 * (softQE + 0.01 * softCommit)
         return loss
 
 class CompressionLoss(nn.Module):
@@ -30,7 +30,7 @@ class CompressionLoss(nn.Module):
             for logit, q, latent in zip(logits, quantizeds, latents):
                 # N, H, W, K -> NHW, K
                 unNormlogit = logit.reshape(len(logit), -1, logit.shape[-1])
-                reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.0, allowed_js=4.0, js_coeff=0.001, cv_coeff=cv, eps=Consts.Eps)
+                reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.0, allowed_js=4.0, js_coeff=cv * 100, cv_coeff=cv, eps=Consts.Eps)
                 regs.append(reg)
             regs = sum(regs)
             stdReg = 0.0
@@ -38,6 +38,17 @@ class CompressionLoss(nn.Module):
                 stdReg += ((codebook.std(0) - 1) ** 2).mean()
 
         return ssimLoss, l1Loss + l2Loss, regs # + 10 * stdReg
+
+class CompressionReward(nn.Module):
+    def forward(self, images, restored, codebooks, latents, logits, quantizeds, cv):
+        l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
+        l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
+        ssimLoss = 1 - ms_ssim((restored + 1), (images + 1), data_range=2.0, size_average=False)
+
+        ssim = 20 * (1.0 / ssimLoss.detach().sqrt()).log10()
+        psnr = 20 * (2.0 / l2Loss.detach().sqrt()).log10()
+
+        return ssim, psnr, ssimLoss, l1Loss + l2Loss
 
 
 def p2pJSDivLoss(probP, probQ, allowed_js, eps=1e-9):

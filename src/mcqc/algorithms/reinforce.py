@@ -63,16 +63,16 @@ class FullGAN(Algorithm):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(step, images, initTemp, True, cv)
-                if False:
-                    self._optimizerD.zero_grad()
+                if step % 2 == 0:
+                    self._optimizerG.zero_grad()
                     dLoss = dLoss.mean()
                     dLoss.backward()
                     # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
-                    self._optimizerD.step()
+                    self._optimizerG.step()
                     self._saver.add_scalar("loss/dLoss", dLoss, global_step=step)
                 else:
                     self._optimizerG.zero_grad()
+                    (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(step, images, initTemp, True, cv)
                     (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
                     # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
                     self._optimizerG.step()

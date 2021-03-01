@@ -3,7 +3,7 @@ from typing import Callable, List
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, Categorical
 from cfmUtils.base import Module
 from cfmUtils.metrics.pairwise import l2DistanceWithNorm, l2Distance
 
@@ -342,6 +342,116 @@ class TransformerQuantizer(nn.Module):
         return quantizeds, codes, logits, allCodewords
 
 
+class TransformerQuantizerRein(nn.Module):
+    def __init__(self, k: List[int], cin: int, rate: float = 0.1):
+        super().__init__()
+        # self._squeeze = nn.ModuleList([Transit(numCodewords, cin) for numCodewords in k])
+        # self._prob = nn.ModuleList([Transit(cin, numCodewords) for numCodewords in k])
+        self._squeeze = nn.ModuleList([Transit(numCodewords, cin, order="last") for numCodewords in k])
+        self._prob = nn.ModuleList([Transit(cin, numCodewords, order="first") for numCodewords in k])
+        # self._encoder = nn.Transformer(cin, )
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate, "gelu"), 12, None)
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate, "gelu"), 12, None)
+        self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
+        self._k = k
+        self._d = float(cin) ** 0.5
+        self._c = cin
+        self._position = PositionalEncoding2D(cin, 120, 120)
+        self._dePosition = DePositionalEncoding2D(cin, 120, 120)
+
+    def encode(self, latents):
+        samples = list()
+        zs = list()
+        for xRaw, codebook, k in zip(latents, self._codebook, self._k):
+            n, c, h, w = xRaw.shape
+            # [c, k] -> [k, c]
+            codewords = codebook.weight
+            # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
+            # [h, w, n, c] -> [h*w, n, c]
+            # posisted = self._position(encoderIn).reshape(-1, n, c)
+            # [h*w, n, c]
+            x = self._encoder(encoderIn)
+            zs.append(x)
+            # x = self._dePosition(x.reshape(h, w, n, c)).reshape(-1, n, c)
+            # x = self._encoder(posisted, codewords[:, None, ...].expand(k, n, c))
+            # [h*w, n, k]
+            logit = torch.matmul(x, codewords)
+            # logit = prob(x, h, w)
+            # [n, h, w]
+            sample = logit.permute(1, 0, 2).reshape(n, h, w, k).argmax(-1)
+            # sample = sample.reshape(n, h, w, k).argmax(-1)
+            samples.append(sample)
+        return samples, zs
+
+    def _oneHotEncode(self, b, k):
+        # [n, h, w, k]
+        return F.one_hot(b, k).float()
+
+    def decode(self, codes):
+        quantizeds = list()
+        for bRaw, codebook, k in zip(codes, self._codebook, self._k):
+            n, h, w = bRaw.shape
+            # [n, k, h, w], k is the one hot embedding
+            bRaw = self._oneHotEncode(bRaw, k)
+            # [n, h*w, k] = [n, h, w, k] -> [n, h*w, k]
+            b = bRaw.reshape(n, -1, k)
+            # [n, h*w, k] -> [h*w, n, k]
+            quantized = b.permute(1, 0, 2)
+            # quantized /= (k - 0.5) / (2 * k - 2)
+            # quantized -= 0.5 / (k - 1)
+            # [h*w, n, c]
+            quantized = codebook(quantized)
+
+            posistedQuantized = self._position(quantized.reshape(h, w, n, self._c)).reshape(-1, n, self._c)
+            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
+            # deTransformed = quantized.permute(1, 2, 0).reshape(n, c, h, w)
+            # deTransformed = self._dePosition(deTransformed.reshape(h, w, n, self._c)).permute(2, 3, 0, 1)
+            # [n, c, h, w]
+            quantizeds.append(deTransformed)
+        return quantizeds
+
+    def forward(self, latents, temperature, hard):
+        quantizeds = list()
+        codes = list()
+        logits = list()
+        allCodewords = list()
+        # probability = mixin / (mixin + 1.0)
+        # rolloutDistribution = Bernoulli(probs=torch.tensor(probability).to(latents[0].device))
+        for xRaw, prob, squeeze, codebook, k in zip(latents, self._prob, self._squeeze, self._codebook, self._k):
+            n, c, h, w = xRaw.shape
+            # [c, k]
+            codewords = codebook.weight
+            # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
+            # [h*w, n, c]
+            x = self._encoder(encoderIn)
+            # [h*w, n, k]
+            logit = x @ codewords
+            distribution = Categorical(logits=logit)
+            # [h*w, n]
+            sample = distribution.sample((1, )).permute(1, 0).reshape(n, h, w)
+            # [n, h, w, k] -> [h*w, n, k]
+            oneHot = self._oneHotEncode(sample, k).reshape(n, -1, k).permute(1, 0, 2)
+            # [h*w, N, c] <- [h*w, N, k] @ [k, C]
+            quantized = codebook(oneHot)
+            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
+
+            # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
+            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
+            # [n, c, h, w]
+            quantizeds.append(deTransformed)
+            codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
+            logits.append(logit.reshape(n, h, w, k))
+            allCodewords.append(codewords.t())
+        return quantizeds, codes, logits, allCodewords
+
+
 class VQuantizer(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
@@ -448,22 +558,21 @@ class VQuantizer(nn.Module):
 
             # find closest encodings
             # [h*w, n]
-            # nearest = d.argmin(-1)
+            nearest = d.argmin(-1)
             # [h*w, n, k]
-            # oneHot = F.one_hot(nearest, num_classes=k)
-            # quantized = oneHot.float() @ codewords.t()
-            # zq.append(quantized)
-
-            # quantized = (quantized - x).detach() + x
+            oneHot = F.one_hot(nearest, num_classes=k)
+            quantized = oneHot.float() @ codewords.t()
+            zq.append(quantized)
+            quantized = x # (quantized - x).detach() + x
 
             maxi, _ = d.max(-1, keepdim=True)
             norm = d / maxi
             soft = norm.softmax(-1)
             softs.append(soft @ codewords.t())
-            logit = norm
-            sample = F.gumbel_softmax(logit, temperature, hard)
-            quantized = codebook(sample)
-            zq.append(quantized)
+            # logit = norm
+            # sample = F.gumbel_softmax(logit, temperature, hard)
+            # quantized = codebook(sample)
+            # zq.append(quantized)
             # quantized += torch.randn_like(quantized)
             # quantized = sample
 
@@ -485,8 +594,8 @@ class VQuantizer(nn.Module):
             # deTransformed = self._dePosition(deTransformed.reshape(h, w, n, c)).permute(2, 3, 0, 1)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
-            codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
-            # codes.append(sample.permute(1, 0).reshape(n, h, w))
+            # codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
+            codes.append(nearest.permute(1, 0).reshape(n, h, w))
             # logits.append(logit.reshape(n, h, w, k))
             allCodewords.append(codewords.t())
         return quantizeds, codes, (zs, zq, softs), allCodewords
