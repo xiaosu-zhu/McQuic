@@ -18,7 +18,7 @@ def _ssimExp(source, target, datarange):
     return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
 
 
-class FullGAN(Algorithm):
+class Reinforce(Algorithm):
     def __init__(self, config: Config, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger):
         super().__init__()
         self._model = model
@@ -36,6 +36,8 @@ class FullGAN(Algorithm):
         self._config = config
         self._continue = continueTrain
 
+        self._eps = 0.2
+
     @staticmethod
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
@@ -49,7 +51,7 @@ class FullGAN(Algorithm):
         regCoeff = self._config.Coef.reg
         dB = 0.0
         target = 17.0
-        cv = 1e-6
+        cv = 1e-8
         maxCV = 0.1
 
         if self._continue:
@@ -64,26 +66,43 @@ class FullGAN(Algorithm):
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
                 if step % 2 == 0:
+                    with torch.no_grad():
+                        ssimLoss, l1l2Loss, rewards, restored, codes, latents, oldNegLogPs, logits, quantizeds, oldValues = self._model(images)
                     self._optimizerG.zero_grad()
-                    dLoss = dLoss.mean()
-                    dLoss.backward()
-                    # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                    logits1, negLogPs, values = self._model(images, codes)
+                    print(((logits[0] - logits1[0]) ** 2).sum())
+                    for oldNegLogP, negLogP, oldValue, value, reward in zip(oldNegLogPs, negLogPs, oldValues, values, rewards):
+                        ratio = torch.exp(oldNegLogP - negLogP)
+                        advantage = reward - value
+                        surrogate1 = -ratio * advantage
+                        surrogate2 = -ratio.clamp(1.0 - self._eps, 1.0 + self._eps) * advantage
+                        policyLoss = torch.max(surrogate1, surrogate2)
+
+                        valueClipped = oldValue + (value - oldValue).clamp(-self._eps, self._eps)
+                        surrogate1 = (reward - value) ** 2
+                        surrogate2 = (reward - valueClipped) ** 2
+                        valueLoss = torch.max(surrogate1, surrogate2)
+
+                    (policyLoss + valueLoss).mean().backward()
+                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
                     self._optimizerG.step()
-                    self._saver.add_scalar("loss/dLoss", dLoss, global_step=step)
+                    self._saver.add_scalar("loss/policyLoss", policyLoss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/valueLoss", valueLoss.mean(), global_step=step)
                 else:
                     self._optimizerG.zero_grad()
-                    (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(step, images, initTemp, True, cv)
-                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                    ssimLoss, l1l2Loss, reward, restored, codes, latents, oldNegLogP, logits, quantizeds, oldValue = self._model(images)
+                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean().backward()
+                    print(self._model.module.codebook.weight.grad)
+                    exit()
                     # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
                     self._optimizerG.step()
                     # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
-                    self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
                 if (step + 1) % 100 == 0:
                     self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
                     self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
-                    self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
+                    self._saver.add_histogram("code", codes[0].reshape(-1), global_step=step)
                 if (step + 1) % 1000 == 0:
                     dB = self._eval(testLoader, step)
                     if dB > target:

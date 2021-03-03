@@ -49,7 +49,7 @@ class FullGAN(Algorithm):
         regCoeff = self._config.Coef.reg
         dB = 0.0
         target = 17.0
-        cv = 1e-6
+        cv = 0.1
         maxCV = 0.1
 
         if self._continue:
@@ -167,7 +167,7 @@ class FullGAN(Algorithm):
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         np.save("b.npy", torch.cat(bs, 0).cpu().numpy())
-        np.save("c.npy", self._model.module.codebook[0].weight.detach().cpu().numpy())
+        # np.save("c.npy", self._model.module.codebook.weight.detach().cpu().numpy())
         np.save("z.npy", torch.cat(zs, 0).cpu().numpy())
         # exit()
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())

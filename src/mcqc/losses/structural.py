@@ -20,7 +20,7 @@ class QError(nn.Module):
         return loss
 
 class CompressionLoss(nn.Module):
-    def forward(self, images, restored, codebooks, latents, logits, quantizeds, cv):
+    def forward(self, images, restored, latents, logits, quantizeds, cv):
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - ms_ssim((restored + 1), (images + 1), data_range=2.0, size_average=False)
@@ -30,17 +30,13 @@ class CompressionLoss(nn.Module):
             for logit, q, latent in zip(logits, quantizeds, latents):
                 # N, H, W, K -> NHW, K
                 unNormlogit = logit.reshape(len(logit), -1, logit.shape[-1])
-                reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.0, allowed_js=4.0, js_coeff=cv * 100, cv_coeff=cv, eps=Consts.Eps)
+                reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.0, allowed_js=4.0, js_coeff=0.1, cv_coeff=cv, eps=Consts.Eps)
                 regs.append(reg)
             regs = sum(regs)
-            stdReg = 0.0
-            for codebook in codebooks:
-                stdReg += ((codebook.std(0) - 1) ** 2).mean()
-
         return ssimLoss, l1Loss + l2Loss, regs # + 10 * stdReg
 
 class CompressionReward(nn.Module):
-    def forward(self, images, restored, codebooks, latents, logits, quantizeds, cv):
+    def forward(self, images, restored):
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - ms_ssim((restored + 1), (images + 1), data_range=2.0, size_average=False)
@@ -88,13 +84,13 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_js=0.0, glob
     '''
     p = torch.softmax(logits, dim=-1)
 
-    shuffleIdx = torch.randperm(logits.shape[1])
-    half = logits.shape[1] // 2
-    jsEstimation = p2pJSDivLoss(p[:, shuffleIdx[:half]], p[:, shuffleIdx[half:]], allowed_js, eps)
+    # shuffleIdx = torch.randperm(logits.shape[1])
+    # half = logits.shape[1] // 2
+    # jsEstimation = p2pJSDivLoss(p[:, shuffleIdx[:half]], p[:, shuffleIdx[half:]], allowed_js, eps)
 
     # p = p.reshape(-1, logits.shape[-1])
     load = torch.mean(p, dim=1)  # [N, codebook_size]
     mean = load.mean(-1)
     variance = ((load - mean[:, None]) ** 2).mean(-1)
     cvPenalty = variance / (mean ** 2 + eps)
-    return js_coeff * jsEstimation + cv_coeff * cvPenalty
+    return cv_coeff * cvPenalty
