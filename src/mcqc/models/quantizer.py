@@ -11,7 +11,7 @@ from cfmUtils.metrics.pairwise import l2DistanceWithNorm, l2Distance
 from mcqc.layers.layerGroup import LayerGroup
 from mcqc.layers.gumbelSoftmax import GumbelSoftmax
 from mcqc.layers.blocks import ResidualBlock
-from mcqc.layers.positional import PositionalEncoding2D, PositionalEncoding1D, DePositionalEncoding2D
+from mcqc.layers.positional import PositionalEncoding2D, PositionalEncoding1D, DePositionalEncoding2D, LearnablePositionalEncoding2D
 from mcqc import Consts
 
 class _resBlock(nn.Module):
@@ -209,10 +209,11 @@ class Transit(nn.Module):
 class TransformerQuantizer(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, activation="gelu"), 1)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, activation="gelu"), 1)
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
         for i, numCodewords in enumerate(k):
-            setattr(self, f"codebook{i}", nn.Parameter(torch.randn(numCodewords, cin)))
+            setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(numCodewords, cin))))
+            # setattr(self, f"palette{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cin))))
         self._codebookAsKey = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
         self._codebookAsValue = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
         self._xAsQuery = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
@@ -221,7 +222,6 @@ class TransformerQuantizer(nn.Module):
         self._d = float(cin) ** 0.5
         self._c = cin
         self._position = PositionalEncoding2D(cin, 120, 120)
-        self._dePosition = DePositionalEncoding2D(cin, 120, 120)
 
     def _attention(self, x, i, evalMode):
         codewords = getattr(self, f"codebook{i}")
@@ -258,40 +258,44 @@ class TransformerQuantizer(nn.Module):
         # [h*w, n, c]
         return oneHot @ value
 
-    def encode(self, latents):
+    def encode(self, latents, transform):
         samples = list()
         zs = list()
         for i, xRaw in enumerate(latents):
             n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1)
-            # [h, w, n, c] -> [h*w, n, c]
-            encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # [h*w, n, c]
-            # x = encoderIn.reshape(-1, n ,c)
-            x = self._encoder(encoderIn)
+            if transform:
+                # [h, w, n, c] -> [h*w, n, c]
+                encoderIn = self._position(encoderIn).reshape(-1, n, c)
+                x = self._encoder(encoderIn)
+            else:
+                # [h*w, n, c]
+                x = encoderIn.reshape(-1, n ,c)
             zs.append(x)
             # [n, h, w]
             sample = self._attentionEncoder(x, i).permute(1, 0).reshape(n, h, w)
             samples.append(sample)
         return samples, zs
 
-    def decode(self, codes):
+    def decode(self, codes, transform):
         quantizeds = list()
         for i, bRaw in enumerate(codes):
             n, h, w = bRaw.shape
             # [h*w, n, c]
             quantized = self._attentionDecoder(bRaw.reshape(n, h*w).permute(1, 0), i)
 
-            posistedQuantized = self._position(quantized.reshape(h, w, n, self._c)).reshape(-1, n, self._c)
-            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
-            # deTransformed = quantized.reshape(h, w, n, self._c).permute(2, 3, 0, 1)
-            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
+            if transform:
+                posistedQuantized = self._position(quantized.reshape(h, w, n, self._c)).reshape(-1, n, self._c)
+                deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
+            else:
+                # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
+                deTransformed = quantized.reshape(h, w, n, self._c).permute(2, 3, 0, 1)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
         return quantizeds
 
-    def forward(self, latents, *_):
+    def forward(self, latents, transform):
         quantizeds = list()
         codes = list()
         logits = list()
@@ -300,19 +304,23 @@ class TransformerQuantizer(nn.Module):
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
-            encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # [h*w, n, c]
-            # x = encoderIn.reshape(-1, n ,c)
-            x = self._encoder(encoderIn)
+            if transform:
+                encoderIn = self._position(encoderIn).reshape(-1, n, c)
+                # [h*w, n, c]
+                x = self._encoder(encoderIn)
+            else:
+                x = encoderIn.reshape(-1, n ,c)
             # similar to scaled dot-product attention
             # [h*w, N, c]
             quantized, sample, logit = self._attention(x, i, False)
-            # [h*w, n, c]
-            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
+            if transform:
+                # [h*w, n, c]
+                posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
+                deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
+            else:
+                # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
+                deTransformed = quantized.reshape(h, w, n, c).permute(2, 3, 0, 1)
 
-            # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
-            # deTransformed = quantized.reshape(h, w, n, c).permute(2, 3, 0, 1)
-            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
             # [n, c, h, w]
             quantizeds.append(deTransformed)
             codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
