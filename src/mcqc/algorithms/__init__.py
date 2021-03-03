@@ -8,3 +8,4 @@ Exports:
 from .plain import Plain
 from .gan import PlainWithGAN
 from .fullGAN import FullGAN
+from .reinforce import Reinforce

@@ -5,7 +5,8 @@ from torch.distributions import Categorical
 
 from mcqc.losses.structural import CompressionLoss, QError, CompressionReward
 
-from .compressor import MultiScaleCompressor, MultiScaleVQCompressor
+from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein
+from .critic import SimpleCritic
 from .discriminator import FullDiscriminator
 
 
@@ -32,12 +33,12 @@ class Whole(nn.Module):
         self._cLoss = CompressionLoss()
         self._qLoss = QError()
 
-    @property
-    def codebook(self):
-        return self._compressor._quantizer._codebook
+    # @property
+    # def codebook(self):
+    #     return self._compressor._quantizer._codebook0
 
     def forward(self, step, image, temperature, hard, cv):
-        restored, codes, latents, logits, quantizeds, codebooks = self._compressor(image, temperature, hard)
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temperature, hard)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())
@@ -45,7 +46,7 @@ class Whole(nn.Module):
         #     return (None, None, None, dLoss, None), (restored, codes, latents, logits, quantizeds)
 
         # fake = self._discriminator(restored)
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codebooks, latents, logits, quantizeds, cv)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv)
         # qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()
         return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
@@ -61,10 +62,15 @@ class WholeRein(nn.Module):
 
     @property
     def codebook(self):
-        return self._compressor._quantizer._codebook
+        return self._compressor._quantizer._codebook0
 
-    def forward(self, step, image, temperature, hard, cv):
-        restored, codes, latents, negLogPs, logits, quantizeds = self._compressor(image, temperature, hard)
+    def forward(self, image, codes=None):
+        if codes is not None:
+            logits, negLogPs = self._compressor(image, codes)
+            values = self._critic(logits)
+            return logits, negLogPs, values
+
+        restored, codes, latents, negLogPs, logits, quantizeds = self._compressor(image)
         values = self._critic(logits)
         for code in codes:
             _, count = torch.unique(code, False, return_counts=True, dim=0)
@@ -75,7 +81,7 @@ class WholeRein(nn.Module):
 
         # qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()
-        return ssimLoss, l1l2Loss, reward, restored, codes, latents, negLogPs, logits, quantizeds, values
+        return ssimLoss, l1l2Loss, [reward], restored, codes, latents, negLogPs, logits, quantizeds, values
 
 
 class WholeVQ(nn.Module):

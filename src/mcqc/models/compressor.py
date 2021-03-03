@@ -9,7 +9,7 @@ from pytorch_msssim import ms_ssim
 
 from .encoder import Encoder, MultiScaleEncoder
 from .decoder import Decoder, MultiScaleDecoder
-from .quantizer import Quantizer, MultiCodebookQuantizer, TransformerQuantizer, VQuantizer
+from .quantizer import Quantizer, MultiCodebookQuantizer, TransformerQuantizer, VQuantizer, TransformerQuantizerRein
 from mcqc.losses.structural import CompressionLoss
 
 
@@ -42,9 +42,9 @@ class MultiScaleCompressor(nn.Module):
 
     def forward(self, x: torch.Tensor, temperature: float, hard: bool):
         latents = self._encoder(x)
-        quantizeds, codes, logits, codewords = self._quantizer(latents, temperature, hard)
+        quantizeds, codes, logits = self._quantizer(latents, temperature, hard)
         restored = torch.tanh(self._decoder(quantizeds))
-        return restored, codes, latents, logits, quantizeds, codewords # newLogits
+        return restored, codes, latents, logits, quantizeds
 
 
 class MultiScaleCompressorRein(nn.Module):
@@ -55,9 +55,12 @@ class MultiScaleCompressorRein(nn.Module):
         self._quantizer = TransformerQuantizerRein(k, channel, 0.1)
         self._decoder = MultiScaleDecoder(channel, nPreLayers, stage)
 
-    def forward(self, x: torch.Tensor, temperature: float, hard: bool):
+    def forward(self, x: torch.Tensor, codes=None):
         latents = self._encoder(x)
-        quantizeds, codes, logits, negLogPs = self._quantizer(latents, temperature, hard)
+        if codes is not None:
+            logits, negLogPs = self._quantizer(latents, codes)
+            return logits, negLogPs
+        quantizeds, codes, logits, negLogPs = self._quantizer(latents, codes)
         restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, negLogPs, logits, quantizeds
 
