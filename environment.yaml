@@ -1,0 +1,22 @@
+name: pytorch
+channels:
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - python
+  - pip
+  - pytorch>1.7
+  - torchvision
+  - cudatoolkit
+  - numpy=1.19
+  - scipy=1.5
+  - scikit-learn=0.23
+  - tensorboard=2.3
+  - tqdm=4.51
+  - pynvml=8.0
+  - pip:
+    - deprecated
+    - pyyaml
+    - pytorch_msssim
+    - opencv-python
