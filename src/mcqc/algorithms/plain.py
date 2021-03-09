@@ -46,7 +46,7 @@ class Plain(Algorithm):
         #     ]
         # print(list(len(i["params"]) for i in optimizer_grouped_parameters))
         # exit()
-        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
+        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 0) #1e-5)
         # self._optimizer = torch.optim.Adam(parameters, amsgrad=True)
         self._scheduler = scheduler(self._optimizer)
         # self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
@@ -103,7 +103,7 @@ class Plain(Algorithm):
                 # self._saver.add_scalar("loss/lr", self._scheduler.get_last_lr()[0], global_step=step)
                 # self._scheduler.step()
                 with torch.no_grad():
-                    cv = 10 ** float(l1l2Loss.mean() * -10)
+                    cv = 10 ** float(l1l2Loss.mean() * -100)
                 if (step + 1) % 100 == 0:
                     self._saver.add_scalar("loss/unique_codes", np.unique(codes[0].reshape(-1).detach().cpu().numpy()).shape[0], global_step=step)
                     # self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
