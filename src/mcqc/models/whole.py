@@ -37,8 +37,8 @@ class Whole(nn.Module):
     # def codebook(self):
     #     return self._compressor._quantizer._codebook0
 
-    def forward(self, image, transform, cv):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, transform)
+    def forward(self, image, coeff, transform, cv):
+        restored, codes, latents, logits, quantizeds = self._compressor(image, coeff, transform)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())
