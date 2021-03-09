@@ -1,5 +1,6 @@
 from typing import Type, Callable, Iterator
 from logging import Logger
+import math
 
 import numpy as np
 import torch
@@ -17,6 +18,12 @@ from mcqc import Consts, Config
 def _ssimExp(source, target, datarange):
     return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
 
+WARMUP_RATIO = 10000 ** -1.5
+
+def _transformerLR(epoch):
+    epoch = epoch + 1
+    return min(epoch ** -0.5, epoch * WARMUP_RATIO)
+
 
 class Plain(Algorithm):
     def __init__(self, config: Config, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger):
@@ -27,29 +34,45 @@ class Plain(Algorithm):
         else:
             self._model = self._model.to(device)
         self._device = device
-        # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
-        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 0)
-        # self._schedulerD = scheduler(self._optimizerD)
+        # parameters = self._model.named_parameters()
+        # no_decay = ["bias", "norm"]
+        # print([n for n, p in parameters])
+        # exit()
+        # optimizer_grouped_parameters = [
+        #     {'params': [p for n, p in parameters if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-5,
+        #     'lr': config.LearningRate},
+        #     {'params': [p for n, p in parameters if any(nd in n for nd in no_decay)], 'weight_decay': 0.0,
+        #     'lr': config.LearningRate}
+        #     ]
+        # print(list(len(i["params"]) for i in optimizer_grouped_parameters))
+        # exit()
+        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
+        # self._optimizer = torch.optim.Adam(parameters, amsgrad=True)
         self._scheduler = scheduler(self._optimizer)
+        # self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
+
+        # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
+        # self._schedulerD = scheduler(self._optimizerD)
         self._saver = saver
         self._logger = logger
         self._config = config
         self._continue = continueTrain
+        # self._accumulatedBatches = 32 //  config.BatchSize
+
 
     @staticmethod
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
-        initTemp = 1.0
-        minTemp = 0.1
+        initTemp = 0.01
         step = 0
         flag = False
         count = 0
         regCoeff = self._config.Coef.reg
         dB = 0.0
         target = 21.0
-        cv = 0.1
+        cv = 0.0
         maxCV = 0.1
 
         if self._continue:
@@ -63,24 +86,38 @@ class Plain(Algorithm):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, flag, cv)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, initTemp, flag, cv)
                 self._optimizer.zero_grad()
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
-                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
+                # if (step + 1) % self._accumulatedBatches == 0:
+                #     self._optimizer.step()
+                #     self._optimizer.zero_grad()
+                # (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                # (self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                (self._config.Coef.ssim * ssimLoss + self._config.Coef.reg * reg).mean().backward()
+                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
                 self._optimizer.step()
                 # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
                 self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
                 self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
                 self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
+                # self._saver.add_scalar("loss/lr", self._scheduler.get_last_lr()[0], global_step=step)
+                # self._scheduler.step()
+                with torch.no_grad():
+                    cv = 10 ** float(l1l2Loss.mean() * -10)
                 if (step + 1) % 100 == 0:
+                    self._saver.add_scalar("loss/unique_codes", np.unique(codes[0].reshape(-1).detach().cpu().numpy()).shape[0], global_step=step)
+                    # self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
+                if (step + 1) % 1000 == 0:
                     self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
                     self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
-                    self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
-                if (step + 1) % 1000 == 0:
+                    # initTemp = min(initTemp * 1.1, 1.0)
                     dB = self._eval(testLoader, step, flag)
-                    if dB > target and not flag:
-                        flag = True
-                        self._logger.info("Insert Transformer", int(target))
+                    # if dB > target and not flag:
+                    #     flag = True
+                    #     self._logger.info("Insert Transformer")
+                    #     del self._optimizer
+                    #     del self._scheduler
+                    #     self._createFn()
                     self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
                     self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
                 if (step + 1) % 10000 == 0 and 100000 < step < 130000:
@@ -156,12 +193,14 @@ class Plain(Algorithm):
             psnrs.append(psnr(restored.detach(), raw.detach()))
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
-        np.save("b.npy", torch.cat(bs, 0).cpu().numpy())
+        b = torch.cat(bs, 0).cpu().numpy()
+        np.save("b.npy", b)
         # np.save("c.npy", self._model.module.codebook.weight.detach().cpu().numpy())
         np.save("z.npy", torch.cat(zs, 0).cpu().numpy())
         # exit()
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._saver.add_images("eval/res", restored, global_step=step)
+        self._saver.add_scalar("eval/unique_codes", np.unique(b).shape[0], global_step=step)
         del bs, zs
         return float(psnrs.mean())

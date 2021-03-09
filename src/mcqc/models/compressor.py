@@ -9,7 +9,7 @@ from pytorch_msssim import ms_ssim
 
 from .encoder import Encoder, MultiScaleEncoder
 from .decoder import Decoder, MultiScaleDecoder
-from .quantizer import Quantizer, MultiCodebookQuantizer, TransformerQuantizer, VQuantizer, TransformerQuantizerRein
+from .quantizer import TransformerQuantizer, VQuantizer, TransformerQuantizerRein
 from mcqc.losses.structural import CompressionLoss
 
 
@@ -40,9 +40,9 @@ class MultiScaleCompressor(nn.Module):
         self._quantizer = TransformerQuantizer(k, channel, 0.1)
         self._decoder = MultiScaleDecoder(channel, nPreLayers, stage)
 
-    def forward(self, x: torch.Tensor, temperature: float, hard: bool):
+    def forward(self, x: torch.Tensor, coeff: float, transform: bool):
         latents = self._encoder(x)
-        quantizeds, codes, logits = self._quantizer(latents, temperature, hard)
+        quantizeds, codes, logits = self._quantizer(latents, coeff, transform)
         restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds
 
