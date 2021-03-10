@@ -34,19 +34,16 @@ class Plain(Algorithm):
         else:
             self._model = self._model.to(device)
         self._device = device
-        # parameters = self._model.named_parameters()
-        # no_decay = ["bias", "norm"]
-        # print([n for n, p in parameters])
-        # exit()
-        # optimizer_grouped_parameters = [
-        #     {'params': [p for n, p in parameters if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-5,
-        #     'lr': config.LearningRate},
-        #     {'params': [p for n, p in parameters if any(nd in n for nd in no_decay)], 'weight_decay': 0.0,
-        #     'lr': config.LearningRate}
-        #     ]
-        # print(list(len(i["params"]) for i in optimizer_grouped_parameters))
-        # exit()
-        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 0) #1e-5)
+        parameters = list(self._model.named_parameters())
+        no_decay = ["bias", "norm", "gdn"]
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in parameters if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-5,
+            'lr': config.LearningRate},
+            {'params': [p for n, p in parameters if any(nd in n for nd in no_decay)], 'weight_decay': 0.0,
+            'lr': config.LearningRate}
+            ]
+        self._optimizer = optimizer(optimizer_grouped_parameters)
+        # self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
         # self._optimizer = torch.optim.Adam(parameters, amsgrad=True)
         self._scheduler = scheduler(self._optimizer)
         # self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
@@ -103,7 +100,7 @@ class Plain(Algorithm):
                 # self._saver.add_scalar("loss/lr", self._scheduler.get_last_lr()[0], global_step=step)
                 # self._scheduler.step()
                 with torch.no_grad():
-                    cv = 10 ** float(l1l2Loss.mean() * -100)
+                    cv = 10 ** float(l1l2Loss.mean() * -1)
                 if (step + 1) % 100 == 0:
                     self._saver.add_scalar("loss/unique_codes", np.unique(codes[0].reshape(-1).detach().cpu().numpy()).shape[0], global_step=step)
                     # self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)

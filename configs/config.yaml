@@ -4,7 +4,7 @@ vRam: 16000
 wantsMore: false
 dataset: clic/train
 valDataset: clic/valid
-batchSize: 8
+batchSize: 4
 lr: 1.e-5
 coef:
     ssim: 1.0
