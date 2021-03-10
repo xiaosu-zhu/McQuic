@@ -18,8 +18,8 @@ from mcqc import Consts
 class TransformerQuantizer(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 1)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 1)
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 6)
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 6)
         for i, numCodewords in enumerate(k):
             setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cin))))
             # setattr(self, f"tCodebook{i}", nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(numCodewords, cin))))
