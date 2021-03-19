@@ -12,14 +12,13 @@ from cfmUtils.saver import Saver
 from cfmUtils.runtime import Timer
 
 from mcqc import Consts
-from mcqc.models.compressor import Compressor
 from cfmUtils.datasets import Zip
 
 from .helpers import ms_ssim, psnr
 
 
 class Eval:
-    def __init__(self, savePath: str, dataset: Dataset, model: Compressor, device: str = "cuda", logger: Logger = None):
+    def __init__(self, savePath: str, dataset: Dataset, model, device: str = "cuda", logger: Logger = None):
         self._device = device
         self._model = model.to(device)
         Saver.load(savePath, logger, model=self._model)

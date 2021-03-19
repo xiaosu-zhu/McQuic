@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 import torch
+import storch
 from torch import nn
 from torch.distributions import Categorical
 from cfmUtils.saver import Saver
@@ -15,17 +16,8 @@ from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.models.whole import Whole
 from mcqc import Consts, Config
 
-def _ssimExp(source, target, datarange):
-    return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
 
-WARMUP_RATIO = 10000 ** -1.5
-
-def _transformerLR(epoch):
-    epoch = epoch + 1
-    return min(epoch ** -0.5, epoch * WARMUP_RATIO)
-
-
-class Plain(Algorithm):
+class Storch(Algorithm):
     def __init__(self, config: Config, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger):
         super().__init__()
         self._model = model
@@ -35,13 +27,6 @@ class Plain(Algorithm):
             self._model = self._model.to(device)
         self._device = device
         parameters = list(self._model.named_parameters())
-        no_decay = ["bias", "norm", "gdn"]
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in parameters if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-5,
-            'lr': config.LearningRate},
-            {'params': [p for n, p in parameters if any(nd in n for nd in no_decay)], 'weight_decay': 0.0,
-            'lr': config.LearningRate}
-            ]
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
         self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 0)
         self._scheduler = scheduler(self._optimizer)
@@ -82,45 +67,46 @@ class Plain(Algorithm):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, flag, cv)
                 self._optimizer.zero_grad()
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, flag, cv)
+                nowLoss = storch.backward()
                 # if (step + 1) % self._accumulatedBatches == 0:
                 #     self._optimizer.step()
                 #     self._optimizer.zero_grad()
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                # (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
                 # (self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
                 # (self._config.Coef.ssim * ssimLoss + self._config.Coef.reg * reg).mean().backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
                 self._optimizer.step()
                 # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
-                self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
-                self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
-                self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
+                self._saver.add_scalar("loss/totalLoss", nowLoss.item(), global_step=step)
+                # self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
+                # self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
                 # self._saver.add_scalar("loss/lr", self._scheduler.get_last_lr()[0], global_step=step)
                 # self._scheduler.step()
                 with torch.no_grad():
-                    cv = 10 ** float(l1l2Loss.mean() * -10)
+                    cv = 10 ** float(nowLoss.item() * -10)
                     # initTemp = max(initTemp * 0.9995, 0.1)
-                # if (step + 1) % 100 == 0:
-                #     self._saver.add_scalar("loss/unique_codes", np.unique(codes[0].reshape(-1).detach().cpu().numpy()).shape[0], global_step=step)
-                    # self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
-                if (step + 1) % 1000 == 0:
-                    self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
-                    self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
-                    # initTemp = min(initTemp * 1.1, 1.0)
-                    dB = self._eval(testLoader, step, flag)
-                    # if dB > target and not flag:
-                    #     flag = True
-                    #     self._logger.info("Insert Transformer")
-                    #     del self._optimizer
-                    #     del self._scheduler
-                    #     self._createFn()
-                    self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
-                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
-                if (step + 1) % 10000 == 0 and 100000 < step < 130000:
-                    # self._schedulerD.step()
-                    self._scheduler.step()
-                    self._logger.info("reduce lr")
+                    # if (step + 1) % 100 == 0:
+                    #     self._saver.add_scalar("loss/unique_codes", np.unique(codes[0].reshape(-1).detach().cpu().numpy()).shape[0], global_step=step)
+                        # self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
+                    if (step + 1) % 1000 == 0:
+                        self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
+                        self._saver.add_images("train/res", self._deTrans(restored)._tensor, global_step=step)
+                        # initTemp = min(initTemp * 1.1, 1.0)
+                        dB = self._eval(testLoader, step, flag)
+                        # if dB > target and not flag:
+                        #     flag = True
+                        #     self._logger.info("Insert Transformer")
+                        #     del self._optimizer
+                        #     del self._scheduler
+                        #     self._createFn()
+                        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
+                        self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
+                    if (step + 1) % 10000 == 0 and 100000 < step < 130000:
+                        # self._schedulerD.step()
+                        self._scheduler.step()
+                        self._logger.info("reduce lr")
                 # initTemp = max(initTemp * 0.9999, minTemp)
                 step += 1
                 # cv *= min(cv * 1.0001, maxCV)

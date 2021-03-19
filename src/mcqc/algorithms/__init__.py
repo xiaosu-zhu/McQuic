@@ -8,3 +8,4 @@ Exports:
 from .plain import Plain
 from .gan import PlainWithGAN
 from .reinforce import Reinforce
+from .storch import Storch
