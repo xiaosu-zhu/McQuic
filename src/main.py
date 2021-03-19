@@ -15,9 +15,8 @@ from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
-from mcqc.algorithms import Plain, PlainWithGAN, Reinforce
-from mcqc.models.compressor import Compressor, MultiScaleCompressor
-from mcqc.models.whole import Whole, WholeVQ, WholeRein
+from mcqc.algorithms import Plain, PlainWithGAN, Reinforce, Storch
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeStorch
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -83,8 +82,8 @@ def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
 
     logger.info("\r\n%s", summary(config))
 
-    model = Whole(config.Model.k, config.Model.channel, config.Model.nPreLayers)
-    method = Plain(config, model, "cuda", lambda lr, params, weight_decay: torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.5), saver, FLAGS.get_flag_value("continue", False), logger)
+    model = WholeStorch(config.Model.k, config.Model.channel, config.Model.nPreLayers)
+    method = Storch(config, model, "cuda", lambda lr, params, weight_decay: torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.5), saver, FLAGS.get_flag_value("continue", False), logger)
 
     method.run(torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True, drop_last=True), torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True, drop_last=True))
 

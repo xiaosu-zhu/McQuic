@@ -2,9 +2,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from pytorch_msssim import ms_ssim
 
 from mcqc import Consts
+from .ssim import ms_ssim
 
 
 class QError(nn.Module):
@@ -27,10 +27,10 @@ class CompressionLoss(nn.Module):
 
         regs = list()
         if logits is not None:
-            for logit, q, latent in zip(logits, quantizeds, latents):
-                # N, H, W, K -> NHW, K
+            for logit in logits:
+                # N, H, W, K -> N, HW, K
                 unNormlogit = logit.reshape(len(logit), -1, logit.shape[-1])
-                reg = compute_penalties(unNormlogit, individual_entropy_coeff=0.0, allowed_js=4.0, js_coeff=0.1, cv_coeff=cv, eps=Consts.Eps)
+                reg = compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
                 regs.append(reg)
             regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, regs # + 10 * stdReg
@@ -56,7 +56,7 @@ def p2pJSDivLoss(probP, probQ, allowed_js, eps=1e-9):
     return jsEstimation.mean(axis=(1, 2))
 
 
-def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_js=0.0, global_entropy_coeff=0.0, js_coeff=0.0,
+def compute_penalties(logits, allowed_entropy=0.1, individual_entropy_coeff=0.0, allowed_js=0.0, global_entropy_coeff=0.0, js_coeff=0.0,
                       cv_coeff=0.0, eps=1e-9):
     """
     Computes typical regularizers for gumbel-softmax quantization
@@ -69,9 +69,11 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_js=0.0, glob
         this value should typically be negative (e.g. -1), works similar to cv_coeff
     """
     # logp = torch.log_softmax(logits, dim=-1)
-    # [batch_size, ..., codebook_size]
+    # # [batch_size, ..., codebook_size]
 
+    # # [N, h*w]
     # individual_entropy_values = -torch.sum(p * logp, dim=-1)
+    # individual_entropy = individual_entropy_values.mean(-1)
     # clipped_entropy = torch.nn.functional.relu(allowed_entropy - individual_entropy_values + eps).mean()
     # individual_entropy = (individual_entropy_values.mean() - clipped_entropy).detach() + clipped_entropy
 
@@ -82,15 +84,18 @@ def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_js=0.0, glob
     distributions = Categorical(logits=logits.reshape(-1, logits.shape[-1]))
     minSingle = individual_entropy_coeff * distributions.entropy().mean()
     '''
-    p = torch.softmax(logits, dim=-1)
 
     # shuffleIdx = torch.randperm(logits.shape[1])
     # half = logits.shape[1] // 2
     # jsEstimation = p2pJSDivLoss(p[:, shuffleIdx[:half]], p[:, shuffleIdx[half:]], allowed_js, eps)
 
+    p = torch.softmax(logits, dim=-1)
     # p = p.reshape(-1, logits.shape[-1])
+    # [N, K]
     load = torch.mean(p, dim=1)  # [N, codebook_size]
+    # [N, ]
     mean = load.mean(-1)
+    # [N, ]
     variance = ((load - mean[:, None]) ** 2).mean(-1)
     cvPenalty = variance / (mean ** 2 + eps)
     return cv_coeff * cvPenalty

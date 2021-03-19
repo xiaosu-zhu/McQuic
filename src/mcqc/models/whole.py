@@ -2,10 +2,11 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
+import storch
 
 from mcqc.losses.structural import CompressionLoss, QError, CompressionReward
 
-from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein
+from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch
 from .critic import SimpleCritic
 from .discriminator import FullDiscriminator
 
@@ -37,8 +38,8 @@ class Whole(nn.Module):
     # def codebook(self):
     #     return self._compressor._quantizer._codebook0
 
-    def forward(self, image, coeff, transform, cv):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, coeff, transform)
+    def forward(self, image, temp, transform, cv):
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, transform)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())
@@ -52,32 +53,63 @@ class Whole(nn.Module):
         return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
 
 
+
+class WholeStorch(nn.Module):
+    def __init__(self, k, channel, nPreLayers):
+        super().__init__()
+        self._compressor = MultiScaleCompressorStorch(k, channel, nPreLayers)
+        # self._discriminator = FullDiscriminator(channel // 4)
+
+        self._cLoss = CompressionLoss()
+        self._qLoss = QError()
+
+    # @property
+    # def codebook(self):
+    #     return self._compressor._quantizer._codebook0
+
+    def forward(self, image, temp, transform, cv):
+        image = storch.denote_independent(image, 0, "data")
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, transform)
+        # if step % 2 == 0:
+        #     real = self._discriminator(image.detach())
+        #     fake = self._discriminator(restored.detach())
+        #     dLoss = hinge_d_loss(real, fake)
+        #     return (None, None, None, dLoss, None), (restored, codes, latents, logits, quantizeds)
+
+        # fake = self._discriminator(restored)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv)
+        storch.add_cost(ssimLoss + l1l2Loss + reg, "reconstruction")
+        # qError = self._qLoss(latents, codebooks, logits, codes)
+        # gLoss = -1 * fake.mean()
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
+
+
 class WholeRein(nn.Module):
     def __init__(self, k, channel, nPreLayers):
         super().__init__()
         self._compressor = MultiScaleCompressorRein(k, channel, nPreLayers)
-        self._critic = SimpleCritic(k)
+        self._critic = SimpleCritic(channel)
         self._reward = CompressionReward()
         self._k = k
 
-    @property
-    def codebook(self):
-        return self._compressor._quantizer._codebook0
+    # @property
+    # def codebook(self):
+    #     return self._compressor._quantizer._codebook0
 
     def forward(self, image, codes=None):
         if codes is not None:
-            logits, negLogPs = self._compressor(image, codes)
-            values = self._critic(logits)
+            quantizeds, logits, negLogPs = self._compressor(image, codes)
+            values = self._critic(quantizeds)
             return logits, negLogPs, values
 
         restored, codes, latents, negLogPs, logits, quantizeds = self._compressor(image)
-        values = self._critic(logits)
-        for code in codes:
-            _, count = torch.unique(code, False, return_counts=True, dim=0)
+        values = self._critic(quantizeds)
+        # for code in codes:
+        #     _, count = torch.unique(code, False, return_counts=True, dim=0)
 
         ssim, psnr, ssimLoss, l1l2Loss = self._reward(image, restored)
 
-        reward = (ssim + psnr) * count / self._k[0]
+        reward = ssim + (psnr / 5)
 
         # qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()

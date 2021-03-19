@@ -76,20 +76,19 @@ class ResidualBNBlockWithStride(nn.Module):
 
 
 class SimpleCritic(nn.Module):
-    def __init__(self, k):
+    def __init__(self, channel):
         super().__init__()
-        k = k[0]
         self._net = nn.Sequential(
-            ResidualBNBlockWithStride(k, 256, stride=2),
+            ResidualBNBlockWithStride(channel, 256, stride=2),
             ResidualBNBlockWithStride(256, 256, stride=2),
             ResidualBNBlockWithStride(256, 256, stride=2),
             conv3x3(256, 1, stride=2)
         )
 
-    def forward(self, logits: torch.Tensor):
+    def forward(self, quantizeds: torch.Tensor):
         values = list()
-        for logit in logits:
-            values.append(self._net(logit).sum(axis=(-3, -2, -1)))
+        for quantized in quantizeds:
+            values.append(self._net(quantized).sum(axis=(-3, -2, -1)))
             return values
 
 # class NLayerDiscriminator(nn.Module):

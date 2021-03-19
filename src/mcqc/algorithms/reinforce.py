@@ -28,9 +28,9 @@ class Reinforce(Algorithm):
             self._model = self._model.to(device)
         self._device = device
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
-        self._optimizerG = optimizer(config.LearningRate, self._model.parameters(), 0)
+        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
-        self._schedulerG = scheduler(self._optimizerG)
+        self._scheduler = scheduler(self._optimizer)
         self._saver = saver
         self._logger = logger
         self._config = config
@@ -55,9 +55,9 @@ class Reinforce(Algorithm):
         maxCV = 0.1
 
         if self._continue:
-            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model)# , optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
-            # initTemp = loaded["temp"]
-            # step = loaded["step"]
+            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optim=self._optimizer, schdrG=self._scheduler, step=step, temp=initTemp)
+            initTemp = loaded["temp"]
+            step = loaded["step"]
 
         dB = self._eval(testLoader, step)
 
@@ -67,10 +67,9 @@ class Reinforce(Algorithm):
                 images = images.to(self._device, non_blocking=True)
                 if step % 2 == 0:
                     with torch.no_grad():
-                        ssimLoss, l1l2Loss, rewards, restored, codes, latents, oldNegLogPs, logits, quantizeds, oldValues = self._model(images)
-                    self._optimizerG.zero_grad()
-                    logits1, negLogPs, values = self._model(images, codes)
-                    print(((logits[0] - logits1[0]) ** 2).sum())
+                        ssimLoss, l1l2Loss, rewards, restored, codes, latents, oldNegLogPs, _, quantizeds, oldValues = self._model(images)
+                    self._optimizer.zero_grad()
+                    _, negLogPs, values = self._model(images, codes)
                     for oldNegLogP, negLogP, oldValue, value, reward in zip(oldNegLogPs, negLogPs, oldValues, values, rewards):
                         ratio = torch.exp(oldNegLogP - negLogP)
                         advantage = reward - value
@@ -84,18 +83,16 @@ class Reinforce(Algorithm):
                         valueLoss = torch.max(surrogate1, surrogate2)
 
                     (policyLoss + valueLoss).mean().backward()
-                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
-                    self._optimizerG.step()
+                    # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
+                    self._optimizer.step()
                     self._saver.add_scalar("loss/policyLoss", policyLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/valueLoss", valueLoss.mean(), global_step=step)
                 else:
-                    self._optimizerG.zero_grad()
+                    self._optimizer.zero_grad()
                     ssimLoss, l1l2Loss, reward, restored, codes, latents, oldNegLogP, logits, quantizeds, oldValue = self._model(images)
                     (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean().backward()
-                    print(self._model.module.codebook.weight.grad)
-                    exit()
                     # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
-                    self._optimizerG.step()
+                    self._optimizer.step()
                     # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
                     self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
@@ -110,51 +107,16 @@ class Reinforce(Algorithm):
                         # target += 2.0
                         # count = 0
                         self._logger.info("Re-init codebook and change target to %d", int(target))
-                    self._saver.save(self._logger, model=self._model, optimG=self._optimizerG, schdrG=self._schedulerG, step=step+1, temp=initTemp)
-                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._schedulerG.get_last_lr()[0], initTemp, count)
+                    self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
+                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
                 if (step + 1) % 10000 == 0 and step > 100000 and step < 130000:
                     # self._schedulerD.step()
-                    self._schedulerG.step()
+                    self._scheduler.step()
                     self._logger.info("reduce lr")
                 # initTemp = max(initTemp * 0.9999, minTemp)
                 step += 1
                 # cv *= min(cv * 1.0001, maxCV)
                 # mixin *= 0.9999
-
-    @torch.no_grad()
-    def _reInitializeCodebook(self, dataLoader, c):
-        self._model.eval()
-        if isinstance(self._model, nn.DataParallel):
-                model = self._model.module._compressor
-        else:
-            model = self._model._compressor
-        model = model.cuda()
-        bs = list()
-        for raw in dataLoader:
-            raw = raw.to(self._device, non_blocking=True)
-            # restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
-            latents = model._encoder(raw)
-            b = model._quantizer.encode(latents)
-            bs.append(b[0].detach().cpu())
-        # [n, h, w]
-        bs = torch.cat(bs, 0).numpy()
-        unique, count = np.unique(bs, return_counts=True)
-        total = bs.size
-        # print(c.shape)
-        c = c.t()
-        remain = c.shape[0] - len(unique)
-        current = 0
-        notUsedC = c[list(x for x in range(c.shape[0]) if x not in unique)]
-        std = c[unique].std()
-        for u, thisCount in zip(unique, count):
-            proportion = thisCount / total
-            thisPiece = int(proportion * remain)
-            codeword = c[u]
-            reinitCodewords = notUsedC[current:current+thisPiece]
-            current += thisPiece
-            reinitCodewords.data.copy_(torch.from_numpy(np.random.randn(thisPiece, c.shape[-1]) * (float(std) ** 2) + codeword.detach().cpu().numpy()))
-        c[list(x for x in range(c.shape[0]) if x not in unique)] = notUsedC
-        return c.t()
 
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
@@ -186,7 +148,7 @@ class Reinforce(Algorithm):
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         np.save("b.npy", torch.cat(bs, 0).cpu().numpy())
-        np.save("c.npy", self._model.module.codebook[0].weight.detach().cpu().numpy())
+        # np.save("c.npy", self._model.module.codebook[0].weight.detach().cpu().numpy())
         np.save("z.npy", torch.cat(zs, 0).cpu().numpy())
         # exit()
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
