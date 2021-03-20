@@ -25,7 +25,7 @@ def _transformerLR(epoch):
     return min(epoch ** -0.5, epoch * WARMUP_RATIO)
 
 
-class Plain(Algorithm):
+class TwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger):
         super().__init__()
         self._model = model
@@ -34,14 +34,7 @@ class Plain(Algorithm):
         else:
             self._model = self._model.to(device)
         self._device = device
-        parameters = list(self._model.named_parameters())
-        no_decay = ["bias", "norm", "gdn"]
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in parameters if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-5,
-            'lr': config.LearningRate},
-            {'params': [p for n, p in parameters if any(nd in n for nd in no_decay)], 'weight_decay': 0.0,
-            'lr': config.LearningRate}
-            ]
+
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
         self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 0)
         self._scheduler = scheduler(self._optimizer)
@@ -63,6 +56,7 @@ class Plain(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
         initTemp = 100.0
         step = 0
+        e2e = False
         count = 0
         regCoeff = self._config.Coef.reg
         dB = 0.0
@@ -75,13 +69,13 @@ class Plain(Algorithm):
             # initTemp = loaded["temp"]
             # step = loaded["step"]
 
-        dB = self._eval(testLoader, step, True)
+        dB = self._eval(testLoader, step, e2e)
 
         for i in range(self._config.Epoch):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, True, cv)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, e2e, cv)
                 self._optimizer.zero_grad()
                 # if (step + 1) % self._accumulatedBatches == 0:
                 #     self._optimizer.step()
@@ -107,7 +101,7 @@ class Plain(Algorithm):
                     self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
                     self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
                     # initTemp = min(initTemp * 1.1, 1.0)
-                    dB = self._eval(testLoader, step, flag)
+                    dB = self._eval(testLoader, step, e2e)
                     # if dB > target and not flag:
                     #     flag = True
                     #     self._logger.info("Insert Transformer")
@@ -117,6 +111,7 @@ class Plain(Algorithm):
                     self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
                     self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
                 if (step + 1) % 10000 == 0 and 100000 < step < 130000:
+                    e2e = True
                     # self._schedulerD.step()
                     self._scheduler.step()
                     self._logger.info("reduce lr")

@@ -20,8 +20,8 @@ from mcqc import Consts
 class TransformerQuantizer(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 6)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 6)
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 1)
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 1)
         cSplitted = cin // len(k)
         for i, numCodewords in enumerate(k):
             setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cSplitted))))
@@ -144,7 +144,7 @@ class TransformerQuantizer(nn.Module):
                 x = encoderIn.reshape(-1, n ,c)
             # similar to scaled dot-product attention
             # [h*w, N, Cin],    M * [h*w, n, k]
-            quantized, samples, logits = self._attention(x, temp, False)
+            quantized, samples, logits = self._attention(x, temp, True)
             # quantized = x
             if True:
                 # [h*w, n, c]
@@ -169,8 +169,8 @@ class TransformerQuantizerStorch(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
         self._method = RELAX("z", n_samples=1, in_dim=[1024, 2048])
-        self._encoder = Encoder(1, cin, 8, cin, rate)
-        self._decoder = Decoder(1, cin, 8, cin, rate)
+        # self._encoder = Encoder(1, cin, 8, cin, rate)
+        # self._decoder = Decoder(1, cin, 8, cin, rate)
         cSplitted = cin // len(k)
         for i, numCodewords in enumerate(k):
             setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cSplitted))))
@@ -186,7 +186,7 @@ class TransformerQuantizerStorch(nn.Module):
         self._scaling = [sqrt(kk) for kk in k]
         self._d = float(cin) ** 0.5
         self._c = cin
-        self._position = NPositionalEncoding2D(cin, 120, 120)
+        # self._position = NPositionalEncoding2D(cin, 120, 120)
 
     def _attention(self, x, temp, hard):
         xs = torch.chunk(x, len(self._k), -1)
@@ -250,8 +250,9 @@ class TransformerQuantizerStorch(nn.Module):
             # [n, c, h, w] -> [n, h, w, c]
             encoderIn = xRaw.permute(0, 2, 3, 1)
             # [n, h*w, c]
-            encoderIn = self._position(encoderIn).reshape(n, -1, c)
-            x = self._encoder(encoderIn)
+            # encoderIn = self._position(encoderIn).reshape(n, -1, c)
+            # x = self._encoder(encoderIn)
+            x = encoderIn.reshape(n, -1, c)
             zs.append(x)
             # [n, h, w]
             samples = self._attentionEncoder(x)
@@ -262,12 +263,13 @@ class TransformerQuantizerStorch(nn.Module):
         quantizeds = list()
         # for i, bRaw in enumerate(codes):
             # n, h, w = bRaw.shape
-        # [n, h, w, c]
+        # [n, c, h, w]
         quantized = self._attentionDecoder(codes)
 
         n, c, h, w = quantized.shape
-        posistedQuantized = self._position(quantized.permute(0, 2, 3, 1)).reshape(n, -1, self._c)
-        deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(n, h, w, self._c).permute(0, 3, 1, 2)
+        # posistedQuantized = self._position(quantized.permute(0, 2, 3, 1)).reshape(n, -1, self._c)
+        # deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(n, h, w, self._c).permute(0, 3, 1, 2)
+        deTransformed = quantized
         # [n, c, h, w]
         quantizeds.append(deTransformed)
         return quantizeds
@@ -281,15 +283,18 @@ class TransformerQuantizerStorch(nn.Module):
             # [n, c, h, w] -> [n, h, w, c]
             encoderIn = xRaw.permute(0, 2, 3, 1)
             # [n, h, w, c] -> [n, h*w, c]
-            encoderIn = self._position(encoderIn).reshape(n, -1, c)
+            # encoderIn = self._position(encoderIn).reshape(n, -1, c)
             # [n, h*w, c]
-            x = self._encoder(encoderIn)
+            # x = self._encoder(encoderIn)
+            x = encoderIn.reshape(n, -1, c)
             # similar to scaled dot-product attention
             # [N, h*w, Cin],    M * [n, h*w, k]
             quantized, samples, logits = self._attention(x, temp, False)
             # [n, h*w, c]
-            posistedQuantized = self._position(quantized.reshape(n, h, w, c)).reshape(n, -1, c)
-            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(n, h, w, c).permute(0, 3, 1, 2)
+            # posistedQuantized = self._position(quantized.reshape(n, h, w, c)).reshape(n, -1, c)
+            # deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(n, h, w, c).permute(0, 3, 1, 2)
+
+            deTransformed = quantized.reshape(n, h, w, c).permute(0, 3, 1, 2)
 
             # mask = torch.rand_like(xRaw) > coeff
             # mixed = mask * xRaw.detach() + torch.logical_not(mask) * deTransformed

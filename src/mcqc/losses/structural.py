@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.distributions import Categorical
+from torch.distributions import Categorical, OneHotCategorical
 
 from mcqc import Consts
 from .ssim import ms_ssim
@@ -19,6 +19,7 @@ class QError(nn.Module):
             loss += qe + softQE + 0.1 * joint # + 0.01 * commit + 0.1 * (softQE + 0.01 * softCommit)
         return loss
 
+
 class CompressionLoss(nn.Module):
     def forward(self, images, restored, latents, logits, quantizeds, cv):
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
@@ -30,10 +31,60 @@ class CompressionLoss(nn.Module):
             for logit in logits:
                 # N, H, W, K -> N, HW, K
                 unNormlogit = logit.reshape(len(logit), -1, logit.shape[-1])
-                reg = compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
+
+                # [n, k]
+                summedLogit = unNormlogit.mean(1)
+
+                posterior = OneHotCategorical(logits=summedLogit, validate_args=False)
+                prior = OneHotCategorical(probs=torch.ones_like(summedLogit) / summedLogit.shape[-1], validate_args=False)
+                reg = cv * torch.distributions.kl_divergence(posterior, prior)
+                # reg = compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
                 regs.append(reg)
             regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, regs # + 10 * stdReg
+
+
+class CompressionLossTwoStage(nn.Module):
+    def forward(self, images, restored, latents, logits, quantizeds, cv, e2e):
+        l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
+        l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
+        ssimLoss = 1 - ms_ssim((restored + 1), (images + 1), data_range=2.0, size_average=False)
+
+        l2QLoss = list()
+        l1QLoss = list()
+        if not e2e:
+            for latent, q in zip(latents, quantizeds):
+                l2QLoss.append(F.mse_loss(latent, q, reduction='none').mean(axis=(1, 2, 3)))
+                l1QLoss.append(F.l1_loss(latent, q, reduction='none').mean(axis=(1, 2, 3)))
+
+        l1QLoss = sum(l1QLoss)
+        l2QLoss = sum(l2QLoss)
+
+        regs = list()
+        if logits is not None:
+            for logit in logits:
+                # N, H, W, K -> N, HW, K
+                batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
+
+                # [n, k]
+                summedProb = batchWiseLogit.mean(1).sigmoid()
+
+                target = torch.ones_like(summedProb) / 2.0
+                # [n, ]
+                reg = F.binary_cross_entropy(summedProb, target, reduction='none').sum(-1)
+
+                # [n, k] -> [n, ]
+                diversity = batchWiseLogit.var(1).sum(-1)
+                reg -= diversity
+
+                # posterior = OneHotCategorical(logits=summedLogit, validate_args=False)
+                # prior = OneHotCategorical(probs=torch.ones_like(summedLogit) / summedLogit.shape[-1], validate_args=False)
+                # reg = cv * torch.distributions.kl_divergence(posterior, prior)
+                # reg = compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
+                regs.append(cv * reg)
+            regs = sum(regs)
+        return ssimLoss, l1Loss + l2Loss + l1QLoss + l2QLoss, regs # + 10 * stdReg
+
 
 class CompressionReward(nn.Module):
     def forward(self, images, restored):
