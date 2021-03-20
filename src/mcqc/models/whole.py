@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 import storch
 
-from mcqc.losses.structural import CompressionLoss, QError, CompressionReward
+from mcqc.losses.structural import CompressionLoss, QError, CompressionReward, CompressionLossTwoStage
 
 from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch
 from .critic import SimpleCritic
@@ -50,6 +50,24 @@ class Whole(nn.Module):
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv)
         # qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
+
+
+class WholeTwoStage(nn.Module):
+    def __init__(self, k, channel, nPreLayers):
+        super().__init__()
+        self._compressor = MultiScaleCompressor(k, channel, nPreLayers)
+        # self._discriminator = FullDiscriminator(channel // 4)
+        self._cLoss = CompressionLossTwoStage()
+        self._qLoss = QError()
+
+    # @property
+    # def codebook(self):
+    #     return self._compressor._quantizer._codebook0
+
+    def forward(self, image, temp, e2e, cv):
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv, e2e)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
 
 

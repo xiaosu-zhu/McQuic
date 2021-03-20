@@ -22,10 +22,13 @@ class MultiScaleCompressor(nn.Module):
         self._quantizer = TransformerQuantizer(k, channel, 0.1)
         self._decoder = MultiScaleDecoder(channel, nPreLayers, 1)
 
-    def forward(self, x: torch.Tensor, temp: float, transform: bool):
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latents = self._encoder(x)
-        quantizeds, codes, logits = self._quantizer(latents, temp, transform)
-        restored = torch.tanh(self._decoder(quantizeds))
+        quantizeds, codes, logits = self._quantizer(latents, temp, True)
+        if e2e:
+            restored = torch.tanh(self._decoder(quantizeds))
+        else:
+            restored = torch.tanh(self._decoder(latents))
         # clipped = restored.clamp(-1.0, 1.0)
         # restored = (clipped - restored).detach() + restored
         return restored, codes, latents, logits, quantizeds
