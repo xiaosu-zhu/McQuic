@@ -54,8 +54,10 @@ class CompressionLossTwoStage(nn.Module):
         l1QLoss = list()
         if not e2e:
             for latent, q in zip(latents, quantizeds):
-                l2QLoss.append(F.mse_loss(latent, q, reduction='none').mean(axis=(1, 2, 3)))
-                l1QLoss.append(F.l1_loss(latent, q, reduction='none').mean(axis=(1, 2, 3)))
+                l2QLoss.append(F.mse_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
+                l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
+                l2QLoss.append(0.1 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
+                l1QLoss.append(0.1 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
 
         l1QLoss = sum(l1QLoss)
         l2QLoss = sum(l2QLoss)
@@ -67,23 +69,28 @@ class CompressionLossTwoStage(nn.Module):
                 batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
 
                 # [n, k]
-                summedProb = batchWiseLogit.mean(1).sigmoid()
+                # summedProb = batchWiseLogit.mean(1).sigmoid()
 
-                target = torch.ones_like(summedProb) / 2.0
+                # target = torch.ones_like(summedProb) / 2.0
                 # [n, ]
-                reg = F.binary_cross_entropy(summedProb, target, reduction='none').sum(-1)
+                # reg = F.binary_cross_entropy(summedProb, target, reduction='none').sum(-1)
+
+                # var = batchWiseLogit.var(1).sum(-1)
 
                 # [n, k] -> [n, ]
-                diversity = batchWiseLogit.var(1).sum(-1)
-                reg -= diversity
+                # diversity = torch.minimum(var, torch.ones_like(var))
+                # reg -= diversity
 
-                # posterior = OneHotCategorical(logits=summedLogit, validate_args=False)
-                # prior = OneHotCategorical(probs=torch.ones_like(summedLogit) / summedLogit.shape[-1], validate_args=False)
-                # reg = cv * torch.distributions.kl_divergence(posterior, prior)
-                # reg = compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
-                regs.append(cv * reg)
+                diversity = batchWiseLogit.var(1).sum(-1).sigmoid()
+
+                summedProb = batchWiseLogit.sum(1)
+                posterior = OneHotCategorical(logits=summedProb)
+                prior = OneHotCategorical(probs=torch.ones_like(summedProb) / summedProb.shape[-1])
+                reg = torch.distributions.kl_divergence(posterior, prior) / diversity
+                # reg += compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
+                regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss + l1QLoss + l2QLoss, regs # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs # + 10 * stdReg
 
 
 class CompressionReward(nn.Module):

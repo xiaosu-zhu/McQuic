@@ -61,7 +61,7 @@ class TwoStage(Algorithm):
         regCoeff = self._config.Coef.reg
         dB = 0.0
         target = 21.0
-        cv = 0.0
+        cv = 1.0
         maxCV = 0.1
 
         if self._continue:
@@ -75,50 +75,47 @@ class TwoStage(Algorithm):
             self._model.train()
             for images in trainLoader:
                 images = images.to(self._device, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, e2e, cv)
+                (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, e2e, cv)
                 self._optimizer.zero_grad()
                 # if (step + 1) % self._accumulatedBatches == 0:
                 #     self._optimizer.step()
                 #     self._optimizer.zero_grad()
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + self._config.Coef.reg * reg).mean().backward()
                 # (self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
                 # (self._config.Coef.ssim * ssimLoss + self._config.Coef.reg * reg).mean().backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
                 self._optimizer.step()
                 # self._saver.add_scalar("loss/gLoss", gLoss.mean(), global_step=step)
-                self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
-                self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
-                self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
                 # self._saver.add_scalar("loss/lr", self._scheduler.get_last_lr()[0], global_step=step)
                 # self._scheduler.step()
                 with torch.no_grad():
-                    cv = 10 ** float(l1l2Loss.mean() * -10)
-                    # initTemp = max(initTemp * 0.9995, 0.1)
-                # if (step + 1) % 100 == 0:
-                #     self._saver.add_scalar("loss/unique_codes", np.unique(codes[0].reshape(-1).detach().cpu().numpy()).shape[0], global_step=step)
-                    # self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
-                if (step + 1) % 1000 == 0:
-                    self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
-                    self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
-                    # initTemp = min(initTemp * 1.1, 1.0)
-                    dB = self._eval(testLoader, step, e2e)
-                    # if dB > target and not flag:
-                    #     flag = True
-                    #     self._logger.info("Insert Transformer")
-                    #     del self._optimizer
-                    #     del self._scheduler
-                    #     self._createFn()
-                    self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
-                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
-                if (step + 1) % 10000 == 0 and 100000 < step < 130000:
-                    e2e = True
-                    # self._schedulerD.step()
-                    self._scheduler.step()
-                    self._logger.info("reduce lr")
-                # initTemp = max(initTemp * 0.9999, minTemp)
-                step += 1
-                # cv *= min(cv * 1.0001, maxCV)
-                # mixin *= 0.9999
+                    # cv = 10 ** float(l1l2Loss.mean() * -10)
+                    self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/qLoss", qLoss.mean(), global_step=step)
+                    self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
+                    if (step + 1) % 1000 == 0:
+                        self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
+                        self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
+                        # initTemp = min(initTemp * 1.1, 1.0)
+                        dB = self._eval(testLoader, step, e2e)
+                        # if dB > target and not flag:
+                        #     flag = True
+                        #     self._logger.info("Insert Transformer")
+                        #     del self._optimizer
+                        #     del self._scheduler
+                        #     self._createFn()
+                        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1, temp=initTemp)
+                        self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e, count = %d", (step + 1) // 1000, self._scheduler.get_last_lr()[0], initTemp, count)
+                    if (step + 1) % 10000 == 0 and 100000 < step < 130000:
+                        e2e = True
+                        # self._schedulerD.step()
+                        self._scheduler.step()
+                        self._logger.info("reduce lr")
+                    # initTemp = max(initTemp * 0.9999, minTemp)
+                    step += 1
+                    # cv *= min(cv * 1.0001, maxCV)
+                    # mixin *= 0.9999
 
     @torch.no_grad()
     def _reInitializeCodebook(self, dataLoader, c):

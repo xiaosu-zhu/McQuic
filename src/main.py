@@ -15,8 +15,8 @@ from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
-from mcqc.algorithms import Plain, PlainWithGAN, Reinforce, Storch, TwoStage
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeStorch, WholeTwoStage
+from mcqc.algorithms import Plain, PlainWithGAN, Reinforce, TwoStage
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 

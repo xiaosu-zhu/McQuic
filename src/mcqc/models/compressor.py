@@ -28,6 +28,9 @@ class MultiScaleCompressor(nn.Module):
         if e2e:
             restored = torch.tanh(self._decoder(quantizeds))
         else:
+            # mixeds = list()
+            # for latent, q in zip(latents, quantizeds):
+            #     mixeds.append((q - latent).detach() + latent)
             restored = torch.tanh(self._decoder(latents))
         # clipped = restored.clamp(-1.0, 1.0)
         # restored = (clipped - restored).detach() + restored
