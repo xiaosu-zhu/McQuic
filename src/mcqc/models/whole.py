@@ -67,8 +67,8 @@ class WholeTwoStage(nn.Module):
 
     def forward(self, image, temp, e2e, cv):
         restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv, e2e)
-        return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
+        ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv, e2e)
+        return (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds)
 
 
 
