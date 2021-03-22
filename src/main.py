@@ -4,6 +4,7 @@ from logging import Logger
 
 import torch
 import torchvision
+import torch.multiprocessing as mp
 
 from absl import app
 from absl import flags
@@ -44,7 +45,9 @@ def main(_):
             saveDir = FLAGS.path
         else:
             saveDir = os.path.join(Consts.SaveDir, config.Dataset)
-        Train(config, saveDir)
+        gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1)
+        worldSize = len(gpus)
+        mp.spawn(train, (worldSize, config, saveDir), worldSize)
 
 # def Test(config: Config, saveDir: str, logger: Logger = None) -> None:
 #     _ = queryGPU(needGPUs=1, wantsMore=False, needVRamEachGPU=18000)
@@ -73,19 +76,19 @@ def main(_):
 #     runner = Eval(False, os.path.join(saveDir, Consts.CheckpointName), dataset, Env(**paramsForEnv), methods[config.Method](**paramsForActorCritic))
 #     runner.Test()
 
-def Train(config: Config, saveDir: str, logger: Logger = None) -> None:
-    gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1)
-
-    saver = Saver(saveDir, "saved.ckpt", config, reserve=FLAGS.get_flag_value("continue", False))
-
-    logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if FLAGS.debug else "INFO", rotateLogs=-1)
-
-    logger.info("\r\n%s", summary(config))
-
+def train(rank: int, worldSize: int, config: Config, saveDir: str, logger: Logger = None):
+    if rank == 0:
+        saver = Saver(saveDir, "saved.ckpt", config, reserve=FLAGS.get_flag_value("continue", False))
+        logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if FLAGS.debug else "INFO", rotateLogs=-1)
+        logger.info("\r\n%s", summary(config))
+    else:
+        saver = None
+        logger = None
     model = WholeTwoStage(config.Model.k, config.Model.channel, config.Model.nPreLayers)
-    method = TwoStage(config, model, "cuda", lambda lr, params, weight_decay: torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.5), saver, FLAGS.get_flag_value("continue", False), logger)
-
-    method.run(torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True, drop_last=True), torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=len(gpus) * 4, pin_memory=True, drop_last=True))
+    method = TwoStage(rank, worldSize, config, model, lambda lr, params, weight_decay: torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.5), saver, FLAGS.get_flag_value("continue", False), logger)
+    trainLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
+    valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
+    method.run(trainLoader, valLoader)
 
 
 if __name__ == "__main__":
