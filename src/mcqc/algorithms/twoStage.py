@@ -80,7 +80,7 @@ class TwoStage(Algorithm):
                 # if (step + 1) % self._accumulatedBatches == 0:
                 #     self._optimizer.step()
                 #     self._optimizer.zero_grad()
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + self._config.Coef.reg * reg).mean().backward()
+                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 10 * self._config.Coef.l1l2 * qLoss + self._config.Coef.reg * reg).mean().backward()
                 # (self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
                 # (self._config.Coef.ssim * ssimLoss + self._config.Coef.reg * reg).mean().backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=0.5)
