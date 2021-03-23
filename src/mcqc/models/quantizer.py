@@ -87,7 +87,7 @@ class TransformerQuantizer(nn.Module):
         # [n, Cin, h, w]
         return torch.cat(quantizeds, -1).permute(0, 3, 1, 2)
 
-    def encode(self, latents, transform):
+    def encode(self, latents):
         # samples = list()
         zs = list()
         for i, xRaw in enumerate(latents):
@@ -108,7 +108,7 @@ class TransformerQuantizer(nn.Module):
             samples = [s.permute(1, 0).reshape(n, h, w) for s in samples]
         return samples, zs
 
-    def decode(self, codes, transform):
+    def decode(self, codes):
         quantizeds = list()
         # for i, bRaw in enumerate(codes):
             # n, h, w = bRaw.shape
