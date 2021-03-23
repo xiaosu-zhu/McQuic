@@ -1,10 +1,12 @@
 
 import os
 from logging import Logger
+import math
 
 import torch
 import torchvision
 import torch.multiprocessing as mp
+import torch.distributed as dist
 
 from absl import app
 from absl import flags
@@ -45,9 +47,24 @@ def main(_):
             saveDir = FLAGS.path
         else:
             saveDir = os.path.join(Consts.SaveDir, config.Dataset)
-        gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1)
+        gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1, writeOSEnv=True)
         worldSize = len(gpus)
-        mp.spawn(train, (worldSize, config, saveDir), worldSize)
+        _changeConfig(config, worldSize)
+        mp.spawn(train, (worldSize, config, saveDir, FLAGS.get_flag_value("continue", False), FLAGS.debug), worldSize)
+
+def _changeConfig(config: Config, worldSize: int):
+    batchSize = config.BatchSize * worldSize
+    if batchSize > 32:
+        config.lr *= math.sqrt(batchSize)
+    else:
+        config.lr *= batchSize
+
+def _distributedConfig(rank: int, worldSize: int):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "29811"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    dist.init_process_group("nccl", world_size=worldSize, rank=rank)
+    dist.barrier()
 
 # def Test(config: Config, saveDir: str, logger: Logger = None) -> None:
 #     _ = queryGPU(needGPUs=1, wantsMore=False, needVRamEachGPU=18000)
@@ -76,16 +93,22 @@ def main(_):
 #     runner = Eval(False, os.path.join(saveDir, Consts.CheckpointName), dataset, Env(**paramsForEnv), methods[config.Method](**paramsForActorCritic))
 #     runner.Test()
 
-def train(rank: int, worldSize: int, config: Config, saveDir: str, logger: Logger = None):
+def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
+    _distributedConfig(rank, worldSize)
     if rank == 0:
-        saver = Saver(saveDir, "saved.ckpt", config, reserve=FLAGS.get_flag_value("continue", False))
-        logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if FLAGS.debug else "INFO", rotateLogs=-1)
+        saver = Saver(saveDir, "saved.ckpt", config, reserve=continueTrain)
+        logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if debug else "INFO", rotateLogs=-1)
         logger.info("\r\n%s", summary(config))
     else:
         saver = None
         logger = None
     model = WholeTwoStage(config.Model.k, config.Model.channel, config.Model.nPreLayers)
-    method = TwoStage(rank, worldSize, config, model, lambda lr, params, weight_decay: torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay), lambda optim: torch.optim.lr_scheduler.ExponentialLR(optim, 0.5), saver, FLAGS.get_flag_value("continue", False), logger)
+    def optimWrapper(lr, params, weight_decay):
+        return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
+    def schdrWrapper(optim):
+        return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
+    method = TwoStage(config, model, optimWrapper, schdrWrapper, saver, continueTrain, logger)
+
     trainLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
     valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
     method.run(trainLoader, valLoader)
