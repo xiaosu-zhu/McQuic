@@ -23,7 +23,6 @@ from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
-torch.backends.cudnn.benchmark = True
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("config", "", "The config.json path.")
@@ -59,9 +58,11 @@ def _changeConfig(config: Config, worldSize: int):
     else:
         config.lr *= batchSize
 
-def _distributedConfig(rank: int, worldSize: int):
+def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "29811"
+    torch.autograd.set_detect_anomaly(False)
+    torch.backends.cudnn.benchmark = True
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
     dist.barrier()
@@ -94,7 +95,7 @@ def _distributedConfig(rank: int, worldSize: int):
 #     runner.Test()
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
-    _distributedConfig(rank, worldSize)
+    _generalConfig(rank, worldSize)
     if rank == 0:
         saver = Saver(saveDir, "saved.ckpt", config, reserve=continueTrain)
         logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if debug else "INFO", rotateLogs=-1)

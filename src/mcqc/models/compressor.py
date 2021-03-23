@@ -25,15 +25,15 @@ class MultiScaleCompressor(nn.Module):
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latents = self._encoder(x)
         quantizeds, codes, logits = self._quantizer(latents, temp, True)
-        if e2e:
-            restored = torch.tanh(self._decoder(quantizeds))
-        else:
-            # mixeds = list()
-            # for latent, q in zip(latents, quantizeds):
-            #     mixeds.append((q - latent).detach() + latent)
+        if e2e is None:
             restored = torch.tanh(self._decoder(latents))
-        # clipped = restored.clamp(-1.0, 1.0)
-        # restored = (clipped - restored).detach() + restored
+        elif not e2e:
+            mixeds = list()
+            for latent, q in zip(latents, quantizeds):
+                mixeds.append((q - latent).detach() + latent)
+            restored = torch.tanh(self._decoder(mixeds))
+        else:
+            restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds
 
 

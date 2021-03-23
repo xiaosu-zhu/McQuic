@@ -1,6 +1,6 @@
 epoch: 10000
 gpus: 2
-vRam: -1
+vRam: 10000
 wantsMore: false
 dataset: clic/train
 valDataset: clic/valid
