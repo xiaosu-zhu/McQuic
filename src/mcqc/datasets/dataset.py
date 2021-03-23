@@ -26,8 +26,10 @@ def make_dataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, i
     both_something = extensions is not None and is_valid_file is not None
     if both_none or both_something:
         raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
+    def validFileWrapper(x):
+        return has_file_allowed_extension(x, cast(Tuple[str, ...], extensions))
     if extensions is not None:
-        is_valid_file = lambda x: has_file_allowed_extension(x, cast(Tuple[str, ...], extensions))
+        is_valid_file = validFileWrapper
     is_valid_file = cast(Callable[[str], bool], is_valid_file)
 
     for root, _, fnames in sorted(os.walk(directory, followlinks=True)):
