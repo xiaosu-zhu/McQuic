@@ -41,9 +41,8 @@ def make_dataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, i
 
 
 class Basic(VisionDataset):
-    def __init__(self, root: str, transform: Optional[Callable] = None, deTransform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    def __init__(self, root: str, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
         super().__init__(root, transform=transform)
-        self._deTransform = deTransform
 
         samples = make_dataset(self.root, IMG_EXTENSIONS if is_valid_file is None else None, is_valid_file)
         if len(samples) == 0:
@@ -55,9 +54,6 @@ class Basic(VisionDataset):
         self.extensions = IMG_EXTENSIONS
 
         self.samples = samples
-
-    def deTransform(self, x: torch.Tensor) -> torch.Tensor:
-        return self._deTransform(x)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """

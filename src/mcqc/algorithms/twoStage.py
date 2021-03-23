@@ -53,7 +53,7 @@ class TwoStage(Algorithm):
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
-    def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
+    def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         e2e = None
@@ -66,31 +66,35 @@ class TwoStage(Algorithm):
             # step = loaded["step"]
 
         for i in range(self._config.Epoch):
+            sampler.set_epoch(i)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, e2e, cv)
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 10 * self._config.Coef.l1l2 * qLoss + self._config.Coef.reg * reg).mean().backward()
+                if not e2e:
+                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 10 * self._config.Coef.l1l2 * qLoss + self._config.Coef.reg * reg).mean().backward()
+                else:
+                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
                 self._optimizer.step()
                 step += 1
-                if (step) % 1000 == 0:
+                if step % 1000 == 0:
                     self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
-            if self._saver is not None:
-                with torch.no_grad():
-                    self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
-                    self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
-                    self._eval(testLoader, step)
-                    self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step+1)
-                    self._logger.info("%3dk steps complete, update: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
+                    if self._saver is not None:
+                        with torch.no_grad():
+                            self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
+                            self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
+                            self._eval(testLoader, step)
+                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step + 1)
+                            self._logger.info("%3dk steps complete, update: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
+                    if qLoss < 0.1:
+                        if e2e is None:
+                            e2e = False
+                        # elif not e2e:
+                        #     if l1l2Loss < 0.05:
+                        #         e2e = True
                     dist.barrier()
-            if qLoss < 0.1:
-                if e2e is None:
-                    e2e = False
-                # elif not e2e:
-                #     if l1l2Loss < 0.05:
-                #         e2e = True
-            if (i + 1) % 10 == 0 and 100 <= (i + 1) <= 130:
-                self._scheduler.step()
+                if step % 10000 == 0 and 100000 <= step <= 130000:
+                    self._scheduler.step()
 
 
     @torch.no_grad()
