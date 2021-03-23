@@ -110,9 +110,14 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
     method = TwoStage(config, model, optimWrapper, schdrWrapper, saver, continueTrain, logger)
 
-    trainLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
+    trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
+
+    trainSampler = torch.utils.data.DistributedSampler(trainDataset, worldSize, rank)
+    # batchSampler = torch.utils.data.BatchSampler(trainSampler, config.BatchSize, drop_last=True)
+
+    trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=config.BatchSize, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
     valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
-    method.run(trainLoader, valLoader)
+    method.run(trainLoader, trainSampler, valLoader if rank == 0 else None)
 
 
 if __name__ == "__main__":
