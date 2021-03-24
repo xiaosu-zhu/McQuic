@@ -56,8 +56,8 @@ class CompressionLossTwoStage(nn.Module):
             for latent, q in zip(latents, quantizeds):
                 l2QLoss.append(F.mse_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
                 l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
-                # l2QLoss.append(0.00001 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
-                # l1QLoss.append(0.00001 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
+                l2QLoss.append(0.00001 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
+                l1QLoss.append(0.00001 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
 
         l1QLoss = sum(l1QLoss)
         l2QLoss = sum(l2QLoss)
@@ -81,14 +81,14 @@ class CompressionLossTwoStage(nn.Module):
                 # diversity = torch.minimum(var, torch.ones_like(var))
                 # reg -= diversity
 
-                diversity = batchWiseLogit.std(1).mean(-1).sigmoid()
+                # diversity = batchWiseLogit.std(1).mean(-1).sigmoid()
 
                 # summedProb = batchWiseLogit.sum(1)
                 # posterior = OneHotCategorical(logits=summedProb)
                 # prior = OneHotCategorical(probs=torch.ones_like(summedProb) / summedProb.shape[-1])
                 # reg = torch.distributions.kl_divergence(posterior, prior) / diversity
                 reg = compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
-                reg = reg / diversity
+                # reg = reg / diversity
                 regs.append(reg)
             regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs # + 10 * stdReg
@@ -151,7 +151,7 @@ def compute_penalties(logits, allowed_entropy=0.1, individual_entropy_coeff=0.0,
     p = torch.softmax(logits, dim=-1)
     # p = p.reshape(-1, logits.shape[-1])
     # [N, K]
-    load = torch.mean(p, dim=1)  # [N, codebook_size]
+    load = p.mean(1)  # [N, codebook_size]
     # [N, ]
     mean = load.mean(-1)
     # [N, ]

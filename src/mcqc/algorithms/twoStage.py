@@ -27,10 +27,14 @@ def _transformerLR(epoch):
 
 
 class TwoStage(Algorithm):
-    def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
+        if self._rank == 0 and saver is None:
+            raise AttributeError("Not passing a saver for main process.")
+        if self._rank != 0 and saver is not None:
+            raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
         self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank)
 
@@ -44,6 +48,7 @@ class TwoStage(Algorithm):
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
         self._saver = saver
+        self._savePath = savePath
         self._logger = logger
         self._config = config
         self._continue = continueTrain
@@ -56,14 +61,14 @@ class TwoStage(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        e2e = None
+        e2e = False
         cv = 1.0
         images = None
 
         if self._continue:
-            loaded = Saver.load(self._saver.SavePath, self._logger, model=self._model)# , optimG=self._optimizerG, schdrG=self._schedulerG, step=step, temp=initTemp)
-            # initTemp = loaded["temp"]
-            # step = loaded["step"]
+            mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step)
+            step = loaded["step"]
 
         for i in range(self._config.Epoch):
             sampler.set_epoch(i)
@@ -78,13 +83,13 @@ class TwoStage(Algorithm):
                 self._optimizer.step()
                 step += 1
                 if step % 1000 == 0:
-                    self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
-                    if self._saver is not None:
+                    if self._rank == 0:
+                        self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
                         with torch.no_grad():
                             self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
                             self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
                             self._eval(testLoader, step)
-                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step + 1)
+                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step)
                             self._logger.info("%3dk steps complete, update: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
                     if qLoss < 0.1:
                         if e2e is None:
@@ -92,15 +97,12 @@ class TwoStage(Algorithm):
                         # elif not e2e:
                         #     if l1l2Loss < 0.05:
                         #         e2e = True
-                    dist.barrier()
                 if step % 10000 == 0 and 100000 <= step <= 130000:
                     self._scheduler.step()
 
 
     @torch.no_grad()
     def _appendLoss(self, ssimLoss, l1l2Loss, qLoss, reg, step: int):
-        if self._saver is None:
-            return
         self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("loss/qLoss", qLoss.mean(), global_step=step)

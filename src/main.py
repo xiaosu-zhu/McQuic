@@ -96,6 +96,7 @@ def _generalConfig(rank: int, worldSize: int):
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
     _generalConfig(rank, worldSize)
+    savePath = Saver.composePath(saveDir, "saved.ckpt")
     if rank == 0:
         saver = Saver(saveDir, "saved.ckpt", config, reserve=continueTrain)
         logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if debug else "INFO", rotateLogs=-1)
@@ -108,7 +109,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     def schdrWrapper(optim):
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
-    method = TwoStage(config, model, optimWrapper, schdrWrapper, saver, continueTrain, logger)
+    method = TwoStage(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
 
