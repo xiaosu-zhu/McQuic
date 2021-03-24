@@ -20,8 +20,8 @@ from mcqc import Consts
 class TransformerQuantizer(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 1)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 1)
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
         cSplitted = cin // len(k)
         for i, numCodewords in enumerate(k):
             setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cSplitted))))
@@ -87,7 +87,7 @@ class TransformerQuantizer(nn.Module):
         # [n, Cin, h, w]
         return torch.cat(quantizeds, -1).permute(0, 3, 1, 2)
 
-    def encode(self, latents, transform):
+    def encode(self, latents):
         # samples = list()
         zs = list()
         for i, xRaw in enumerate(latents):
@@ -108,7 +108,7 @@ class TransformerQuantizer(nn.Module):
             samples = [s.permute(1, 0).reshape(n, h, w) for s in samples]
         return samples, zs
 
-    def decode(self, codes, transform):
+    def decode(self, codes):
         quantizeds = list()
         # for i, bRaw in enumerate(codes):
             # n, h, w = bRaw.shape

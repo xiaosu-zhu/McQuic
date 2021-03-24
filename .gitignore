@@ -12,6 +12,7 @@ saved*/
 *.log
 *.synctex.gz
 BUILD
+test/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
