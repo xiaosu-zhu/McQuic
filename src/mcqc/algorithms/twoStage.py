@@ -36,6 +36,11 @@ class TwoStage(Algorithm):
         if self._rank != 0 and saver is not None:
             raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
+
+        # if torch.backends.cudnn.version() >= 7603:
+        #     self._channelLast = True
+        #     model = model.to(memory_format=torch.channels_last)
+
         self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank)
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
@@ -61,36 +66,59 @@ class TwoStage(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        e2e = False
+        e2e = None
         cv = 1.0
         images = None
 
+        epochSteps = len(trainLoader.dataset) // (self._worldSize * trainLoader.batch_size)
+
+        temperature = 10.0
+        initTemp = 10.0
+        finalTemp = 0.01
+        annealRange = int(1e6 // epochSteps)
+        initEpoch = 0
+
+        ssim = self._config.Coef.ssim
+        l1l2 = self._config.Coef.l1l2
+
+
+        # scaler = torch.cuda.amp.GradScaler()
+
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step)
+            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
+            temperature = loaded["temperature"]
+            initEpoch = loaded["initEpoch"]
 
-        for i in range(self._config.Epoch):
+        for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
+            temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
+                # with torch.cuda.amp.autocast():
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, 1.0, e2e, cv)
+                (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature, e2e, cv)
                 if not e2e:
-                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 10 * self._config.Coef.l1l2 * qLoss + self._config.Coef.reg * reg).mean().backward()
+                    loss = (ssim * ssimLoss + l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + 2 * self._config.Coef.reg * reg).mean()
                 else:
-                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg).mean().backward()
+                    loss = (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 2 * self._config.Coef.reg * reg).mean()
+                # scaler.scale(loss).backward()
+                # scaler.step(self._optimizer)
+                # scaler.update()
+                loss.backward()
                 self._optimizer.step()
                 step += 1
+                if self._rank == 0:
+                    self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
                 if step % 1000 == 0:
                     if self._rank == 0:
-                        self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
                         with torch.no_grad():
                             self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
                             self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
                             self._eval(testLoader, step)
-                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step)
-                            self._logger.info("%3dk steps complete, update: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
+                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+                            self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
                     if qLoss < 0.1:
                         if e2e is None:
                             e2e = False
@@ -99,6 +127,9 @@ class TwoStage(Algorithm):
                         #         e2e = True
                 if step % 10000 == 0 and 100000 <= step <= 130000:
                     self._scheduler.step()
+            if step > 10000 and e2e is None:
+                ssim = 0.0
+                l1l2 = 0.0
 
 
     @torch.no_grad()

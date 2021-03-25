@@ -126,7 +126,7 @@ class TransformerQuantizer(nn.Module):
         quantizeds.append(deTransformed)
         return quantizeds
 
-    def forward(self, latents, temp, transform):
+    def forward(self, latents, temp, *_):
         quantizeds = list()
         codes = list()
         # logits = list()
