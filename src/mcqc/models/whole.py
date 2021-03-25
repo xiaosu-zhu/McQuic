@@ -37,7 +37,7 @@ class Whole(nn.Module):
     # @property
     # def codebook(self):
     #     return self._compressor._quantizer._codebook0
-
+    # @torch.cuda.amp.autocast()
     def forward(self, image, temp, transform, cv):
         restored, codes, latents, logits, quantizeds = self._compressor(image, temp, transform)
         # if step % 2 == 0:
@@ -65,6 +65,7 @@ class WholeTwoStage(nn.Module):
     # def codebook(self):
     #     return self._compressor._quantizer._codebook0
 
+    # @torch.cuda.amp.autocast()
     def forward(self, image, temp, e2e, cv):
         restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
         ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv, e2e)
