@@ -4,25 +4,11 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 import storch
 
-from mcqc.losses.structural import CompressionLoss, QError, CompressionReward, CompressionLossTwoStage
+from mcqc.losses.structural import CompressionLoss, QError, CompressionReward, CompressionLossTwoStage, CompressionLossTwoStageWithGan
 
 from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch
 from .critic import SimpleCritic
-from .discriminator import FullDiscriminator
-
-
-def hinge_d_loss(logits_real, logits_fake):
-    loss_real = torch.mean(F.relu(1. - logits_real))
-    loss_fake = torch.mean(F.relu(1. + logits_fake))
-    d_loss = 0.5 * (loss_real + loss_fake)
-    return d_loss
-
-
-def vanilla_d_loss(logits_real, logits_fake):
-    d_loss = 0.5 * (
-        torch.mean(torch.nn.functional.softplus(-logits_real)) +
-        torch.mean(torch.nn.functional.softplus(logits_fake)))
-    return d_loss
+from .discriminator import FullDiscriminator, LatentsDiscriminator
 
 
 class Whole(nn.Module):
@@ -71,6 +57,31 @@ class WholeTwoStage(nn.Module):
         ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv, e2e)
         return (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds)
 
+
+class WholeTwoStageWithGan(nn.Module):
+    def __init__(self, k, channel, nPreLayers):
+        super().__init__()
+        self._compressor = MultiScaleCompressor(k, channel, nPreLayers)
+        self._discriminator = LatentsDiscriminator(channel)
+        self._cLoss = CompressionLossTwoStageWithGan()
+        self._qLoss = QError()
+
+    # @property
+    # def codebook(self):
+    #     return self._compressor._quantizer._codebook0
+
+    # @torch.cuda.amp.autocast()
+    def forward(self, image, temp, e2e, cv, step):
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
+        if step % 2 == 0:
+            real = self._discriminator(latents[0].detach())
+            fake = self._discriminator(quantizeds[0].detach())
+            ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, real, fake, cv, step)
+            return (ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg), (restored, codes, latents, logits, quantizeds)
+
+        fake = self._discriminator(quantizeds[0])
+        ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, real, fake, cv, step)
+        return (ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg), (restored, codes, latents, logits, quantizeds)
 
 
 class WholeStorch(nn.Module):

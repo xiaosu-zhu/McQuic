@@ -133,7 +133,8 @@ class TransformerQuantizer(nn.Module):
         for i, (xRaw, k) in enumerate(zip(latents, self._k)):
             n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c]
-            encoderIn = xRaw.permute(2, 3, 0, 1)
+            """ *************** TODO: NEED DETACH? ******************* """
+            encoderIn = xRaw.detach().permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
             if True:
                 encoderIn = self._position(encoderIn).reshape(-1, n, c)
@@ -551,10 +552,7 @@ class VQuantizer(nn.Module):
         zs = list()
         codes = list()
         softs = list()
-        # logits = list()
         allCodewords = list()
-        # probability = mixin / (mixin + 1.0)
-        # rolloutDistribution = Bernoulli(probs=torch.tensor(probability).to(latents[0].device))
         for xRaw, codebook, k in zip(latents, self._codebook, self._k):
             # [c, k]
             codewords = codebook.weight

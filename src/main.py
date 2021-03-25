@@ -18,7 +18,7 @@ from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
-from mcqc.algorithms import Plain, PlainWithGAN, Reinforce, TwoStage
+from mcqc.algorithms import Plain, TwoStageWithGan, Reinforce, TwoStage
 from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
@@ -105,6 +105,8 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         saver = None
         logger = None
     model = WholeTwoStage(config.Model.k, config.Model.channel, config.Model.nPreLayers)
+    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
     def optimWrapper(lr, params, weight_decay):
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     def schdrWrapper(optim):

@@ -1,155 +1,155 @@
 from typing import Type, Callable, Iterator
 from logging import Logger
+import math
 
 import numpy as np
 import torch
 from torch import nn
-from torch.distributions import Categorical
+from torch.nn.parallel import DistributedDataParallel
+from torch import distributed as dist
 from cfmUtils.saver import Saver
 from cfmUtils.vision.colorSpace import rgb2hsv, hsv2rgb
 from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
-from mcqc import Consts
+from mcqc.models.whole import Whole
+from mcqc import Consts, Config
 
 def _ssimExp(source, target, datarange):
     return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
 
+WARMUP_RATIO = 10000 ** -1.5
 
-class PlainWithGAN(Algorithm):
-    def __init__(self, model: nn.Module, discriminator: nn.Module, device: str, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, continueTrain: bool, logger: Logger, epoch: int):
+def _transformerLR(epoch):
+    epoch = epoch + 1
+    return min(epoch ** -0.5, epoch * WARMUP_RATIO)
+
+
+class TwoStageWithGan(Algorithm):
+    def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
-        self._model = model
-        self._discriminator = discriminator
-        if device == "cuda" and torch.cuda.device_count() > 1:
-            self._model = nn.DataParallel(self._model.to(device))
-            self._discriminator = nn.DataParallel(self._discriminator.to(device))
-        else:
-            self._model = self._model.to(device)
-            self._discriminator = self._discriminator.to(device)
-        self._device = device
-        self._optimizerG = optimizer(1e-4, self._model.module._quantizer.parameters(), 1e-4)
-        self._optimizerD = optimizer(5e-6, self._discriminator.parameters(), 1e-4)
-        self._optimizerC = optimizer(5e-5, self._model.parameters(), 1e-4)
-        self._schedulerG = scheduler(self._optimizerG)
-        self._schedulerD = scheduler(self._optimizerD)
-        self._schedulerC = scheduler(self._optimizerC)
-        self._epoch = epoch
+        self._rank = dist.get_rank()
+        self._worldSize = dist.get_world_size()
+        if self._rank == 0 and saver is None:
+            raise AttributeError("Not passing a saver for main process.")
+        if self._rank != 0 and saver is not None:
+            raise AttributeError("Try passing a saver for sub-process.")
+        torch.cuda.set_device(self._rank)
+
+        # if torch.backends.cudnn.version() >= 7603:
+        #     self._channelLast = True
+        #     model = model.to(memory_format=torch.channels_last)
+
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank)
+
+        # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
+        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
+        self._scheduler = scheduler(self._optimizer)
+        # self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
+
+        dist.barrier()
+
+        # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
+        # self._schedulerD = scheduler(self._optimizerD)
         self._saver = saver
+        self._savePath = savePath
         self._logger = logger
-
-        self._criterion = nn.BCEWithLogitsLoss()
-
+        self._config = config
         self._continue = continueTrain
+        # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
-    def run(self, trainLoader: torch.utils.data.DataLoader, testLoader: torch.utils.data.DataLoader):
-        initTemp = 1.0
-        minTemp = 0.5
+    def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
-        e2e = True
+        # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
+        e2e = None
+        cv = 1.0
+        images = None
+
+        epochSteps = len(trainLoader.dataset) // (self._worldSize * trainLoader.batch_size)
+
+        temperature = 10.0
+        initTemp = 10.0
+        finalTemp = 0.01
+        annealRange = int(1e6 // epochSteps)
+        initEpoch = 0
+
+        ssim = self._config.Coef.ssim
+        l1l2 = self._config.Coef.l1l2
+
 
         if self._continue:
-            loaded = self._saver.load(self._saver.SavePath, self._logger, model=self._model, optimC=self._optimizerC, optimD=self._optimizerD, optimG=self._optimizerG, schdrC=self._schedulerC, schdrD=self._schedulerD, schdrG=self._schedulerG, step=step, temp=initTemp, e2e=e2e)
-            initTemp = loaded["temp"]
+            mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
-            e2e = loaded["mixin"]
+            temperature = loaded["temperature"]
+            initEpoch = loaded["initEpoch"]
 
-        dB = self._eval(testLoader, step)
-
-        for i in range(self._epoch):
-            self._model.train()
+        for i in range(initEpoch, self._config.Epoch):
+            sampler.set_epoch(i)
+            temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
             for images in trainLoader:
-                images = images.to(self._device, non_blocking=True)
-                # hsvImages = (rgb2hsv((images + 1.) / 2.) - 0.5) / 0.5
-                restored, codes, latents, logits, quantizeds = self._model(images, initTemp, True, e2e)
-                if dB > 20:
-                    if step % 3 == 0:
-                        self._trainComp(step, images, restored, codes, latents, logits, quantizeds)
-                    elif step % 3 == 1:
-                        self._trainD(step, latents, quantizeds)
-                    else:
-                        self._trainG(step, latents, quantizeds, logits)
+                self._optimizer.zero_grad(True)
+                images = images.to(self._rank, non_blocking=True)
+                (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature, e2e, cv)
+                if not e2e:
+                    loss = (ssim * ssimLoss + l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + 2 * self._config.Coef.reg * reg).mean()
                 else:
-                    self._trainComp(step, images, restored, codes, latents, logits, quantizeds)
-                if (step + 1) % 100 == 0:
-                    self._saver.add_images("soft/raw", self._deTrans(images), global_step=step)
-                    self._saver.add_images("soft/res", self._deTrans(restored), global_step=step)
-                    self._saver.add_histogram("code", codes[0].reshape(-1), bins=256, max_bins=256, global_step=step)
-                if (step + 1) % 1000 == 0:
-                    # initTemp = max(initTemp * 0.9, minTemp)
-                    dB = self._eval(testLoader, step)
-                    # if dB > 28.5:
-                    #     e2e = True
-                    self._saver.save(self._logger, model=self._model, optimC=self._optimizerC, optimD=self._optimizerD, optimG=self._optimizerG, schdrC=self._schedulerC, schdrD=self._schedulerD, schdrG=self._schedulerG, step=step, temp=initTemp, e2e=e2e)
-                    self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step + 1) // 1000, self._schedulerG.get_last_lr()[0], initTemp)
-                if (step + 1) % 10000 == 0:
-                    self._schedulerD.step()
-                    self._schedulerG.step()
+                    loss = (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 2 * self._config.Coef.reg * reg).mean()
+                loss.backward()
+                self._optimizer.step()
                 step += 1
-                # mixin *= 0.9999
+                if self._rank == 0:
+                    self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
+                if step % 1000 == 0:
+                    if self._rank == 0:
+                        with torch.no_grad():
+                            self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
+                            self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
+                            self._eval(testLoader, step)
+                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+                            self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
+                    if qLoss < 0.1:
+                        if e2e is None:
+                            e2e = False
+                        # elif not e2e:
+                        #     if l1l2Loss < 0.05:
+                        #         e2e = True
+                if step % 10000 == 0 and 100000 <= step <= 130000:
+                    self._scheduler.step()
+            if step > 25000 and e2e is None:
+                ssim = 0.0
+                l1l2 = 0.0
 
 
-    def _trainComp(self, step, images, restored, codes, latents, logits, quantizeds):
-        loss = self._loss(step, images, restored, codes, latents, logits, quantizeds)
-        self._model.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=10.0)
-        self._optimizerC.step()
-        self._saver.add_scalar("loss", loss, global_step=step)
-
-    def _trainD(self, step, latents, quantizeds):
-        for l, q in zip(latents, quantizeds):
-            self._discriminator.zero_grad()
-            real = self._discriminator(l)
-            rLabel = torch.empty_like(real).uniform_(0, 0.1)
-            lossR = self._criterion(real, rLabel)
-            fake = self._discriminator(q)
-            fLabel = torch.empty_like(fake).uniform_(0.9, 1)
-            lossF = self._criterion(fake, fLabel)
-            (lossF + lossR).backward()
-            torch.nn.utils.clip_grad_norm_(self._discriminator.parameters(), max_norm=10.0)
-            self._optimizerD.step()
-            self._saver.add_scalar("gan/lossF", lossF, global_step=step)
-            self._saver.add_scalar("gan/lossR", lossR, global_step=step)
-
-    def _trainG(self, step, latents, quantizeds, logits):
-        for l, q, logit in zip(latents, quantizeds, logits):
-            self._model.zero_grad()
-            fake = self._discriminator(q)
-            lossG = self._criterion(fake, torch.zeros_like(fake))
-
-            # N, H, W, K -> NHW, K
-            unNormlogit = logit.reshape(-1, logit.shape[-1])
-            maxGlobal = compute_penalties(unNormlogit, cv_coeff=0.02, eps=Consts.Eps)
-
-            (lossG + maxGlobal).backward()
-
-            torch.nn.utils.clip_grad_norm_(self._model.module._quantizer.parameters(), max_norm=10.0)
-            self._optimizerG.step()
-            self._saver.add_scalar("gan/reg", maxGlobal, global_step=step)
-            self._saver.add_scalar("gan/lossG", lossG, global_step=step)
+    @torch.no_grad()
+    def _appendLoss(self, ssimLoss, l1l2Loss, qLoss, reg, step: int):
+        self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
+        self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
+        self._saver.add_scalar("loss/qLoss", qLoss.mean(), global_step=step)
+        self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
 
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
+        if self._logger is None:
+            return
         self._model.eval()
         ssims = list()
         psnrs = list()
-        if isinstance(self._model, nn.DataParallel):
-            model = self._model.module
-        else:
-            model = self._model
-        model = model.cuda()
+        model = self._model.module._compressor
+        bs = list()
         for raw in dataLoader:
-            raw = raw.to(self._device, non_blocking=True)
+            raw = raw.to(self._rank, non_blocking=True)
 
             # restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
             latents = model._encoder(raw)
-            b = model._quantizer.encode(latents)
+            b, z = model._quantizer.encode(latents)
+            bs.append(b[0].detach().cpu())
+
             quantized = model._quantizer.decode(b)
             restored = model._decoder(quantized)
             raw = self._deTrans(raw)
@@ -158,106 +158,15 @@ class PlainWithGAN(Algorithm):
             psnrs.append(psnr(restored.detach(), raw.detach()))
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
+        b = torch.cat(bs, 0).cpu().numpy()
+        # np.save("b.npy", b)
+        # np.save("c.npy", self._model.module.codebook.weight.detach().cpu().numpy())
+        # np.save("z.npy", torch.cat(zs, 0).cpu().numpy())
+        # exit()
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._saver.add_images("eval/res", restored, global_step=step)
+        self._saver.add_scalar("eval/unique_codes", np.unique(b).shape[0], global_step=step)
+        # del bs, zs
+        self._model.train()
         return float(psnrs.mean())
-
-    def _loss(self, step, images, restored, codes, latents, logits, quantizeds):
-        # hsvR, rgbR = torch.chunk(restored, 2, 1)
-        # combined = torch.cat([images, hsvImages], axis=1)
-        l2Loss = torch.nn.functional.mse_loss(restored, images) # + torch.nn.functional.mse_loss(hsvR, hsvImages)
-        l1Loss = torch.nn.functional.l1_loss(restored, images) # + torch.nn.functional.l1_loss(hsvR, hsvImages)
-        ssimLoss = 1 - ms_ssim((restored + 1), (images + 1), data_range=2.0) # - ms_ssim((hsvR + 1), (hsvImages + 1), data_range=2.0)
-        self._saver.add_scalar("loss/l2", l2Loss, global_step=step)
-        self._saver.add_scalar("loss/l1", l1Loss, global_step=step)
-        self._saver.add_scalar("loss/ssim", ssimLoss, global_step=step)
-
-        # transformerL2 = list()
-        # transformerL1 = list()
-        # commitL2 = list()
-        # commitL1 = list()
-        # for q, t in zip(quantizeds, latents):
-        #     transformerL2.append(torch.nn.functional.mse_loss(q, t.detach()))
-        #     transformerL1.append(torch.nn.functional.l1_loss(q, t.detach()))
-        #     commitL2.append(torch.nn.functional.mse_loss(t, q.detach()))
-        #     commitL1.append(torch.nn.functional.l1_loss(t, q.detach()))
-        # transformerL2 = sum(transformerL2)
-        # transformerL1 = sum(transformerL1)
-        # commitL2 = sum(commitL2)
-        # commitL1 = sum(commitL1)
-        # self._saver.add_scalar("loss/tl2", transformerL2, global_step=step)
-        # self._saver.add_scalar("loss/tl1", transformerL1, global_step=step)
-        # self._saver.add_scalar("stat/lnorm", (t**2).mean(), global_step=step)
-        # self._saver.add_scalar("stat/lvar", t.std(), global_step=step)
-        # self._saver.add_scalar("stat/qnorm", (q**2).mean(), global_step=step)
-        # self._saver.add_scalar("stat/qvar", q.std(), global_step=step)
-
-        # ssimLoss = _ssimExp((rgbR + 1), (images + 1), 2.0) + _ssimExp((hsvR + 1), (hsvImages + 1), 2.0)
-
-
-        # qe = quantizationError(highOrders, softs, hards)
-        # self._saver.add_scalar("loss/qe", qe, global_step=step)
-
-        # klLoss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(logitsConsistency, -1), torch.nn.functional.log_softmax(logitsCompressed.detach(), -1), reduction="batchmean", log_target=True)
-        return ssimLoss \
-             + 0.1 * (l1Loss + l2Loss) \
-            #  + regs \
-            #  + qe \
-             # + 1.0 * (transformerL1 + transformerL2) \
-             # + 1e-2 * (commitL1 + commitL2), \
-             # bool(transformerL2 < 0.05)
-           # + 1e-6 * klLoss \
-
-
-def spatialKL(logit):
-    lenLogits = logit.shape[1] * logit.shape[2]
-    logit = logit.reshape(logit.shape[0], lenLogits, -1)
-    logProb = torch.nn.functional.log_softmax(logit, -1)
-    randIdx1 = torch.randperm(lenLogits)
-    randIdx2 = torch.randperm(lenLogits)
-    shuffle1 = logProb[:, randIdx1]
-    shuffle2 = logProb[:, randIdx2]
-    return torch.nn.functional.kl_div(shuffle1, shuffle2, reduction="batchmean", log_target=True)
-
-
-def quantizationError(raws, softs, hards):
-    softQE = list()
-    hardQE = list()
-    jointQE = list()
-    for r, s, h in zip(raws, softs, hards):
-        softQE.append(torch.nn.functional.mse_loss(s, r))
-        hardQE.append(torch.nn.functional.mse_loss(h, r))
-        jointQE.append(torch.nn.functional.mse_loss(s, h))
-    return sum(softQE) + 0.1 * sum(jointQE) + sum(hardQE)
-
-
-def compute_penalties(logits, individual_entropy_coeff=0.0, allowed_entropy=0.0, global_entropy_coeff=0.0,
-                      cv_coeff=0.0, eps=1e-9):
-    """
-    Computes typical regularizers for gumbel-softmax quantization
-    Regularization is of slight help when performing hard quantization, but it isn't critical
-    :param logits: tensor [batch_size, ..., codebook_size]
-    :param individual_entropy_coeff: penalizes mean individual entropy
-    :param allowed_entropy: does not penalize individual_entropy if it is below this value
-    :param cv_coeff: penalizes squared coefficient of variation
-    :param global_entropy_coeff: coefficient for entropy of mean probabilities over batch
-        this value should typically be negative (e.g. -1), works similar to cv_coeff
-    """
-    p = torch.softmax(logits, dim=-1)
-    # logp = torch.log_softmax(logits, dim=-1)
-    # [batch_size, ..., codebook_size]
-
-    # individual_entropy_values = -torch.sum(p * logp, dim=-1)
-    # clipped_entropy = torch.nn.functional.relu(allowed_entropy - individual_entropy_values + eps).mean()
-    # individual_entropy = (individual_entropy_values.mean() - clipped_entropy).detach() + clipped_entropy
-
-    # global_p = torch.mean(p, dim=0)  # [..., codebook_size]
-    # global_logp = torch.logsumexp(logp, dim=0) - np.log(float(logp.shape[0]))  # [..., codebook_size]
-    # global_entropy = -torch.sum(global_p * global_logp, dim=-1).mean()
-
-    load = torch.mean(p, dim=0)  # [..., codebook_size]
-    mean = load.mean()
-    variance = torch.mean((load - mean) ** 2)
-    cvPenalty = variance / (mean ** 2 + eps)
-    return cv_coeff * cvPenalty
