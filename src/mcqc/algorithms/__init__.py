@@ -6,7 +6,7 @@ Exports:
     SoftActorCritic: Soft Actor-Critic algorithm.
 """
 from .plain import Plain
-from .gan import PlainWithGAN
+from .gan import TwoStageWithGan
 from .reinforce import Reinforce
 from .storch import Storch
 from .twoStage import TwoStage

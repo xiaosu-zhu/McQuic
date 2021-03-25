@@ -39,7 +39,7 @@ class ResidualBNBlock(nn.Module):
         super().__init__()
         self.conv1 = conv3x3(in_ch, out_ch)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(out_ch, out_ch)
+        self.conv2 = conv3x3(out_ch, out_ch, bias=False)
         self.bn = nn.BatchNorm2d(out_ch)
         if in_ch != out_ch:
             self.skip = conv1x1(in_ch, out_ch)
@@ -73,7 +73,7 @@ class ResidualBNBlockWithStride(nn.Module):
         super().__init__()
         self.conv1 = conv3x3(in_ch, out_ch, stride=stride)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(out_ch, out_ch)
+        self.conv2 = conv3x3(out_ch, out_ch, bias=False)
         self.bn = nn.BatchNorm2d(out_ch)
         if stride != 1 or in_ch != out_ch:
             self.skip = conv1x1(in_ch, out_ch, stride=stride)
@@ -110,6 +110,28 @@ class FullDiscriminator(nn.Module):
             ResidualBNBlockWithStride(start * 4, start * 4, stride=2),
             ResidualBNBlock(start * 4, start * 8),
             conv3x3(start * 8, 1, stride=2)
+        )
+
+    def forward(self, x: torch.Tensor):
+        return self._net(x)
+
+
+class LatentsDiscriminator(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            # ResidualBNBlockWithStride(channel, channel, stride=2),
+            ResidualBNBlock(channel, channel),
+            # AttentionBlock(channel),
+            # ResidualBNBlockWithStride(channel, channel, stride=2),
+            ResidualBNBlock(channel, channel),
+            # AttentionBlock(channel),
+            # ResidualBNBlockWithStride(channel, channel, stride=2),
+            ResidualBNBlock(channel, channel),
+            # ResidualBNBlockWithStride(channel, channel, stride=2),
+            # ResidualBNBlock(channel, channel),
+            # conv3x3(channel, 1, stride=1),
+            conv1x1(channel, 1, stride=1)
         )
 
     def forward(self, x: torch.Tensor):

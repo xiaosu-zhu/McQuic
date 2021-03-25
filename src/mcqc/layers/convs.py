@@ -28,9 +28,9 @@ class MaskedConv2d(nn.Conv2d):
         self.weight.data = self.mask * self.weight.data
         return super().forward(x)
 
-def conv3x3(in_ch, out_ch, stride=1):
+def conv3x3(in_ch, out_ch, stride=1, bias=True):
     """3x3 convolution with padding."""
-    return nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=stride, padding=1, padding_mode="reflect")
+    return nn.Conv2d(in_ch, out_ch, bias=bias, kernel_size=3, stride=stride, padding=1, padding_mode="reflect")
 
 
 def subPixelConv3x3(in_ch, out_ch, r=1):
@@ -40,6 +40,6 @@ def subPixelConv3x3(in_ch, out_ch, r=1):
     )
 
 
-def conv1x1(in_ch, out_ch, stride=1):
+def conv1x1(in_ch, out_ch, stride=1, bias=True):
     """1x1 convolution."""
-    return nn.Conv2d(in_ch, out_ch, kernel_size=1, stride=stride, padding_mode="reflect")
+    return nn.Conv2d(in_ch, out_ch, bias=bias, kernel_size=1, stride=stride, padding_mode="reflect")
