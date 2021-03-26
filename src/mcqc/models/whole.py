@@ -52,9 +52,9 @@ class WholeTwoStage(nn.Module):
     #     return self._compressor._quantizer._codebook0
 
     # @torch.cuda.amp.autocast()
-    def forward(self, image, temp, e2e, cv):
+    def forward(self, image, temp, e2e):
         restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
-        ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv, e2e)
+        ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds)
         return (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds)
 
 
