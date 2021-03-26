@@ -24,31 +24,31 @@ def _fspecial_gauss_1d(size, sigma, device=None):
     return g.unsqueeze(0).unsqueeze(0)
 
 
-def gaussian_filter(input, win):
-    r""" Blur input with 1-D kernel
+def gaussian_filter(x, win):
+    r""" Blur x with 1-D kernel
     Args:
-        input (torch.Tensor): a batch of tensors to be blurred
+        x (torch.Tensor): a batch of tensors to be blurred
         window (torch.Tensor): 1-D gauss kernel
 
     Returns:
         torch.Tensor: blurred tensors
     """
-    assert all([ws == 1 for ws in win.shape[1:-1]]), win.shape
-    if len(input.shape) == 4:
+    assert all(ws == 1 for ws in win.shape[1:-1]), win.shape
+    if len(x.shape) == 4:
         conv = F.conv2d
-    elif len(input.shape) == 5:
+    elif len(x.shape) == 5:
         conv = F.conv3d
     else:
-        raise NotImplementedError(input.shape)
+        raise NotImplementedError(x.shape)
 
-    C = input.shape[1]
-    out = input
-    for i, s in enumerate(input.shape[2:]):
+    C = x.shape[1]
+    out = x
+    for i, s in enumerate(x.shape[2:]):
         if s >= win.shape[-1]:
             out = conv(out, weight=win.transpose(2 + i, -1), stride=1, padding=0, groups=C)
         else:
             warnings.warn(
-                f"Skipping Gaussian Smoothing at dimension 2+{i} for input: {input.shape} and win size: {win.shape[-1]}"
+                f"Skipping Gaussian Smoothing at dimension 2+{i} for input: {x.shape} and win size: {win.shape[-1]}"
             )
 
     return out
@@ -128,7 +128,7 @@ def ssim(X, Y, win, data_range=255, size_average=True, K=(0.01, 0.03), nonnegati
 
 _WEIGHTS = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
 
-def ms_ssim(X, Y, win, weights, data_range=255, size_average=True, K=(0.01, 0.03)):
+def ms_ssim(X, Y, win, weights, poolMethod, data_range=255, size_average=True, K=(0.01, 0.03)):
 
     r""" interface of ms-ssim
     Args:
@@ -150,13 +150,6 @@ def ms_ssim(X, Y, win, weights, data_range=255, size_average=True, K=(0.01, 0.03
     #     X = X.squeeze(dim=d)
     #     Y = Y.squeeze(dim=d)
 
-    if len(X.shape) == 4:
-        avg_pool = F.avg_pool2d
-    elif len(X.shape) == 5:
-        avg_pool = F.avg_pool3d
-    else:
-        raise ValueError(f"Input images should be 4-d or 5-d tensors, but got {X.shape}")
-
     win_size = win.shape[-1]
     assert win_size % 2 == 1, "Window size should be odd."
 
@@ -173,8 +166,8 @@ def ms_ssim(X, Y, win, weights, data_range=255, size_average=True, K=(0.01, 0.03
         if i < levels - 1:
             mcs.append(torch.relu(cs))
             padding = [s % 2 for s in X.shape[2:]]
-            X = avg_pool(X, kernel_size=2, padding=padding)
-            Y = avg_pool(Y, kernel_size=2, padding=padding)
+            X = poolMethod(X, kernel_size=2, padding=padding)
+            Y = poolMethod(Y, kernel_size=2, padding=padding)
 
     ssim_per_channel = torch.relu(ssim_per_channel)  # (batch, channel)
     mcs_and_ssim = torch.stack(mcs + [ssim_per_channel], dim=1)  # (batch, level, channel)
@@ -186,17 +179,7 @@ def ms_ssim(X, Y, win, weights, data_range=255, size_average=True, K=(0.01, 0.03
 
 
 class Ssim(torch.nn.Module):
-    def __init__(
-        self,
-        data_range=255,
-        size_average=True,
-        win_size=11,
-        win_sigma=1.5,
-        channel=3,
-        spatial_dims=2,
-        K=(0.01, 0.03),
-        nonnegative_ssim=False,
-    ):
+    def __init__(self, data_range=255, size_average=True, win_size=11, win_sigma=1.5, channel=3, spatial_dims=2, K=(0.01, 0.03), nonnegative_ssim=False):
         r""" class for ssim
         Args:
             data_range (float or int, optional): value range of input images. (usually 1.0 or 255)
@@ -209,7 +192,6 @@ class Ssim(torch.nn.Module):
         """
 
         super().__init__()
-        self.win_size = win_size
         self.register_buffer("win", _fspecial_gauss_1d(win_size, win_sigma).repeat([channel, 1] + [1] * spatial_dims))
         self.size_average = size_average
         self.data_range = data_range
@@ -221,19 +203,10 @@ class Ssim(torch.nn.Module):
 
 
 class MsSSIM(torch.nn.Module):
-    def __init__(
-        self,
-        data_range=255,
-        size_average=True,
-        win_size=11,
-        win_sigma=1.5,
-        channel=3,
-        spatial_dims=2,
-        weights=None,
-        K=(0.01, 0.03),
-    ):
+    def __init__(self, shape=4, data_range=255, size_average=True, win_size=11, win_sigma=1.5, channel=3, spatial_dims=2, weights=None, K=(0.01, 0.03)):
         r""" class for ms-ssim
         Args:
+            shape (int): 4 for NCHW, 5 for NCTHW
             data_range (float or int, optional): value range of input images. (usually 1.0 or 255)
             size_average (bool, optional): if size_average=True, ssim of all images will be averaged as a scalar
             win_size: (int, optional): the size of gauss kernel
@@ -244,16 +217,23 @@ class MsSSIM(torch.nn.Module):
         """
 
         super().__init__()
-        self.win_size = win_size
+
+        if shape == 4:
+            self._avg_pool = F.avg_pool2d
+        elif shape == 5:
+            self._avg_pool = F.avg_pool3d
+        else:
+            raise ValueError(f"Input shape should be 4-d or 5-d tensors, but got {shape}")
+
         self.register_buffer("win", _fspecial_gauss_1d(win_size, win_sigma).repeat([channel, 1] + [1] * spatial_dims))
         self.size_average = size_average
         self.data_range = data_range
         if weights is None:
-            weights = torch.tensor(_WEIGHTS)
+            weights = torch.tensor(_WEIGHTS) # pylint: disable=not-callable
         else:
-            weights = torch.tensor(weights)
+            weights = torch.tensor(weights) # pylint: disable=not-callable
         self.register_buffer("weights", weights)
         self.K = K
 
     def forward(self, X, Y):
-        return ms_ssim(X, Y, self.win, self.weights, data_range=self.data_range, size_average=self.size_average, K=self.K)
+        return ms_ssim(X, Y, self.win, self.weights, self._avg_pool, data_range=self.data_range, size_average=self.size_average, K=self.K)

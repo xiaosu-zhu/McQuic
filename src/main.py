@@ -118,8 +118,8 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     trainSampler = torch.utils.data.DistributedSampler(trainDataset, worldSize, rank)
     # batchSampler = torch.utils.data.BatchSampler(trainSampler, config.BatchSize, drop_last=True)
 
-    trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=config.BatchSize, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
-    valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
+    trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=config.BatchSize, num_workers=config.BatchSize + 4, pin_memory=True, drop_last=True)
+    valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize * 4, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
     method.run(trainLoader, trainSampler, valLoader if rank == 0 else None)
 
 

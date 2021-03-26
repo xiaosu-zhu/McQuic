@@ -21,7 +21,7 @@ class TransformerQuantizer(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
         self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
         cSplitted = cin // len(k)
         for i, numCodewords in enumerate(k):
             setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cSplitted))))
@@ -118,7 +118,7 @@ class TransformerQuantizer(nn.Module):
         if True:
             n, c, h, w = quantized.shape
             posistedQuantized = self._position(quantized.permute(2, 3, 0, 1)).reshape(-1, n, self._c)
-            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
+            deTransformed = self._decoder(posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
         else:
             # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
             deTransformed = quantized
@@ -150,7 +150,7 @@ class TransformerQuantizer(nn.Module):
             if True:
                 # [h*w, n, c]
                 posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
-                deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
+                deTransformed = self._decoder(posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
             else:
                 # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
                 deTransformed = quantized.reshape(h, w, n, c).permute(2, 3, 0, 1)
