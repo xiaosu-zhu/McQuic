@@ -59,7 +59,7 @@ class TwoStage(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook(10, {2: self._fastHook, 3: self._mediumHook, 4: self._slowHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
         # self._accumulatedBatches = 32 //  config.BatchSize
