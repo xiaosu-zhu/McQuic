@@ -1,4 +1,4 @@
-from typing import Type, Callable, Iterator
+from typing import Callable, Iterator
 from logging import Logger
 import math
 
@@ -8,14 +8,12 @@ from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from cfmUtils.saver import Saver
-from cfmUtils.vision.colorSpace import rgb2hsv, hsv2rgb
 from cfmUtils.base import FrequecyHook
-from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.models.whole import Whole
-from mcqc import Consts, Config
+from mcqc import Config
 
 WARMUP_RATIO = 10000 ** -1.5
 def _transformerLR(epoch):
@@ -55,7 +53,7 @@ class TwoStage(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({10: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
         # self._accumulatedBatches = 32 //  config.BatchSize
@@ -85,10 +83,11 @@ class TwoStage(Algorithm):
         if 100000 <= step <= 130000:
             self._scheduler.step()
 
+    # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        e2e = None
+        e2e = True
         images = None
         regScale = 1.0
 
@@ -100,15 +99,16 @@ class TwoStage(Algorithm):
         annealRange = int(1e6 // epochSteps)
         initEpoch = 0
 
-        # ssim = self._config.Coef.ssim
-        # l1l2 = self._config.Coef.l1l2
-
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regScale=regScale)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
+            if self._rank == 0:
+                uniqueCodes = self._eval(testLoader, step)
+                self._logger.info("Resume training from %3dk step.", step // 1000)
+        dist.barrier()
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -117,9 +117,10 @@ class TwoStage(Algorithm):
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, qLoss, reg), (restored, *_) = self._model(images, temperature, e2e)
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + regScale * self._config.Coef.reg * reg).mean().backward()
+                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.gen * qLoss + regScale * self._config.Coef.reg * reg).mean().backward()
                 self._optimizer.step()
                 step += 1
+                # e2e = step % 2 == 0
                 if self._loggingHook is not None:
                     with torch.no_grad():
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, qLoss=qLoss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale)
@@ -127,6 +128,7 @@ class TwoStage(Algorithm):
                         if uniqueCodes is not None:
                             regScale = math.sqrt(self._config.Model.k[0] / uniqueCodes)
 
+    # pylint: disable=protected-access
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
         if self._logger is None:
@@ -141,7 +143,7 @@ class TwoStage(Algorithm):
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
             latent = model._encoder(raw)
-            b, z = model._quantizer.encode(latent)
+            b, _ = model._quantizer.encode(latent)
 
             latents.append(latent[0].detach().cpu())
             bs.append(b[0].detach().cpu())
@@ -169,6 +171,8 @@ class TwoStage(Algorithm):
         self._saver.add_scalar("Eval/UniqueCodes", uniqueCodes, global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
+        np.save("q.npy", qs)
+        np.save("z.npy", latent)
         # del bs, zs
         self._model.train()
         return int(uniqueCodes)

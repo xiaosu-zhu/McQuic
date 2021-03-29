@@ -71,16 +71,16 @@ class WholeTwoStageWithGan(nn.Module):
     #     return self._compressor._quantizer._codebook0
 
     # @torch.cuda.amp.autocast()
-    def forward(self, image, temp, e2e, cv, step):
+    def forward(self, image, temp, e2e, step):
         restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
         if step % 2 == 0:
             real = self._discriminator(latents[0].detach())
             fake = self._discriminator(quantizeds[0].detach())
-            ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, real, fake, cv, step)
+            ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, real, fake, step)
             return (ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg), (restored, codes, latents, logits, quantizeds)
-
+        real = None
         fake = self._discriminator(quantizeds[0])
-        ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, real, fake, cv, step)
+        ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, real, fake, step)
         return (ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg), (restored, codes, latents, logits, quantizeds)
 
 

@@ -134,7 +134,8 @@ class TransformerQuantizer(nn.Module):
             n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c]
             """ *************** TODO: NEED DETACH? ******************* """
-            encoderIn = xRaw.detach().permute(2, 3, 0, 1)
+            # encoderIn = xRaw.detach().permute(2, 3, 0, 1)
+            encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
             if True:
                 encoderIn = self._position(encoderIn).reshape(-1, n, c)

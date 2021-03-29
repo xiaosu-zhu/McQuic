@@ -19,16 +19,16 @@ from cfmUtils.vision.utils import verifyTruncated
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain, TwoStageWithGan, Reinforce, TwoStage
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("config", "", "The config.json path.")
+flags.DEFINE_string("cfg", "", "The config.json path.")
 flags.DEFINE_string("path", "", "Specify saving path, otherwise use default pattern. In eval mode, you must specify this path where saved checkpoint exists.")
 flags.DEFINE_boolean("eval", False, "Evaluate performance. Must specify arg 'path', and arg 'config' will be ignored.")
-flags.DEFINE_boolean("continue", False, "Be careful to set to true. Whether to continue last training (with current config).")
+flags.DEFINE_boolean("r", False, "Be careful to set to true. Whether to continue last training (with current config).")
 flags.DEFINE_boolean("debug", False, "Set to true to logging verbosely and require lower gpu.")
 
 
@@ -40,7 +40,7 @@ def main(_):
         config = read(os.path.join(saveDir, Consts.DumpConfigName), None, Config)
         # Test(config, saveDir)
     else:
-        config = read(FLAGS.config, None, Config)
+        config = read(FLAGS.cfg, None, Config)
         if FLAGS.path is not None and len(FLAGS.path) > 0 and not FLAGS.path.isspace():
             os.makedirs(FLAGS.path, exist_ok=True)
             saveDir = FLAGS.path
@@ -49,7 +49,7 @@ def main(_):
         gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1, writeOSEnv=True)
         worldSize = len(gpus)
         _changeConfig(config, worldSize)
-        mp.spawn(train, (worldSize, config, saveDir, FLAGS.get_flag_value("continue", False), FLAGS.debug), worldSize)
+        mp.spawn(train, (worldSize, config, saveDir, FLAGS.r, FLAGS.debug), worldSize)
 
 def _changeConfig(config: Config, worldSize: int):
     batchSize = config.BatchSize * worldSize
