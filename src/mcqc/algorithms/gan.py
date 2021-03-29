@@ -9,6 +9,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from cfmUtils.saver import Saver
 from cfmUtils.vision.colorSpace import rgb2hsv, hsv2rgb
+from cfmUtils.base import FrequecyHook
 from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
@@ -16,11 +17,7 @@ from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.models.whole import Whole
 from mcqc import Consts, Config
 
-def _ssimExp(source, target, datarange):
-    return (2.7182818284590452353602874713527 - ms_ssim(source, target, data_range=datarange).exp()) / (1.7182818284590452353602874713527)
-
 WARMUP_RATIO = 10000 ** -1.5
-
 def _transformerLR(epoch):
     epoch = epoch + 1
     return min(epoch ** -0.5, epoch * WARMUP_RATIO)
@@ -57,18 +54,43 @@ class TwoStageWithGan(Algorithm):
         self._logger = logger
         self._config = config
         self._continue = continueTrain
+        if self._rank == 0:
+            self._loggingHook = FrequecyHook({1: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+        else:
+            self._loggingHook = None
         # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
     def _deTrans(imaage):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
+    def _fastHook(self, **kwArgs):
+        ssimLoss, l1l2Loss, qLoss, reg, step = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["qLoss"], kwArgs["reg"], kwArgs["now"]
+        self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
+        self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
+        self._saver.add_scalar("Loss/QLoss", qLoss.mean(), global_step=step)
+        self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
+
+    def _mediumHook(self, **kwArgs):
+        images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
+        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
+        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
+        uniqueCodes = self._eval(testLoader, step)
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature, regScale=regScale)
+        self._logger.info("[%3dk]: LR = %.2e, T = %.2e, P = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature, regScale)
+        return uniqueCodes
+
+    def _slowHook(self, **kwArgs):
+        step = kwArgs["now"]
+        if 100000 <= step <= 130000:
+            self._scheduler.step()
+
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         e2e = None
-        cv = 1.0
         images = None
+        regScale = 1.0
 
         epochSteps = len(trainLoader.dataset) // (self._worldSize * trainLoader.batch_size)
 
@@ -78,16 +100,12 @@ class TwoStageWithGan(Algorithm):
         annealRange = int(1e6 // epochSteps)
         initEpoch = 0
 
-        ssim = self._config.Coef.ssim
-        l1l2 = self._config.Coef.l1l2
-
-
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
             loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
-            initEpoch = loaded["initEpoch"]
+            initEpoch = loaded["epoch"]
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -95,78 +113,67 @@ class TwoStageWithGan(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature, e2e, cv)
-                if not e2e:
-                    loss = (ssim * ssimLoss + l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + 2 * self._config.Coef.reg * reg).mean()
+                (ssimLoss, l1l2Loss, qLoss, gLoss, dLoss, reg), (restored, *_) = self._model(images, temperature, e2e, step)
+                if step % 2 == 0:
+                    loss = self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + regScale * self._config.Coef.reg * reg + self._config.Coef.l1l2 * dLoss
+                    if self._rank == 0:
+                        self._saver.add_scalar("Loss/dLoss", dLoss.mean(), global_step=step)
                 else:
-                    loss = (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 2 * self._config.Coef.reg * reg).mean()
-                loss.backward()
+                    loss = self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.l1l2 * qLoss + regScale * self._config.Coef.reg * reg + self._config.Coef.l1l2 * gLoss
+                    if self._rank == 0:
+                        self._saver.add_scalar("Loss/gLoss", gLoss.mean(), global_step=step)
+                loss.mean().backward()
                 self._optimizer.step()
                 step += 1
-                if self._rank == 0:
-                    self._appendLoss(ssimLoss, l1l2Loss, qLoss, reg, step)
-                if step % 1000 == 0:
-                    if self._rank == 0:
-                        with torch.no_grad():
-                            self._saver.add_images("train/raw", self._deTrans(images), global_step=step)
-                            self._saver.add_images("train/res", self._deTrans(restored), global_step=step)
-                            self._eval(testLoader, step)
-                            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
-                            self._logger.info("%3dk steps complete, update: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
-                    if qLoss < 0.1:
-                        if e2e is None:
-                            e2e = False
-                        # elif not e2e:
-                        #     if l1l2Loss < 0.05:
-                        #         e2e = True
-                if step % 10000 == 0 and 100000 <= step <= 130000:
-                    self._scheduler.step()
-            if step > 25000 and e2e is None:
-                ssim = 0.0
-                l1l2 = 0.0
-
-
-    @torch.no_grad()
-    def _appendLoss(self, ssimLoss, l1l2Loss, qLoss, reg, step: int):
-        self._saver.add_scalar("loss/ssimLoss", ssimLoss.mean(), global_step=step)
-        self._saver.add_scalar("loss/l1l2Loss", l1l2Loss.mean(), global_step=step)
-        self._saver.add_scalar("loss/qLoss", qLoss.mean(), global_step=step)
-        self._saver.add_scalar("loss/reg", reg.mean(), global_step=step)
+                if self._loggingHook is not None:
+                    with torch.no_grad():
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, qLoss=qLoss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale)
+                        uniqueCodes = results.get(1000, None)
+                        if uniqueCodes is not None:
+                            regScale = math.sqrt(self._config.Model.k[0] / uniqueCodes)
 
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
         if self._logger is None:
             return
         self._model.eval()
+        model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        model = self._model.module._compressor
         bs = list()
+        latents = list()
+        qs = list()
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
+            latent = model._encoder(raw)
+            b, z = model._quantizer.encode(latent)
 
-            # restored, _, _, _, _ = self._model(raw, 0.5, True, 0.0)
-            latents = model._encoder(raw)
-            b, z = model._quantizer.encode(latents)
+            latents.append(latent[0].detach().cpu())
             bs.append(b[0].detach().cpu())
 
             quantized = model._quantizer.decode(b)
+
+            qs.append(quantized[0].detach().cpu())
+
             restored = model._decoder(quantized)
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
+
             ssims.append(evalSSIM(restored.detach(), raw.detach(), True))
             psnrs.append(psnr(restored.detach(), raw.detach()))
+
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         b = torch.cat(bs, 0).cpu().numpy()
-        # np.save("b.npy", b)
-        # np.save("c.npy", self._model.module.codebook.weight.detach().cpu().numpy())
-        # np.save("z.npy", torch.cat(zs, 0).cpu().numpy())
-        # exit()
+        latent = torch.cat(latents, 0).cpu().numpy()
+        qs = torch.cat(qs, 0).cpu().numpy()
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
-        self._saver.add_images("eval/res", restored, global_step=step)
-        self._saver.add_scalar("eval/unique_codes", np.unique(b).shape[0], global_step=step)
+        self._saver.add_images("Eval/Res", restored, global_step=step)
+        uniqueCodes = np.unique(b).shape[0]
+        self._saver.add_scalar("Eval/UniqueCodes", uniqueCodes, global_step=step)
+        # [N, C, H, W] -> mean of [N, H, W]
+        self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
         # del bs, zs
         self._model.train()
-        return float(psnrs.mean())
+        return int(uniqueCodes)
