@@ -18,5 +18,4 @@ dependencies:
   - pip:
     - deprecated
     - pyyaml
-    - pytorch_msssim
     - opencv-python

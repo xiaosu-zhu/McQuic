@@ -5,7 +5,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from cfmUtils.base import parallelFunction, Module
-from pytorch_msssim import ms_ssim
 import storch
 
 from .encoder import Encoder, MultiScaleEncoder

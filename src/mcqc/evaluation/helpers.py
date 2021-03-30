@@ -2,7 +2,8 @@ import torch
 import numpy as np
 from scipy import signal
 from scipy.ndimage.filters import convolve
-from pytorch_msssim import ms_ssim
+
+from mcqc.losses.ssim import ms_ssim
 
 
 def _FSpecialGauss(size, sigma):
