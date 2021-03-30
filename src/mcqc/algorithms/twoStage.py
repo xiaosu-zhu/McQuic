@@ -12,6 +12,7 @@ from cfmUtils.base import FrequecyHook
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
+from mcqc.losses.ssim import MsSSIM
 from mcqc.models.whole import Whole
 from mcqc import Config
 
@@ -40,7 +41,10 @@ class TwoStage(Algorithm):
         #     self._channelLast = True
         #     model = model.to(memory_format=torch.channels_last)
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank)
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
+
+        if self._rank == 0:
+            self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
         self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
@@ -164,7 +168,9 @@ class TwoStage(Algorithm):
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
 
-            ssims.append(evalSSIM(restored.detach(), raw.detach(), True))
+            ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
+
+            ssims.append(20 * (1.0 / (1.0 - ssim).sqrt()).log10())
             psnrs.append(psnr(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)

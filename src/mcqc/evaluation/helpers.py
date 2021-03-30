@@ -3,7 +3,9 @@ import numpy as np
 from scipy import signal
 from scipy.ndimage.filters import convolve
 
-from mcqc.losses.ssim import ms_ssim
+from mcqc.losses.ssim import MsSSIM
+
+_EVALSSIM = MsSSIM(size_average=False)
 
 
 def _FSpecialGauss(size, sigma):
@@ -152,10 +154,9 @@ def _ms_ssim(img1: np.ndarray, img2: np.ndarray, max_val=255, filter_size=11, fi
 def evalSSIM(img1, img2, dB = False):
     # convert nchw -> nhwc
     # res = _ms_ssim(img1.transpose(0, 2, 3, 1), img2.transpose(0, 2, 3, 1))
-
-    res = ms_ssim(img1.float(), img2.float(), size_average=False)
+    res = _EVALSSIM(img1.float(), img2.float())
     if dB:
-      return 20 * (1.0 / (1.0 - res).sqrt()).log10()
+        return 20 * (1.0 / (1.0 - res).sqrt()).log10()
     return res
 
 
