@@ -15,11 +15,14 @@ from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.models.whole import Whole
 from mcqc import Config
 
-WARMUP_RATIO = 10000 ** -1.5
-def _transformerLR(epoch):
-    epoch = epoch + 1
-    return min(epoch ** -0.5, epoch * WARMUP_RATIO)
+WARMUP_STEP = 10000
+def _transformerLR(step):
+    step = step + 1
+    return min(step / WARMUP_STEP, 0.95 ** (step - WARMUP_STEP))
 
+INCRE_STEP = 1e6
+def _tuneReg(step):
+    return step / INCRE_STEP
 
 class TwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -40,8 +43,8 @@ class TwoStage(Algorithm):
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
         self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
-        self._scheduler = scheduler(self._optimizer)
-        # self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
+        # self._scheduler = scheduler(self._optimizer)
+        self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
         dist.barrier()
 
@@ -63,11 +66,13 @@ class TwoStage(Algorithm):
         return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, qLoss, reg, step = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["qLoss"], kwArgs["reg"], kwArgs["now"]
+        ssimLoss, l1l2Loss, qLoss, reg, step, regCoeff = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["qLoss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/QLoss", qLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
+        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
+        self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
 
     def _mediumHook(self, **kwArgs):
         images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
@@ -87,7 +92,7 @@ class TwoStage(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        e2e = True
+        e2e = False
         images = None
         regScale = 1.0
 
@@ -119,11 +124,13 @@ class TwoStage(Algorithm):
                 (ssimLoss, l1l2Loss, qLoss, reg), (restored, *_) = self._model(images, temperature, e2e)
                 (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.gen * qLoss + regScale * self._config.Coef.reg * reg).mean().backward()
                 self._optimizer.step()
+                self._scheduler.step()
                 step += 1
+                self._config.Coef.reg = _tuneReg(step)
                 # e2e = step % 2 == 0
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, qLoss=qLoss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale)
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, qLoss=qLoss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg)
                         uniqueCodes = results.get(1000, None)
                         if uniqueCodes is not None:
                             regScale = math.sqrt(self._config.Model.k[0] / uniqueCodes)

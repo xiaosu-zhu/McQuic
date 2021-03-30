@@ -24,8 +24,8 @@ class Whole(nn.Module):
     # def codebook(self):
     #     return self._compressor._quantizer._codebook0
     # @torch.cuda.amp.autocast()
-    def forward(self, image, temp, transform, cv):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, transform)
+    def forward(self, image, temp):
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, True)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())
@@ -33,7 +33,7 @@ class Whole(nn.Module):
         #     return (None, None, None, dLoss, None), (restored, codes, latents, logits, quantizeds)
 
         # fake = self._discriminator(restored)
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds, cv)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, latents, logits, quantizeds)
         # qError = self._qLoss(latents, codebooks, logits, codes)
         # gLoss = -1 * fake.mean()
         return (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds)
