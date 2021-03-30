@@ -39,7 +39,7 @@ class CompressionLoss(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, size_average=False)
 
-    def forward(self, images, restored, latents, logits, quantizeds, cv):
+    def forward(self, images, restored, latents, logits, quantizeds):
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
@@ -48,16 +48,11 @@ class CompressionLoss(nn.Module):
         if logits is not None:
             for logit in logits:
                 # N, H, W, K -> N, HW, K
-                unNormlogit = logit.reshape(len(logit), -1, logit.shape[-1])
+                batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
 
-                # [n, k]
-                summedLogit = unNormlogit.mean(1)
-
-                posterior = OneHotCategorical(logits=summedLogit, validate_args=False)
-                prior = OneHotCategorical(probs=torch.ones_like(summedLogit) / summedLogit.shape[-1], validate_args=False)
-                reg = cv * torch.distributions.kl_divergence(posterior, prior)
-                # reg = compute_penalties(unNormlogit, allowed_entropy=0.1, individual_entropy_coeff=cv, allowed_js=4.0, js_coeff=cv, cv_coeff=cv, eps=Consts.Eps)
-                regs.append(reg)
+                posterior = OneHotCategorical(logits=batchWiseLogit)
+                prior = OneHotCategorical(probs=torch.ones_like(batchWiseLogit) / batchWiseLogit.shape[-1])
+                regs.append(torch.distributions.kl_divergence(posterior, prior).sum(-1) + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps))
             regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, regs # + 10 * stdReg
 
@@ -140,7 +135,7 @@ class CompressionLossTwoStage(nn.Module):
             l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
             l2QLoss.append(0.25 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
             l1QLoss.append(0.25 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
-            regs.append(-1e-4 * ((latent ** 2).mean((1, 2, 3)) + (q ** 2).mean((1, 2, 3))))
+            # regs.append(-1e-4 * ((latent ** 2).mean((1, 2, 3)) + (q ** 2).mean((1, 2, 3))))
 
         l1QLoss = sum(l1QLoss)
         l2QLoss = sum(l2QLoss)
@@ -150,25 +145,10 @@ class CompressionLossTwoStage(nn.Module):
                 # N, H, W, K -> N, HW, K
                 batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
 
-                # [n, k]
-                # summedProb = batchWiseLogit.mean(1).sigmoid()
-
-                # target = torch.ones_like(summedProb) / 2.0
-                # [n, ]
-                # reg = F.binary_cross_entropy(summedProb, target, reduction='none').sum(-1)
-
-                # var = batchWiseLogit.var(1).sum(-1)
-
-                # [n, k] -> [n, ]
-                # diversity = torch.minimum(var, torch.ones_like(var))
-                # reg -= diversity
-
-                # diversity = batchWiseLogit.std(1).mean(-1).sigmoid()
-
-                # summedProb = batchWiseLogit.sum(1)
-                posterior = OneHotCategorical(logits=batchWiseLogit)
-                prior = OneHotCategorical(probs=torch.ones_like(batchWiseLogit) / batchWiseLogit.shape[-1])
-                regs.append(torch.distributions.kl_divergence(posterior, prior).sum(-1) + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps))
+                # posterior = OneHotCategorical(logits=batchWiseLogit)
+                # prior = OneHotCategorical(probs=torch.ones_like(batchWiseLogit) / batchWiseLogit.shape[-1])
+                # torch.distributions.kl_divergence(posterior, prior).sum(-1) +
+                regs.append(compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps))
                 # reg = reg / diversity
             regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs # + 10 * stdReg
