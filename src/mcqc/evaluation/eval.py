@@ -14,7 +14,7 @@ from cfmUtils.runtime import Timer
 from mcqc import Consts
 from cfmUtils.datasets import Zip
 
-from .helpers import ms_ssim, psnr
+from .helpers import _EVALSSIM, psnr
 
 
 class Eval:
@@ -57,7 +57,7 @@ class Eval:
         psnrs = list()
         for raw, b in testLoader:
             restored = self._decode(b, raw.shape[-2:])
-            ssims.append(ms_ssim(restored, raw))
+            ssims.append(_EVALSSIM(restored, raw))
             psnrs.append(psnr(restored, raw))
         self._logger.info("MS-SSIM: %.4e", sum(ssims) / len(ssims))
         self._logger.info("   PSNR: %.4e", sum(psnrs) / len(psnrs))

@@ -53,10 +53,7 @@ def main(_):
 
 def _changeConfig(config: Config, worldSize: int):
     batchSize = config.BatchSize * worldSize
-    if batchSize > 32:
-        config.lr *= math.sqrt(batchSize)
-    else:
-        config.lr *= batchSize
+    config.lr *= math.sqrt(batchSize)
 
 def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_ADDR"] = "localhost"
@@ -105,7 +102,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         saver = None
         logger = None
     model = WholeTwoStage(config.Model.k, config.Model.channel, config.Model.nPreLayers)
-    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)

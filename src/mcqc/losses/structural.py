@@ -133,8 +133,8 @@ class CompressionLossTwoStage(nn.Module):
         for latent, q in zip(latents, quantizeds):
             l2QLoss.append(F.mse_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
             l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
-            l2QLoss.append(0.25 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
-            l1QLoss.append(0.25 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
+            l2QLoss.append(0.01 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
+            l1QLoss.append(0.01 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
             # regs.append(-1e-4 * ((latent ** 2).mean((1, 2, 3)) + (q ** 2).mean((1, 2, 3))))
 
         l1QLoss = sum(l1QLoss)
