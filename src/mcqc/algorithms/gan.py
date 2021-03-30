@@ -10,7 +10,6 @@ from torch import distributed as dist
 from cfmUtils.saver import Saver
 from cfmUtils.vision.colorSpace import rgb2hsv, hsv2rgb
 from cfmUtils.base import FrequecyHook
-from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr

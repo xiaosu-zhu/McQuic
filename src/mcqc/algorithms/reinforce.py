@@ -7,7 +7,6 @@ from torch import nn
 from torch.distributions import Categorical
 from cfmUtils.saver import Saver
 from cfmUtils.vision.colorSpace import rgb2hsv, hsv2rgb
-from pytorch_msssim import ms_ssim
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
