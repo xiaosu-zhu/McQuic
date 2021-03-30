@@ -18,11 +18,12 @@ from mcqc import Config
 WARMUP_STEP = 10000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 0.95 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
 
 INCRE_STEP = 1e6
 def _tuneReg(step):
-    return step / INCRE_STEP
+    return 0.0
+    # return step / INCRE_STEP
 
 class TwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
