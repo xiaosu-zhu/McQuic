@@ -23,9 +23,9 @@ def _transformerLR(step):
 
 INCRE_STEP = 1e8
 def _tuneReg(step):
-    return (step / INCRE_STEP) ** 2
+    return 1.0
 
-class TwoStage(Algorithm):
+class ExpTwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
@@ -40,7 +40,7 @@ class TwoStage(Algorithm):
         #     self._channelLast = True
         #     model = model.to(memory_format=torch.channels_last)
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False, find_unused_parameters=True)
 
         if self._rank == 0:
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
@@ -96,7 +96,7 @@ class TwoStage(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        e2e = False
+        e2e = True
         images = None
         regScale = 1.0
 
@@ -123,7 +123,7 @@ class TwoStage(Algorithm):
             sampler.set_epoch(i)
             temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
             for images in trainLoader:
-                self._optimizer.zero_grad(True)
+                self._model.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, qLoss, reg), (restored, *_) = self._model(images, temperature, e2e)
                 (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.gen * qLoss + regScale * self._config.Coef.reg * reg).mean().backward()
@@ -132,6 +132,7 @@ class TwoStage(Algorithm):
                 step += 1
                 self._config.Coef.reg = _tuneReg(step)
                 # e2e = step % 2 == 0
+                if step >= 20000: e2e = None
                 if self._loggingHook is not None:
                     with torch.no_grad():
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, qLoss=qLoss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg)
