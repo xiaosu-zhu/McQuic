@@ -67,8 +67,8 @@ class TwoStage(Algorithm):
         # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
-    def _deTrans(imaage):
-        return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
+    def _deTrans(image):
+        return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
         ssimLoss, l1l2Loss, qLoss, reg, step, regCoeff = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["qLoss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"]
