@@ -35,6 +35,30 @@ class MultiScaleCompressor(nn.Module):
             restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds
 
+class MultiScaleCompressorExp(nn.Module):
+    def __init__(self, k , channel, nPreLayers):
+        super().__init__()
+        stage = len(k)
+        self._encoder = MultiScaleEncoder(channel, nPreLayers, 1)
+        self._quantizer = TransformerQuantizer(k, channel, 0.1)
+        self._decoder = MultiScaleDecoder(channel, nPreLayers, 1)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        if e2e:
+            latents = self._encoder(x)
+        else:
+            with torch.no_grad():
+                latents = self._encoder(x)
+        quantizeds, codes, logits = self._quantizer(latents, temp, True)
+        if e2e:
+            restored = torch.tanh(self._decoder(latents))
+        elif e2e is None:
+            with torch.no_grad():
+                restored = torch.tanh(self._decoder(quantizeds))
+        else:
+            restored = torch.tanh(self._decoder(quantizeds))
+        return restored, codes, latents, logits, quantizeds
+
 
 class MultiScaleCompressorStorch(nn.Module):
     def __init__(self, k , channel, nPreLayers):
