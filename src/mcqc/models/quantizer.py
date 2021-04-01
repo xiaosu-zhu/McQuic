@@ -70,8 +70,9 @@ class TransformerQuantizer(nn.Module):
             key = self._codebookAsKey[i](codewords)
             # [h*w, n, k]
             logit = (query @ key.t()) / self._scaling[i]
+            sample = F.gumbel_softmax(logit, 0.1, True)
             # [h*w, n]
-            samples.append(logit.argmax(-1))
+            samples.append(sample.argmax(-1))
         return samples
 
     def _attentionDecoder(self, samples):

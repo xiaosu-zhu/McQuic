@@ -54,7 +54,7 @@ class MultiScaleCompressorExp(nn.Module):
             restored = torch.tanh(self._decoder(latents))
         elif e2e is None:
             with torch.no_grad():
-                restored = torch.tanh(self._decoder(quantizeds))
+                restored = torch.tanh(self._decoder(latents))
         else:
             restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds
