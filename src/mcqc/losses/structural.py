@@ -145,11 +145,13 @@ class CompressionLossTwoStage(nn.Module):
                 # N, H, W, K -> N, HW, K
                 batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
 
-                posterior = OneHotCategorical(logits=batchWiseLogit)
-                prior = OneHotCategorical(probs=torch.ones_like(batchWiseLogit) / batchWiseLogit.shape[-1])
-                reg = torch.distributions.kl_divergence(posterior, prior).sum(-1) + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
+                # posterior = OneHotCategorical(logits=batchWiseLogit)
+                # prior = OneHotCategorical(probs=torch.ones_like(batchWiseLogit) / batchWiseLogit.shape[-1])
+                # reg = torch.distributions.kl_divergence(posterior, prior).sum(-1) + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
+                diversity = batchWiseLogit.std(-1).sigmoid().mean(-1)
+                reg = compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
+                reg = reg / diversity
                 regs.append(reg)
-                # reg = reg / diversity
             regs = sum(regs)
         return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs # + 10 * stdReg
 
