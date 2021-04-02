@@ -45,6 +45,9 @@ class MultiScaleCompressorSplitted(nn.Module):
         self._quantizer = AttentiveQuantizer(k, channel, 0.1)
         self._decoder = nn.Sequential(TransformerDecoder(channel), MultiScaleDecoder(channel, nPreLayers, 1))
 
+    def _encoder(self, x):
+        return self._transEncoder(self._preEncoder(x), self._quantizer.getCodebook())[0]
+
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latents = self._preEncoder(x)
         latents, predicts = self._transEncoder(latents, self._quantizer.getCodebook())
