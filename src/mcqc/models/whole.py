@@ -6,7 +6,7 @@ import storch
 
 from mcqc.losses.structural import CompressionLoss, QError, CompressionReward, CompressionLossTwoStage, CompressionLossTwoStageWithGan
 
-from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp
+from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted
 from .critic import SimpleCritic
 from .discriminator import FullDiscriminator, LatentsDiscriminator
 
@@ -42,7 +42,7 @@ class Whole(nn.Module):
 class WholeTwoStage(nn.Module):
     def __init__(self, k, channel, nPreLayers):
         super().__init__()
-        self._compressor = MultiScaleCompressorExp(k, channel, nPreLayers)
+        self._compressor = MultiScaleCompressorSplitted(k, channel, nPreLayers)
         # self._discriminator = FullDiscriminator(channel // 4)
         self._cLoss = CompressionLossTwoStage()
         self._qLoss = QError()
