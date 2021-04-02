@@ -42,7 +42,7 @@ class Whole(nn.Module):
 class WholeTwoStage(nn.Module):
     def __init__(self, k, channel, nPreLayers):
         super().__init__()
-        self._compressor = MultiScaleCompressorExp(k, channel, nPreLayers)
+        self._compressor = MultiScaleCompressor(k, channel, nPreLayers)
         # self._discriminator = FullDiscriminator(channel // 4)
         self._cLoss = CompressionLossTwoStage()
         self._qLoss = QError()
