@@ -116,9 +116,10 @@ class TwoStage(Algorithm):
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
-            if self._rank == 0:
-                uniqueCodes = self._eval(testLoader, step)
-                self._logger.info("Resume training from %3dk step.", step // 1000)
+            self._logger.info("Resume training from %3dk step.", step // 1000)
+        if self._rank == 0:
+            uniqueCodes = self._eval(testLoader, step)
+
         dist.barrier()
 
         for i in range(initEpoch, self._config.Epoch):
