@@ -23,7 +23,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 1e8
 def _tuneReg(step):
-    return 1.0
+    return 0.0
 
 class ExpTwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -66,8 +66,8 @@ class ExpTwoStage(Algorithm):
         # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
-    def _deTrans(imaage):
-        return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
+    def _deTrans(image):
+        return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
         ssimLoss, l1l2Loss, qLoss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["qLoss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
@@ -77,8 +77,8 @@ class ExpTwoStage(Algorithm):
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
+        self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
-        self._saver.add_histogram("Stat/Temperature", temp, global_step=step)
 
     def _mediumHook(self, **kwArgs):
         images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
@@ -129,6 +129,7 @@ class ExpTwoStage(Algorithm):
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature, e2e)
                 (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.gen * qLoss + regScale * self._config.Coef.reg * reg).mean().backward()
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 step += 1
