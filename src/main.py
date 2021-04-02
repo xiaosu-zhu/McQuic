@@ -108,7 +108,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     def schdrWrapper(optim):
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
-    method = ExpTwoStage(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
+    method = TwoStage(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
 

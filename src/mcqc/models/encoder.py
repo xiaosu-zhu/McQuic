@@ -6,6 +6,7 @@ from torch import nn
 
 from mcqc.layers.convs import conv3x3
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample
+from mcqc.layers.positional import PositionalEncoding2D
 
 
 class Encoder(nn.Module):
@@ -52,3 +53,33 @@ class MultiScaleEncoder(nn.Module):
             x = scale(x)
             results.append(process(x))
         return results
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, k:list, cin:int, rate: float = 0.1):
+        super().__init__()
+        self._encoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._position = PositionalEncoding2D(cin, 120, 120)
+        k = k[0]
+        self._finalLayer = nn.Linear(cin, k)
+        self._c = cin
+
+    def forward(self, convZs, codebooks):
+        latents = list()
+        logits = list()
+        for xRaw, codebook in zip(convZs, codebooks):
+            n, c, h, w = xRaw.shape
+            # [k, 1, c]
+            codebook = codebook[:, None, :]
+            # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
+            # encoderIn = encoderIn.reshape(-1, n, c)
+            # [h*w, n, c] -> [n, c, h, w]
+            x = self._encoder(encoderIn, codebook)
+            logit = self._finalLayer(x)
+            x = x.permute(1, 2, 0).reshape(n, c, h, w)
+            logit = logit.permute(1, 0, 2).reshape(n, h, w, -1)
+            latents.append(x)
+            logits.append(logit)
+        return latents, logits

@@ -3,6 +3,7 @@ from torch import nn
 
 from mcqc.layers.convs import conv3x3
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock, UpSample
+from mcqc.layers.positional import PositionalEncoding2D
 
 class Decoder(nn.Module):
     def __init__(self, channel):
@@ -47,3 +48,25 @@ class MultiScaleDecoder(nn.Module):
                 break
             x = x + latents[i + 1]
         return self._postProcess(x)
+
+
+class TransformerDecoder(nn.Module):
+    def __init__(self, cin:int, rate: float = 0.1):
+        super().__init__()
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._position = PositionalEncoding2D(cin, 120, 120)
+        self._c = cin
+
+    def forward(self, convZs):
+        latents = list()
+        for xRaw in convZs:
+            n, c, h, w = xRaw.shape
+            # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
+            # [h, w, n, c] -> [h*w, n, c]
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
+            # encoderIn = encoderIn.reshape(-1, n, c)
+            # [h*w, n, c] -> [n, c, h, w]
+            x = self._encoder(encoderIn).permute(1, 2, 0).reshape(n, c, h, w)
+            latents.append(x)
+        return latents

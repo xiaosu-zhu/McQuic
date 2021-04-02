@@ -7,9 +7,9 @@ import torch.nn.functional as F
 from cfmUtils.base import parallelFunction, Module
 import storch
 
-from .encoder import Encoder, MultiScaleEncoder
-from .decoder import Decoder, MultiScaleDecoder
-from .quantizer import TransformerQuantizer, VQuantizer, TransformerQuantizerRein, TransformerQuantizerStorch
+from .encoder import Encoder, MultiScaleEncoder, TransformerEncoder
+from .decoder import Decoder, MultiScaleDecoder, TransformerDecoder
+from .quantizer import TransformerQuantizer, VQuantizer, TransformerQuantizerRein, TransformerQuantizerStorch, AttentiveQuantizer
 from mcqc.losses.structural import CompressionLoss
 
 
@@ -34,6 +34,31 @@ class MultiScaleCompressor(nn.Module):
         else:
             restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds
+
+
+class MultiScaleCompressorSplitted(nn.Module):
+    def __init__(self, k , channel, nPreLayers):
+        super().__init__()
+        stage = len(k)
+        self._preEncoder = MultiScaleEncoder(channel, nPreLayers, 1)
+        self._transEncoder = TransformerEncoder(k, channel)
+        self._quantizer = AttentiveQuantizer(k, channel, 0.1)
+        self._decoder = nn.Sequential(TransformerDecoder(channel), MultiScaleDecoder(channel, nPreLayers, 1))
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latents = self._preEncoder(x)
+        latents, predicts = self._transEncoder(latents, self._quantizer.getCodebook())
+        quantizeds, codes, logits = self._quantizer(latents, temp, True)
+        if e2e is None:
+            restored = torch.tanh(self._decoder(latents))
+        elif not e2e:
+            mixeds = list()
+            for latent, q in zip(latents, quantizeds):
+                mixeds.append((q - latent).detach() + latent)
+            restored = torch.tanh(self._decoder(mixeds))
+        else:
+            restored = torch.tanh(self._decoder(quantizeds))
+        return restored, codes, latents, (predicts, logits), quantizeds
 
 class MultiScaleCompressorExp(nn.Module):
     def __init__(self, k , channel, nPreLayers):
