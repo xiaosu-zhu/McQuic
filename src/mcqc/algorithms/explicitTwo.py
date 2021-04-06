@@ -23,7 +23,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 1e8
 def _tuneReg(step):
-    return 0.0
+    return 1.0
 
 class ExpTwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
