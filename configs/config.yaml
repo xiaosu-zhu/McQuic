@@ -1,16 +1,16 @@
 epoch: 10000000000
-gpus: 4
+gpus: 2
 vRam: -1
 wantsMore: false
 dataset: clic/train
 valDataset: clic/valid
-batchSize: 1
+batchSize: 4
 lr: 1.e-5
 coef:
     ssim: 1.0
     l1l2: 1.0
     reg: 0.0
-    gen: 1.0
+    gen: 10.0
     dis: 0.0
 model:
     channel: 512
