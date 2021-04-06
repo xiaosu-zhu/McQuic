@@ -141,11 +141,11 @@ class CompressionLossTwoStage(nn.Module):
         l1QLoss = sum(l1QLoss)
         l2QLoss = sum(l2QLoss)
 
-        for predict, logit in zip(predicts, logits):
-            code = logit.argmax(-1)
-            # [N, K, H, W]
-            predict = predict.permute(0, 3, 1, 2)
-            ceLoss = F.cross_entropy(predict, code, reduction="none").mean(axis=(1, 2))
+        # for predict, logit in zip(predicts, logits):
+        #     code = logit.argmax(-1)
+        #     # [N, K, H, W]
+        #     predict = predict.permute(0, 3, 1, 2)
+        #     ceLoss = F.cross_entropy(predict, code, reduction="none").mean(axis=(1, 2))
 
         if logits is not None:
             for logit in logits:
@@ -161,7 +161,7 @@ class CompressionLossTwoStage(nn.Module):
                 reg = reg / diversity
                 regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs + 0.0 * ceLoss # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs # + 10 * stdReg
 
 
 class CompressionReward(nn.Module):

@@ -41,16 +41,18 @@ class MultiScaleCompressorSplitted(nn.Module):
         super().__init__()
         stage = len(k)
         self._preEncoder = MultiScaleEncoder(channel, nPreLayers, 1)
-        self._transEncoder = TransformerEncoder(k, channel)
+        # self._transEncoder = TransformerEncoder(k, channel)
         self._quantizer = AttentiveQuantizer(k, channel, 0.1)
-        self._decoder = nn.Sequential(TransformerDecoder(channel), MultiScaleDecoder(channel, nPreLayers, 1))
+        # self._decoder = nn.Sequential(TransformerDecoder(channel), MultiScaleDecoder(channel, nPreLayers, 1))
+        self._decoder = MultiScaleDecoder(channel, nPreLayers, 1)
 
     def _encoder(self, x):
-        return self._transEncoder(self._preEncoder(x), self._quantizer.getCodebook())[0]
+        # return self._transEncoder(self._preEncoder(x), self._quantizer.getCodebook())[0]
+        return self._preEncoder(x)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latents = self._preEncoder(x)
-        latents, predicts = self._transEncoder(latents, self._quantizer.getCodebook())
+        # latents, predicts = self._transEncoder(latents, self._quantizer.getCodebook())
         quantizeds, codes, logits = self._quantizer(latents, temp, True)
         if e2e is None:
             restored = torch.tanh(self._decoder(latents))
@@ -61,7 +63,7 @@ class MultiScaleCompressorSplitted(nn.Module):
             restored = torch.tanh(self._decoder(mixeds))
         else:
             restored = torch.tanh(self._decoder(quantizeds))
-        return restored, codes, latents, (predicts, logits), quantizeds
+        return restored, codes, latents, (None, logits), quantizeds
 
 class MultiScaleCompressorExp(nn.Module):
     def __init__(self, k , channel, nPreLayers):
