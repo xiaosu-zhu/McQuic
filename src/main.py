@@ -2,11 +2,13 @@
 import os
 from logging import Logger
 import math
+import random
 
 import torch
 import torchvision
 import torch.multiprocessing as mp
 import torch.distributed as dist
+import numpy as np
 
 from absl import app
 from absl import flags
@@ -60,6 +62,9 @@ def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_PORT"] = "29811"
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
+    torch.manual_seed(0)
+    random.seed(0)
+    np.random.seed(0)
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
     dist.barrier()
