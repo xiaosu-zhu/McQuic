@@ -40,21 +40,34 @@ class CompressionLoss(nn.Module):
         self._msssim = MsSSIM(data_range=2.0, size_average=False)
 
     def forward(self, images, restored, latents, logits, quantizeds):
+        predicts, logits = logits
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
-
         regs = list()
+
+        for predict, logit in zip(predicts, logits):
+            code = logit.argmax(-1)
+            # [N, K, H, W]
+            predict = predict.permute(0, 3, 1, 2)
+            ceLoss = F.cross_entropy(predict, code, reduction="none").mean(axis=(1, 2))
+
         if logits is not None:
             for logit in logits:
                 # N, H, W, K -> N, HW, K
                 batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
+                # sumLogit = batchWiseLogit.sum(1)
 
-                posterior = OneHotCategorical(logits=batchWiseLogit)
-                prior = OneHotCategorical(probs=torch.ones_like(batchWiseLogit) / batchWiseLogit.shape[-1])
-                regs.append(torch.distributions.kl_divergence(posterior, prior).sum(-1) + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps))
+                # posterior = OneHotCategorical(logits=sumLogit)
+                # prior = OneHotCategorical(probs=torch.ones_like(sumLogit) / sumLogit.shape[-1])
+                # reg = torch.distributions.kl_divergence(posterior, prior).mean(-1)# + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
+                diversity = batchWiseLogit.std(-1).sigmoid().mean(-1)
+                reg = compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
+                reg = reg / diversity
+                regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, regs # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, regs + 0.0 * ceLoss # + 10 * stdReg
+
 
 
 class CompressionLossTwoStageWithGan(nn.Module):
@@ -122,7 +135,7 @@ class CompressionLossTwoStage(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, size_average=False)
 
-    def forward(self, images, restored, latents, logits, quantizeds):
+    def forward(self, images, restored, latents, logits, quantizeds, softQs):
         predicts, logits = logits
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
@@ -131,21 +144,21 @@ class CompressionLossTwoStage(nn.Module):
         l2QLoss = list()
         l1QLoss = list()
         regs = list()
-        for latent, q in zip(latents, quantizeds):
+        for latent, q, soft in zip(latents, quantizeds, softQs):
             l2QLoss.append(F.mse_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
             l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
-            l2QLoss.append(0.25 * F.mse_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
-            l1QLoss.append(0.25 * F.l1_loss(latent, q.detach(), reduction='none').mean(axis=(1, 2, 3)))
+            l2QLoss.append(0.25 * F.mse_loss(latent, soft.detach(), reduction='none').mean(axis=(1, 2, 3)))
+            l1QLoss.append(0.25 * F.l1_loss(latent, soft.detach(), reduction='none').mean(axis=(1, 2, 3)))
             # regs.append(-1e-4 * ((latent ** 2).mean((1, 2, 3)) + (q ** 2).mean((1, 2, 3))))
 
         l1QLoss = sum(l1QLoss)
         l2QLoss = sum(l2QLoss)
 
-        # for predict, logit in zip(predicts, logits):
-        #     code = logit.argmax(-1)
-        #     # [N, K, H, W]
-        #     predict = predict.permute(0, 3, 1, 2)
-        #     ceLoss = F.cross_entropy(predict, code, reduction="none").mean(axis=(1, 2))
+        for predict, logit in zip(predicts, logits):
+            code = logit.argmax(-1)
+            # [N, K, H, W]
+            predict = predict.permute(0, 3, 1, 2)
+            ceLoss = F.cross_entropy(predict, code, reduction="none").mean(axis=(1, 2))
 
         if logits is not None:
             for logit in logits:
@@ -161,7 +174,7 @@ class CompressionLossTwoStage(nn.Module):
                 reg = reg / diversity
                 regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs + 0.0 * ceLoss # + 10 * stdReg
 
 
 class CompressionReward(nn.Module):

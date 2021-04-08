@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from mcqc.layers.convs import conv3x3
-from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample
+from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample, L2Normalize
 from mcqc.layers.positional import PositionalEncoding2D
 
 
@@ -55,12 +55,16 @@ class MultiScaleEncoder(nn.Module):
         return results
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, k:list, cin:int, rate: float = 0.1):
+    def __init__(self, k:list, cin:int, rate: float = 0.1, normalize: bool = True):
         super().__init__()
         self._encoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
         self._position = PositionalEncoding2D(cin, 120, 120)
         k = k[0]
         self._finalLayer = nn.Linear(cin, k)
+        # if normalize:
+        #     self._norm = L2Normalize()
+        # else:
+        #     self._norm = None
         self._c = cin
 
     def forward(self, convZs, codebooks):
@@ -75,9 +79,12 @@ class TransformerEncoder(nn.Module):
             # [h, w, n, c] -> [h*w, n, c]
             encoderIn = self._position(encoderIn).reshape(-1, n, c)
             # encoderIn = encoderIn.reshape(-1, n, c)
-            # [h*w, n, c] -> [n, c, h, w]
+            # [h*w, n, c]
             x = self._encoder(encoderIn, codebook)
+            # if self._norm is not None:
+            #     x = self._norm(x)
             logit = self._finalLayer(x)
+            # [h*w, n, c] -> [n, c, h, w]
             x = x.permute(1, 2, 0).reshape(n, c, h, w)
             logit = logit.permute(1, 0, 2).reshape(n, h, w, -1)
             latents.append(x)

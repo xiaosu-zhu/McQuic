@@ -14,7 +14,7 @@ from .discriminator import FullDiscriminator, LatentsDiscriminator
 class Whole(nn.Module):
     def __init__(self, k, channel, nPreLayers):
         super().__init__()
-        self._compressor = MultiScaleCompressor(k, channel, nPreLayers)
+        self._compressor = MultiScaleCompressorSplitted(k, channel, nPreLayers)
         # self._discriminator = FullDiscriminator(channel // 4)
 
         self._cLoss = CompressionLoss()
@@ -25,7 +25,7 @@ class Whole(nn.Module):
     #     return self._compressor._quantizer._codebook0
     # @torch.cuda.amp.autocast()
     def forward(self, image, temp):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, True)
+        restored, codes, latents, logits, quantizeds, softQs = self._compressor(image, temp, True)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())
@@ -53,8 +53,8 @@ class WholeTwoStage(nn.Module):
 
     # @torch.cuda.amp.autocast()
     def forward(self, image, temp, e2e):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, e2e)
-        ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds)
+        restored, codes, latents, logits, quantizeds, softQs = self._compressor(image, temp, e2e)
+        ssimLoss, l1l2Loss, qLoss, reg = self._cLoss(image, restored, latents, logits, quantizeds, softQs)
         return (ssimLoss, l1l2Loss, qLoss, reg), (restored, codes, latents, logits, quantizeds)
 
 

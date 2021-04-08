@@ -1,3 +1,5 @@
+from typing import Union, Tuple
+
 import torch
 from torch import nn
 
@@ -5,6 +7,12 @@ from mcqc import Consts
 
 from .gdn import GenDivNorm
 from .convs import conv1x1, conv3x3, subPixelConv3x3
+
+
+class L2Normalize(nn.Module):
+    def forward(self, x: torch.Tensor, dim: Union[int, Tuple[int]] = -1):
+        norm = (x ** 2).sum(axis=dim, keepdim=True).sqrt()
+        return x / norm
 
 
 class ResidualBlockWithStride(nn.Module):

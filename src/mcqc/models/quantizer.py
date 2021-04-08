@@ -10,8 +10,9 @@ from torch.distributions import Bernoulli, Categorical, OneHotCategorical
 from cfmUtils.base import Module
 from cfmUtils.metrics.pairwise import l2DistanceWithNorm, l2Distance
 
+from mcqc.layers.gumbelSoftmax import GumbelSoftmax
 from mcqc.layers.layerGroup import LayerGroup
-from mcqc.layers.blocks import ResidualBlock
+from mcqc.layers.blocks import ResidualBlock, L2Normalize
 from mcqc.models.transformer import Encoder, Decoder
 from mcqc.layers.positional import PositionalEncoding2D, PositionalEncoding1D, DePositionalEncoding2D, LearnablePositionalEncoding2D, NPositionalEncoding2D
 from mcqc import Consts
@@ -26,11 +27,13 @@ class AttentiveQuantizer(nn.Module):
         self._codebookAsKey = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for numCodewords in k])
         self._codebookAsValue = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for numCodewords in k])
         self._xAsQuery = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for numCodewords in k])
+        # self._norm = L2Normalize()
         self._k = k
         self._scaling = [sqrt(kk) for kk in k]
         self._d = float(cin) ** 0.5
         self._c = cin
         self._position = PositionalEncoding2D(cin, 120, 120)
+        self._gumbel = GumbelSoftmax()
 
     def getCodebook(self):
         for i in range(len(self._k)):
@@ -39,28 +42,33 @@ class AttentiveQuantizer(nn.Module):
     def _attention(self, x, temp, hard):
         xs = torch.chunk(x, len(self._k), -1)
         samples = list()
+        softs = list()
         quantizeds = list()
         logits = list()
-        for i, k in enumerate(self._k):
+        for i, _ in enumerate(self._k):
             codewords = getattr(self, f"codebook{i}")
             x = xs[i]
+            # [h*w, n, c]
             query = self._xAsQuery[i](x)
+            # [k, c]
             key = self._codebookAsKey[i](codewords)
+            # [k, c]
             value = self._codebookAsValue[i](codewords)
-            k = self._k[i]
+            # k = self._k[i]
             # [h*w, n, k]
             logit = (query @ key.t()) / self._scaling[i]
             logits.append(logit)
-            sample = F.gumbel_softmax(logit, temp, hard)
+            sample, soft = self._gumbel(logit, temp, hard)
             samples.append(sample)
+            softs.append(soft @ value)
             quantizeds.append(sample @ value)
         #      [h*w, n, Cin]
-        return torch.cat(quantizeds, -1), samples, logits
+        return torch.cat(quantizeds, -1), samples, torch.cat(softs, -1), logits
 
     def _attentionEncoder(self, x):
         xs = torch.chunk(x, len(self._k), -1)
         samples = list()
-        for i, k in enumerate(self._k):
+        for i, _ in enumerate(self._k):
             codewords = getattr(self, f"codebook{i}")
             x = xs[i]
             query = self._xAsQuery[i](x)
@@ -75,7 +83,7 @@ class AttentiveQuantizer(nn.Module):
     def _attentionDecoder(self, samples):
         quantizeds = list()
         for i, (k, code) in enumerate(zip(self._k, samples)):
-            n, h, w = code.shape
+            # n, h, w = code.shape
             codewords = getattr(self, f"codebook{i}")
             value = self._codebookAsValue[i](codewords)
             # [n, h, w, k]
@@ -88,7 +96,7 @@ class AttentiveQuantizer(nn.Module):
     def encode(self, latents):
         # samples = list()
         zs = list()
-        for i, xRaw in enumerate(latents):
+        for _, xRaw in enumerate(latents):
             n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c]
             encoderIn = xRaw.permute(2, 3, 0, 1)
@@ -114,8 +122,9 @@ class AttentiveQuantizer(nn.Module):
     def forward(self, latents, temp, *_):
         quantizeds = list()
         codes = list()
+        softQs = list()
         # logits = list()
-        for i, (xRaw, k) in enumerate(zip(latents, self._k)):
+        for _, (xRaw, k) in enumerate(zip(latents, self._k)):
             n, c, h, w = xRaw.shape
             # [n, c, h, w] -> [h, w, n, c]
             """ *************** TODO: NEED DETACH? ******************* """
@@ -125,7 +134,7 @@ class AttentiveQuantizer(nn.Module):
             x = encoderIn.reshape(-1, n ,c)
             # similar to scaled dot-product attention
             # [h*w, N, Cin],    M * [h*w, n, k]
-            quantized, samples, logits = self._attention(x, temp, True)
+            quantized, samples, softQ, logits = self._attention(x, temp, True)
             # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
             deTransformed = quantized.reshape(h, w, n, c).permute(2, 3, 0, 1)
 
@@ -133,11 +142,12 @@ class AttentiveQuantizer(nn.Module):
             # mixed = mask * xRaw.detach() + torch.logical_not(mask) * deTransformed
             # [n, c, h, w]
             quantizeds.append(deTransformed)
+            softQs.append(softQ.reshape(h, w, n, c).permute(2, 3, 0, 1))
             samples = [s.argmax(-1).permute(1, 0).reshape(n, h, w) for s in samples]
             logits = [l.permute(1, 0, 2).reshape(n, h, w, k) for l in logits]
             # codes.append(samples.argmax(-1).permute(1, 0).reshape(n, h, w))
             # logits.append(logit.permute(1, 0, 2).reshape(n, h, w, k))
-        return quantizeds, codes, logits
+        return quantizeds, softQs, codes, logits
 
 
 class TransformerQuantizer(nn.Module):

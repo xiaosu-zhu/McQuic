@@ -12,14 +12,19 @@ from cfmUtils.base import FrequecyHook
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
+from mcqc.losses.ssim import MsSSIM
 from mcqc.models.whole import Whole
 from mcqc import Config
 
-WARMUP_STEP = 10000
-def _transformerLR(epoch):
-    epoch = epoch + 1
-    return min(epoch / WARMUP_STEP, 0.95 ** (epoch - WARMUP_STEP))
+WARMUP_STEP = 20000
+def _transformerLR(step):
+    step = step + 1
+    return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
 
+INCRE_STEP = 1e8
+def _tuneReg(step):
+    return 0.0
+    # return step / INCRE_STEP
 
 class Plain(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -36,7 +41,10 @@ class Plain(Algorithm):
         #     self._channelLast = True
         #     model = model.to(memory_format=torch.channels_last)
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank)
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
+
+        if self._rank == 0:
+            self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
         self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
@@ -53,21 +61,24 @@ class Plain(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({10: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
         # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
-    def _deTrans(imaage):
-        return ((imaage * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
+    def _deTrans(image):
+        return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"]
+        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
-        self._saver.add_scalar("stat/lr", self._scheduler.get_last_lr()[0], global_step=step)
+        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
+        self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
+        self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
+        self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
 
     def _mediumHook(self, **kwArgs):
         images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
@@ -106,8 +117,10 @@ class Plain(Algorithm):
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
             if self._rank == 0:
-                uniqueCodes = self._eval(testLoader, step)
                 self._logger.info("Resume training from %3dk step.", step // 1000)
+        if self._rank == 0:
+            uniqueCodes = self._eval(testLoader, step)
+
         dist.barrier()
 
         for i in range(initEpoch, self._config.Epoch):
@@ -116,18 +129,21 @@ class Plain(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, *_) = self._model(images, temperature)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature)
+                _, logits = logits
                 (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + regScale * self._config.Coef.reg * reg).mean().backward()
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 step += 1
+                self._config.Coef.reg = _tuneReg(step)
                 # e2e = step % 2 == 0
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale)
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg, logits=logits)
                         uniqueCodes = results.get(1000, None)
                         if uniqueCodes is not None:
-                            regScale = math.sqrt(self._config.Model.k[0] / uniqueCodes)
+                            regScale = self._config.Model.k[0] / uniqueCodes
 
     # pylint: disable=protected-access
     @torch.no_grad()
@@ -157,7 +173,9 @@ class Plain(Algorithm):
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
 
-            ssims.append(evalSSIM(restored.detach(), raw.detach(), True))
+            ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
+
+            ssims.append(20 * (1.0 / (1.0 - ssim).sqrt()).log10())
             psnrs.append(psnr(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
