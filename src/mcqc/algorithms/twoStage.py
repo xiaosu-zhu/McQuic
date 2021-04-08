@@ -21,9 +21,10 @@ def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 1e6
+INCRE_STEP = 1e8
 def _tuneReg(step):
-    return step / INCRE_STEP
+    return 0.0
+    # return step / INCRE_STEP
 
 class TwoStage(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -143,7 +144,7 @@ class TwoStage(Algorithm):
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, qLoss=qLoss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg, logits=logits)
                         uniqueCodes = results.get(1000, None)
                         if uniqueCodes is not None:
-                            regScale = math.sqrt(self._config.Model.k[0] / uniqueCodes)
+                            regScale = self._config.Model.k[0] / uniqueCodes
 
     # pylint: disable=protected-access
     @torch.no_grad()
