@@ -66,7 +66,7 @@ class CompressionLoss(nn.Module):
                 reg = reg / diversity
                 regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, regs + 0.0 * ceLoss # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, regs + ceLoss # + 10 * stdReg
 
 
 
@@ -141,18 +141,22 @@ class CompressionLossTwoStage(nn.Module):
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
 
-        l2QLoss = list()
-        l1QLoss = list()
+        # l2QLoss = list()
+        # l1QLoss = list()
+        dotLoss = list()
         regs = list()
         for latent, q, soft in zip(latents, quantizeds, softQs):
-            l2QLoss.append(F.mse_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
-            l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
-            l2QLoss.append(0.25 * F.mse_loss(latent, soft.detach(), reduction='none').mean(axis=(1, 2, 3)))
-            l1QLoss.append(0.25 * F.l1_loss(latent, soft.detach(), reduction='none').mean(axis=(1, 2, 3)))
+            dotLoss.append(-(latent.detach() * q).sum(1).mean(axis=(1, 2)))
+            dotLoss.append(-0.01 * (latent * soft.detach()).sum(1).mean(axis=(1, 2)))
+            # l2QLoss.append(F.mse_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
+            # l1QLoss.append(F.l1_loss(latent.detach(), q, reduction='none').mean(axis=(1, 2, 3)))
+            # l2QLoss.append(0.25 * F.mse_loss(latent, soft.detach(), reduction='none').mean(axis=(1, 2, 3)))
+            # l1QLoss.append(0.25 * F.l1_loss(latent, soft.detach(), reduction='none').mean(axis=(1, 2, 3)))
             # regs.append(-1e-4 * ((latent ** 2).mean((1, 2, 3)) + (q ** 2).mean((1, 2, 3))))
 
-        l1QLoss = sum(l1QLoss)
-        l2QLoss = sum(l2QLoss)
+        dotLoss = sum(dotLoss)
+        # l1QLoss = sum(l1QLoss)
+        # l2QLoss = sum(l2QLoss)
 
         for predict, logit in zip(predicts, logits):
             code = logit.argmax(-1)
@@ -174,7 +178,7 @@ class CompressionLossTwoStage(nn.Module):
                 reg = reg / diversity
                 regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, l1QLoss + l2QLoss, regs + 0.0 * ceLoss # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, dotLoss, regs + ceLoss # + 10 * stdReg
 
 
 class CompressionReward(nn.Module):
