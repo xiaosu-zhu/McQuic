@@ -106,14 +106,14 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = WholeTwoStage(config.Model.k, config.Model.channel, config.Model.nPreLayers)
+    model = Whole(config.Model.k, config.Model.channel, config.Model.nPreLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     def schdrWrapper(optim):
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
-    method = TwoStage(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
+    method = Plain(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
 

@@ -41,9 +41,9 @@ class MultiScaleCompressorSplitted(nn.Module):
     def __init__(self, k , channel, nPreLayers):
         super().__init__()
         self._preEncoder = MultiScaleEncoder(channel, nPreLayers, 1)
-        self._transEncoder = TransformerEncoder(k, channel)
+        self._transEncoder = TransformerEncoder(3, k, channel, normalize=False)
         self._quantizer = AttentiveQuantizer(k, channel, 0.1)
-        self._decoder = nn.Sequential(TransformerDecoder(channel), MultiScaleDecoder(channel, nPreLayers, 1))
+        # self._decoder = nn.Sequential(TransformerDecoder(1, channel), MultiScaleDecoder(channel, nPreLayers, 1))
         self._decoder = MultiScaleDecoder(channel, nPreLayers, 1)
 
     def _encoder(self, x):
@@ -64,6 +64,7 @@ class MultiScaleCompressorSplitted(nn.Module):
         else:
             restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, (predicts, logits), quantizeds, softQs
+
 
 class MultiScaleCompressorExp(nn.Module):
     def __init__(self, k , channel, nPreLayers):

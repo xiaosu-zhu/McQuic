@@ -51,9 +51,9 @@ class MultiScaleDecoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, cin:int, rate: float = 0.1):
+    def __init__(self, layers: int, cin:int, rate: float = 0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), layers)
         self._position = PositionalEncoding2D(cin, 120, 120)
         self._c = cin
 

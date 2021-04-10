@@ -55,16 +55,16 @@ class MultiScaleEncoder(nn.Module):
         return results
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, k:list, cin:int, rate: float = 0.1, normalize: bool = True):
+    def __init__(self, layers: int, k:list, cin:int, rate: float = 0.1, normalize: bool = True):
         super().__init__()
-        self._encoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
+        self._encoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dropout=rate, activation="gelu"), layers)
         self._position = PositionalEncoding2D(cin, 120, 120)
         k = k[0]
         self._finalLayer = nn.Linear(cin, k)
-        # if normalize:
-        #     self._norm = L2Normalize()
-        # else:
-        #     self._norm = None
+        if normalize:
+            self._norm = L2Normalize()
+        else:
+            self._norm = None
         self._c = cin
 
     def forward(self, convZs, codebooks):
@@ -81,8 +81,8 @@ class TransformerEncoder(nn.Module):
             # encoderIn = encoderIn.reshape(-1, n, c)
             # [h*w, n, c]
             x = self._encoder(encoderIn, codebook)
-            # if self._norm is not None:
-            #     x = self._norm(x)
+            if self._norm is not None:
+                x = self._norm(x)
             logit = self._finalLayer(x)
             # [h*w, n, c] -> [n, c, h, w]
             x = x.permute(1, 2, 0).reshape(n, c, h, w)
