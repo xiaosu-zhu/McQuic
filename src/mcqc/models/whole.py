@@ -12,20 +12,16 @@ from .discriminator import FullDiscriminator, LatentsDiscriminator
 
 
 class Whole(nn.Module):
-    def __init__(self, k, channel, nPreLayers):
+    def __init__(self, k, channel, numLayers):
         super().__init__()
-        self._compressor = MultiScaleCompressorSplitted(k, channel, nPreLayers)
+        self._compressor = MultiScaleCompressor(k, channel, numLayers)
         # self._discriminator = FullDiscriminator(channel // 4)
 
         self._cLoss = CompressionLoss()
         self._qLoss = QError()
 
-    # @property
-    # def codebook(self):
-    #     return self._compressor._quantizer._codebook0
-    # @torch.cuda.amp.autocast()
     def forward(self, image, temp):
-        restored, codes, latents, logits, quantizeds, softQs = self._compressor(image, temp, True)
+        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, True)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())

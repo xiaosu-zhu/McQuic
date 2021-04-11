@@ -40,17 +40,10 @@ class CompressionLoss(nn.Module):
         self._msssim = MsSSIM(data_range=2.0, size_average=False)
 
     def forward(self, images, restored, latents, logits, quantizeds):
-        predicts, logits = logits
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
         regs = list()
-
-        for predict, logit in zip(predicts, logits):
-            code = logit.argmax(-1)
-            # [N, K, H, W]
-            predict = predict.permute(0, 3, 1, 2)
-            ceLoss = F.cross_entropy(predict, code, reduction="none").mean(axis=(1, 2))
 
         if logits is not None:
             for logit in logits:
@@ -66,7 +59,7 @@ class CompressionLoss(nn.Module):
                 reg = reg / diversity
                 regs.append(reg)
             regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, regs + ceLoss # + 10 * stdReg
+        return ssimLoss, l1Loss + l2Loss, regs
 
 
 
