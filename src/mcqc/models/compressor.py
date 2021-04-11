@@ -15,25 +15,16 @@ from mcqc.layers.blocks import L2Normalize
 
 
 class MultiScaleCompressor(nn.Module):
-    def __init__(self, k , channel, nPreLayers):
+    def __init__(self, k, channel, numLayers):
         super().__init__()
-        stage = len(k)
-        self._encoder = MultiScaleEncoder(channel, nPreLayers, 1)
-        self._quantizer = TransformerQuantizer(k, channel, 0.1)
-        self._decoder = MultiScaleDecoder(channel, nPreLayers, 1)
+        self._encoder = MultiScaleEncoder(channel, 3, 1)
+        self._quantizer = TransformerQuantizer(numLayers, k, channel, 0.1)
+        self._decoder = MultiScaleDecoder(channel, 3, 1)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latents = self._encoder(x)
         quantizeds, codes, logits = self._quantizer(latents, temp, True)
-        if e2e is None:
-            restored = torch.tanh(self._decoder(latents))
-        elif not e2e:
-            mixeds = list()
-            for latent, q in zip(latents, quantizeds):
-                mixeds.append((q - latent).detach() + latent)
-            restored = torch.tanh(self._decoder(mixeds))
-        else:
-            restored = torch.tanh(self._decoder(quantizeds))
+        restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, quantizeds
 
 

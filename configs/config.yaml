@@ -15,4 +15,4 @@ coef:
 model:
     channel: 512
     k: [2048]
-    nPreLayers: 3
+    numLayers: 1

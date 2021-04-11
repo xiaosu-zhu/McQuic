@@ -150,7 +150,7 @@ class AttentiveQuantizer(nn.Module):
         return quantizeds, softQs, codes, logits
 
 
-class TransformerQuantizer(nn.Module):
+class TransformerQuantizerBak(nn.Module):
     def __init__(self, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
         # self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), 3)
@@ -443,87 +443,38 @@ class TransformerQuantizerStorch(nn.Module):
         return quantizeds, codes, logits
 
 
-class TransformerQuantizerRein(nn.Module):
-    def __init__(self, k: List[int], cin: int, rate: float = 0.1):
+class TransformerQuantizer(nn.Module):
+    def __init__(self, layers: int, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 6)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, dim_feedforward=cin, dropout=rate, activation="gelu"), 6)
-        for i, numCodewords in enumerate(k):
-            setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cin))))
-            # setattr(self, f"tCodebook{i}", nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(numCodewords, cin))))
-            # setattr(self, f"palette{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cin))))
-        self._codebookAsKey = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        # self._tCodebookAsKey = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        self._codebookAsValue = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        # self._tCodebookAsValue = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        self._xAsQuery = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        # self._tXAsQuery = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        self._k = k
-        self._scaling = [sqrt(kk) for kk in k]
-        self._d = float(cin) ** 0.5
-        self._c = cin
+        k = k[0]
         self._position = PositionalEncoding2D(cin, 120, 120)
-
-    def _attention(self, x, i):
-        codewords = getattr(self, f"codebook{i}")
-        query = self._xAsQuery[i](x)
-        key = self._codebookAsKey[i](codewords)
-        value = self._codebookAsValue[i](codewords)
-        k = self._k[i]
-        # [h*w, n, k]
-        logit = (query @ key.t()) / self._scaling[i]
-        distribution = Categorical(logits=logit)
-        sample = distribution.sample((1, )).squeeze(0)
-        oneHot = F.one_hot(sample, k).float()
-        return oneHot @ value, oneHot, logit, -distribution.log_prob(sample).sum(axis=0)
-
-    def _negLogP(self, x, code, i):
-        codewords = getattr(self, f"codebook{i}")
-        query = self._xAsQuery[i](x)
-        key = self._codebookAsKey[i](codewords)
-        value = self._codebookAsValue[i](codewords)
-        # [h*w, n, k]
-        logit = (query @ key.t()) / self._scaling[i]
-        distribution = Categorical(logits=logit)
-        code = code.reshape(code.shape[0], -1).permute(1, 0)
-        k = self._k[i]
-        oneHot = F.one_hot(code, k).float()
-        negLogP = -distribution.log_prob(code).sum(axis=0)
-        return oneHot @ value, logit, negLogP
-
-    def _attentionEncoder(self, x, i):
-        codewords = getattr(self, f"codebook{i}")
-        query = self._xAsQuery[i](x)
-        key = self._codebookAsKey[i](codewords)
-        # [h*w, n, k]
-        logit = (query @ key.t()) / self._scaling[i]
-        # [h*w, n]
-        return logit.argmax(-1)
-
-    def _attentionDecoder(self, code, i):
-        codewords = getattr(self, f"codebook{i}")
-        value = self._codebookAsValue[i](codewords)
-        k = self._k[i]
-        # [h*w, n, k]
-        oneHot = F.one_hot(code, k).float()
-        # [h*w, n, c]
-        return oneHot @ value
+        self._encoder = nn.Transformer(cin, 8, layers, layers, dropout=rate, activation="gelu")
+        setattr(self, "codebook", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin))))
+        self._codebookEncoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), layers)
+        self._select = nn.Linear(cin, k)
+        self._gumbel = GumbelSoftmax()
+        self._decoder = nn.Transformer(cin, 8, layers, layers, dropout=rate, activation="gelu")
+        self._codebookDecoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), layers)
 
     def encode(self, latents):
         samples = list()
         zs = list()
-        for i, xRaw in enumerate(latents):
+        for _, xRaw in enumerate(latents):
             n, c, h, w = xRaw.shape
-            x = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
+            # [k, 1, c]
+            codebook = getattr(self, "codebook")[:, None, :]
             # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
             # encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
-            # encoderIn = encoderIn.reshape(-1, n, c)
-            # encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # x = self._encoder(encoderIn)
-            zs.append(x)
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
+            # [h*w, n, c]
+            x = self._encoder(codebook, encoderIn)
+            # [h*w, n, k]
+            logit = self._select(x)
             # [n, h, w]
-            sample = self._attentionEncoder(x, i).permute(1, 0).reshape(n, h, w)
+            sample = logit.argmax(-1).permute(1, 0).reshape(n, h, w)
+            zs.append(x)
             samples.append(sample)
         return samples, zs
 
@@ -531,221 +482,54 @@ class TransformerQuantizerRein(nn.Module):
         quantizeds = list()
         for i, bRaw in enumerate(codes):
             n, h, w = bRaw.shape
+            # [k, 1, c]
+            codebook = getattr(self, "codebook")[:, None, :]
+            k, _, c = codebook.shape
+            # [k, 1, c]
+            codewords = self._codebookEncoder(codebook)
+            sample = F.one_hot(bRaw, k).float()
             # [h*w, n, c]
-            quantized = self._attentionDecoder(bRaw.reshape(n, h*w).permute(1, 0), i)
-            deTransformed = quantized.reshape(h, w, n, self._c).permute(2, 3, 0, 1)
-
-            # posistedQuantized = self._position(quantized.reshape(h, w, n, self._c)).reshape(-1, n, self._c)
-            # deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
+            quantized = sample @ codewords[:, 0, ...]
+            # [h*w, n, c]
+            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
+            # [k, 1, c]
+            decodedCodes = self._codebookDecoder(codebook)
             # [n, c, h, w]
+            deTransformed = self._decoder(decodedCodes, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
             quantizeds.append(deTransformed)
         return quantizeds
 
-    def forward(self, latents, codes):
-        if codes is not None:
-            logits = list()
-            negLogPs = list()
-            quantizeds = list()
-            for i, (xRaw, code) in enumerate(zip(latents, codes)):
-                n, c, h, w = xRaw.shape
-
-                x = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
-                # [n, c, h, w] -> [h, w, n, c]
-                # encoderIn = xRaw.permute(2, 3, 0, 1)
-                # [h, w, n, c] -> [h*w, n, c]
-                # encoderIn = self._position(encoderIn).reshape(-1, n, c)
-                # [h*w, n, c]
-                # x = self._encoder(encoderIn)
-                # similar to scaled dot-product attention
-                # [h*w, N, c]
-                quantized, logit, negLogP = self._negLogP(x, code, i)
-                # [n, k, h, w]
-                logit = logit.permute(1, 2, 0).reshape(n, -1, h, w)
-                # # [h*w, n, k]
-                # logit = x @ codewords
-                # distribution = Categorical(logits=logit)
-                # # [h*w, n]
-                # sample = distribution.sample((1, )).squeeze(0)#.permute(1, 0).reshape(n, h, w)
-                # logits.append(logit.permute(1, 2, 0).reshape(n, k, h, w))
-                # [h*w, n] -> [n]
-                negLogPs.append(negLogP)
-                logits.append(logit)
-                quantizeds.append(quantized.permute(1, 2, 0).reshape(n, c, h, w))
-            return quantizeds, logits, negLogPs
+    def forward(self, latents, temp, *_):
         quantizeds = list()
         codes = list()
         logits = list()
-        negLogPs = list()
         for i, (xRaw, k) in enumerate(zip(latents, self._k)):
             n, c, h, w = xRaw.shape
-            x = xRaw.permute(2, 3, 0, 1).reshape(-1, n, c)
+            # [k, 1, c]
+            codebook = getattr(self, "codebook")[:, None, :]
             # [n, c, h, w] -> [h, w, n, c]
+            encoderIn = xRaw.permute(2, 3, 0, 1)
             # encoderIn = xRaw.permute(2, 3, 0, 1)
             # [h, w, n, c] -> [h*w, n, c]
-            # encoderIn = self._position(encoderIn).reshape(-1, n, c)
+            encoderIn = self._position(encoderIn).reshape(-1, n, c)
             # [h*w, n, c]
-            # x = self._encoder(encoderIn)
-            # similar to scaled dot-product attention
-            # [h*w, N, c]
-            quantized, sample, logit, negLogP = self._attention(x, i)
+            x = self._encoder(codebook, encoderIn)
+            # [h*w, n, k]
+            logit = self._select(x)
+            sample = F.gumbel_softmax(logit, temp, True)
+            # [k, 1, c]
+            codewords = self._codebookEncoder(codebook)
+            # [h*w, n, c]
+            quantized = sample @ codewords[:, 0, ...]
+            # [h*w, n, c]
+            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
+            # [k, 1, c]
+            decodedCodes = self._codebookDecoder(codebook)
+            # [n, c, h, w]
+            deTransformed = self._decoder(decodedCodes, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
 
-            # posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
-            # deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
-            # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
-            deTransformed = quantized.reshape(h, w, n, c).permute(2, 3, 0, 1)
-
-            # mask = torch.rand_like(xRaw) > coeff
-            # mixed = mask * xRaw.detach() + torch.logical_not(mask) * deTransformed
             # [n, c, h, w]
             quantizeds.append(deTransformed)
             codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
-            logits.append(logit.permute(1, 2, 0).reshape(n, k, h, w))
-            # [h*w, n] -> [n]
-            negLogPs.append(negLogP)
-        return quantizeds, codes, logits, negLogPs
-
-
-class VQuantizer(nn.Module):
-    def __init__(self, k: List[int], cin: int, rate: float = 0.1):
-        super().__init__()
-        # self._squeeze = nn.ModuleList([Transit(numCodewords, cin) for numCodewords in k])
-        # self._prob = nn.ModuleList([Transit(cin, numCodewords) for numCodewords in k])
-        # self._squeeze = nn.ModuleList([Transit(numCodewords, cin, order="last") for numCodewords in k])
-        # self._prob = nn.ModuleList([Transit(cin, numCodewords, order="first") for numCodewords in k])
-        # self._encoder = nn.Transformer(cin, )
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, cin, rate, "gelu"), 12, None)
-        self._decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(cin, 8, cin, rate, "gelu"), 12, None)
-        self._codebook = nn.ModuleList([nn.Linear(numCodewords, cin, bias=False) for numCodewords in k])
-        self._k = k
-        self._d = float(cin) ** 0.5
-        self._c = cin
-        self._position = PositionalEncoding2D(cin, 120, 120)
-        self._dePosition = DePositionalEncoding2D(cin, 120, 120)
-
-    def encode(self, latents):
-        samples = list()
-        zs = list()
-        for xRaw, codebook, k in zip(latents, self._codebook, self._k):
-            n, c, h, w = xRaw.shape
-            # [c, k]
-            codewords = codebook.weight
-            # [n, c, h, w] -> [h, w, n, c]
-            encoderIn = xRaw.permute(2, 3, 0, 1)
-            # [h, w, n, c] -> [h*w, n, c]
-            encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # [h, w, n, c] -> [h*w, n, c]
-            # posisted = self._position(encoderIn).reshape(-1, n, c)
-            # [h*w, n, c]
-            x = self._encoder(encoderIn)
-            zs.append(x)
-            # x^2 - 2xy + y^2
-            # [h*w, n, k]
-            d = (x ** 2).sum(-1, keepdim=True) +  (codewords.t() ** 2).sum(-1) - 2 * (x @ codewords)
-
-            # find closest encodings
-            # [n, h, w]
-            sample = d.argmin(-1).permute(1, 0).reshape(n, h, w)
-            # sample = sample.reshape(n, h, w, k).argmax(-1)
-            samples.append(sample)
-        return samples, zs
-
-    def _oneHotEncode(self, b, k):
-        # [n, h, w, k]
-        oneHot = F.one_hot(b, k).float()
-        # [n, k, h, w]
-        return oneHot.permute(0, 3, 1, 2)
-
-    def decode(self, codes):
-        quantizeds = list()
-        for bRaw, codebook, k in zip(codes, self._codebook, self._k):
-            # [c, k]
-            codewords = codebook.weight
-            n, h, w = bRaw.shape
-            # [n, k, h, w], k is the one hot embedding
-            bRaw = self._oneHotEncode(bRaw, k)
-            # [n, h*w, k] = [n, k, h, w] -> [n, h, w, k] -> [n, h*w, k]
-            b = bRaw.permute(0, 2, 3, 1).reshape(n, -1, k)
-            # [n, h*w, k] -> [h*w, n, k]
-            quantized = b.permute(1, 0, 2)
-            # quantized /= (k - 0.5) / (2 * k - 2)
-            # quantized -= 0.5 / (k - 1)
-            # [h*w, n, c]
-            quantized = quantized @ codewords.t()
-
-            posistedQuantized = self._position(quantized.reshape(h, w, n, self._c)).reshape(-1, n, self._c)
-            # [h*w, n, c] -> [n, h*w, c] -> [n, h, w, c]
-            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, self._c).permute(2, 3, 0, 1)
-            # deTransformed = quantized.permute(1, 2, 0).reshape(n, c, h, w)
-            # deTransformed = self._dePosition(deTransformed.reshape(h, w, n, self._c)).permute(2, 3, 0, 1)
-            # [n, c, h, w]
-            quantizeds.append(deTransformed)
-        return quantizeds
-
-    def forward(self, latents, temperature, hard):
-        quantizeds = list()
-        zq = list()
-        zs = list()
-        codes = list()
-        softs = list()
-        allCodewords = list()
-        for xRaw, codebook, k in zip(latents, self._codebook, self._k):
-            # [c, k]
-            codewords = codebook.weight
-            n, c, h, w = xRaw.shape
-            # [n, c, h, w] -> [h, w, n, c]
-            encoderIn = xRaw.permute(2, 3, 0, 1)
-            # [h, w, n, c] -> [h*w, n, c]
-            encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # [h*w, n, c]
-            # x = self._encoder(posisted)
-            x = self._encoder(encoderIn)
-
-            zs.append(x)
-
-            # x^2 - 2xy + y^2
-            # [h*w, n, k]
-            d = (x ** 2).sum(-1, keepdim=True) +  (codewords.t() ** 2).sum(-1) - 2 * (x @ codewords)
-
-            # find closest encodings
-            # [h*w, n]
-            nearest = d.argmin(-1)
-            # [h*w, n, k]
-            oneHot = F.one_hot(nearest, num_classes=k)
-            quantized = oneHot.float() @ codewords.t()
-            zq.append(quantized)
-            quantized = x # (quantized - x).detach() + x
-
-            maxi, _ = d.max(-1, keepdim=True)
-            norm = d / maxi
-            soft = norm.softmax(-1)
-            softs.append(soft @ codewords.t())
-            # logit = norm
-            # sample = F.gumbel_softmax(logit, temperature, hard)
-            # quantized = codebook(sample)
-            # zq.append(quantized)
-            # quantized += torch.randn_like(quantized)
-            # quantized = sample
-
-            # normalize
-            # quantized /= (k - 0.5) / (2 * k - 2)
-            # [h*w, n, c]
-            # quantized -= 0.5 / (k - 1)
-            # quantized = squeeze(sample, h, w)
-            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
-
-            # mixed = (mixin * encoderIn / (mixin + 1)) + (quantized / (mixin + 1))
-
-            # mask = rolloutDistribution.sample((h*w, n, 1)).bool()
-
-            # mixed = mask * encoderIn.detach() + torch.logical_not(mask) * quantized
-            # [h*w, n, c] -> [n, c, h*w] -> [n, c, h, w]
-            deTransformed = self._decoder(posistedQuantized, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
-            # deTransformed = quantized.permute(1, 2, 0).reshape(n, c, h, w)
-            # deTransformed = self._dePosition(deTransformed.reshape(h, w, n, c)).permute(2, 3, 0, 1)
-            # [n, c, h, w]
-            quantizeds.append(deTransformed)
-            # codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
-            codes.append(nearest.permute(1, 0).reshape(n, h, w))
-            # logits.append(logit.reshape(n, h, w, k))
-            allCodewords.append(codewords.t())
-        return quantizeds, codes, (zs, zq, softs), allCodewords
+            logits.append(logit.permute(1, 0, 2).reshape(n, h, w, k))
+        return quantizeds, codes, logits

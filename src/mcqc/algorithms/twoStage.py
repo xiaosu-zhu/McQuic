@@ -21,7 +21,7 @@ def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 1e6
+INCRE_STEP = 1e8
 def _tuneReg(step):
     # return 0.0
     return min(step / INCRE_STEP, 1 / 2048)
