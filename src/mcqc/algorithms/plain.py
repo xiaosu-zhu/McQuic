@@ -21,10 +21,12 @@ def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 1e6
-def _tuneReg(step):
-    # return 0.0
-    return min(step / INCRE_STEP, 1 / 2048)
+INCRE_STEP = 1e12
+def _tuneReg(step, start=False):
+    if start:
+        return min(step / INCRE_STEP, 10 / 2048)
+    else:
+        return 0.0
 
 class Plain(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -98,7 +100,7 @@ class Plain(Algorithm):
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        e2e = False
+        # uniqueCodes = 2048
         images = None
         regScale = 1.0
 
@@ -130,13 +132,12 @@ class Plain(Algorithm):
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature)
-                _, logits = logits
                 (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + regScale * self._config.Coef.reg * reg).mean().backward()
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 step += 1
-                self._config.Coef.reg = _tuneReg(step)
+                self._config.Coef.reg = _tuneReg(step, step > 14000)
                 # e2e = step % 2 == 0
                 if self._loggingHook is not None:
                     with torch.no_grad():

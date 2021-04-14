@@ -9,7 +9,7 @@ import storch
 
 from .encoder import Encoder, MultiScaleEncoder, TransformerEncoder
 from .decoder import Decoder, MultiScaleDecoder, TransformerDecoder
-from .quantizer import TransformerQuantizer, VQuantizer, TransformerQuantizerRein, TransformerQuantizerStorch, AttentiveQuantizer
+from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
 from mcqc.losses.structural import CompressionLoss
 from mcqc.layers.blocks import L2Normalize
 
