@@ -13,7 +13,7 @@ from cfmUtils.metrics.pairwise import l2DistanceWithNorm, l2Distance
 from mcqc.layers.gumbelSoftmax import GumbelSoftmax
 from mcqc.layers.layerGroup import LayerGroup
 from mcqc.layers.blocks import ResidualBlock, L2Normalize
-from mcqc.models.transformer import Encoder, Decoder
+from mcqc.models.transformer import Encoder, Decoder, Transformer
 from mcqc.layers.positional import PositionalEncoding2D, PositionalEncoding1D, DePositionalEncoding2D, LearnablePositionalEncoding2D, NPositionalEncoding2D
 from mcqc import Consts
 
@@ -447,55 +447,58 @@ class TransformerQuantizer(nn.Module):
     def __init__(self, layers: int, k: List[int], cin: int, rate: float = 0.1):
         super().__init__()
         k = k[0]
-        self._position = PositionalEncoding2D(cin, 120, 120)
-        self._encoder = nn.Transformer(cin, 8, layers, layers, dropout=rate, activation="gelu")
+        self._position = NPositionalEncoding2D(cin, 120, 120)
+        self._encoder = Transformer(layers, cin, 8, cin, rate)
         setattr(self, "codebook", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin))))
-        self._codebookEncoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), layers)
+        self._codebookQuery = Encoder(layers, cin, 8, cin, rate)
+        self._codebookEncoder = Encoder(layers, cin, 8, cin, rate)
         self._select = nn.Linear(cin, k)
         self._gumbel = GumbelSoftmax()
-        self._decoder = nn.Transformer(cin, 8, layers, layers, dropout=rate, activation="gelu")
-        self._codebookDecoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(cin, 8, dropout=rate, activation="gelu"), layers)
+        self._decoder = Transformer(layers, cin, 8, cin, rate)
+        self._codebookDecoder = Encoder(layers, cin, 8, cin, rate)
 
     def encode(self, latents):
         samples = list()
         zs = list()
-        for _, xRaw in enumerate(latents):
+        for xRaw in latents:
             n, c, h, w = xRaw.shape
-            # [k, 1, c]
-            codebook = getattr(self, "codebook")[:, None, :]
-            # [n, c, h, w] -> [h, w, n, c]
-            encoderIn = xRaw.permute(2, 3, 0, 1)
-            # encoderIn = xRaw.permute(2, 3, 0, 1)
-            # [h, w, n, c] -> [h*w, n, c]
-            encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # [h*w, n, c]
-            x = self._encoder(codebook, encoderIn)
-            # [h*w, n, k]
+            # [1, k, c]
+            codebook = getattr(self, "codebook")[None, ...]
+            # [n, c, h, w] -> [n, h, w, c]
+            encoderIn = xRaw.permute(0, 2, 3, 1)
+            # [n, h, w, c] -> [n, h*w, c]
+            encoderIn = self._position(encoderIn).reshape(n, -1, c)
+            # [1, k, c]
+            codebookQ = self._codebookEncoder(codebook)
+            # [n, h*w, c]
+            x = self._encoder(encoderIn, codebookQ)
+            # [n, h*w, k]
             logit = self._select(x)
             # [n, h, w]
-            sample = logit.argmax(-1).permute(1, 0).reshape(n, h, w)
+            sample = F.gumbel_softmax(logit, 1.0, True).argmax(-1).reshape(n, h, w)
             zs.append(x)
             samples.append(sample)
         return samples, zs
 
     def decode(self, codes):
         quantizeds = list()
-        for i, bRaw in enumerate(codes):
+        for bRaw in codes:
             n, h, w = bRaw.shape
-            # [k, 1, c]
-            codebook = getattr(self, "codebook")[:, None, :]
-            k, _, c = codebook.shape
-            # [k, 1, c]
+            # [1, k, c]
+            codebook = getattr(self, "codebook")[None, ...]
+            _, k, c = codebook.shape
+            # [1, k, c]
             codewords = self._codebookEncoder(codebook)
+            # [n, h, w, k]
             sample = F.one_hot(bRaw, k).float()
-            # [h*w, n, c]
-            quantized = sample @ codewords[:, 0, ...]
-            # [h*w, n, c]
-            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
-            # [k, 1, c]
+            # [n, h, w, c]
+            quantized = sample @ codewords[0, ...]
+            # [n, h*w, c]
+            posistedQuantized = self._position(quantized).reshape(n, -1, c)
+            # [1, k, c]
             decodedCodes = self._codebookDecoder(codebook)
             # [n, c, h, w]
-            deTransformed = self._decoder(decodedCodes, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
+            deTransformed = self._decoder(posistedQuantized, decodedCodes).reshape(n, h, w, c).permute(0, 3, 1, 2)
             quantizeds.append(deTransformed)
         return quantizeds
 
@@ -503,33 +506,34 @@ class TransformerQuantizer(nn.Module):
         quantizeds = list()
         codes = list()
         logits = list()
-        for i, (xRaw, k) in enumerate(zip(latents, self._k)):
+        for xRaw in latents:
             n, c, h, w = xRaw.shape
-            # [k, 1, c]
-            codebook = getattr(self, "codebook")[:, None, :]
-            # [n, c, h, w] -> [h, w, n, c]
-            encoderIn = xRaw.permute(2, 3, 0, 1)
-            # encoderIn = xRaw.permute(2, 3, 0, 1)
-            # [h, w, n, c] -> [h*w, n, c]
-            encoderIn = self._position(encoderIn).reshape(-1, n, c)
-            # [h*w, n, c]
-            x = self._encoder(codebook, encoderIn)
-            # [h*w, n, k]
+            # [1, k, c]
+            codebook = getattr(self, "codebook")[None, ...]
+            # [n, c, h, w] -> [n, h, w, c]
+            encoderIn = xRaw.permute(0, 2, 3, 1)
+            # [n, h, w, c] -> [n, h*w, c]
+            encoderIn = self._position(encoderIn).reshape(n, -1, c)
+            # [1, k, c]
+            codebookQ = self._codebookQuery(codebook)
+            # [n, h*w, c]
+            x = self._encoder(encoderIn, codebookQ)
+            # [n, h*w, k]
             logit = self._select(x)
             sample = F.gumbel_softmax(logit, temp, True)
-            # [k, 1, c]
+            # [1, k, c]
             codewords = self._codebookEncoder(codebook)
-            # [h*w, n, c]
-            quantized = sample @ codewords[:, 0, ...]
-            # [h*w, n, c]
-            posistedQuantized = self._position(quantized.reshape(h, w, n, c)).reshape(-1, n, c)
-            # [k, 1, c]
+            # [n, h*w, c]
+            quantized = sample @ codewords[0, ...]
+            # [n, h*w, c]
+            posistedQuantized = self._position(quantized.reshape(n, h, w, c)).reshape(n, -1, c)
+            # [1, k, c]
             decodedCodes = self._codebookDecoder(codebook)
             # [n, c, h, w]
-            deTransformed = self._decoder(decodedCodes, posistedQuantized).reshape(h, w, n, c).permute(2, 3, 0, 1)
+            deTransformed = self._decoder(posistedQuantized, decodedCodes).reshape(n, h, w, c).permute(0, 3, 1, 2)
 
             # [n, c, h, w]
             quantizeds.append(deTransformed)
-            codes.append(sample.argmax(-1).permute(1, 0).reshape(n, h, w))
-            logits.append(logit.permute(1, 0, 2).reshape(n, h, w, k))
+            codes.append(sample.argmax(-1).reshape(n, h, w))
+            logits.append(logit.reshape(n, h, w, -1))
         return quantizeds, codes, logits

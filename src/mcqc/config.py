@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 from dataclasses import dataclass
 
 
@@ -15,7 +15,7 @@ class Coef:
 class ModelSpec:
     k: List[int]
     channel: int = 512
-    nPreLayers: int = 3
+    numLayers: int = 3
 
 
 @dataclass
