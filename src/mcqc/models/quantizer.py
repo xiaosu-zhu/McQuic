@@ -8,7 +8,6 @@ from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Bernoulli, Categorical, OneHotCategorical
 from cfmUtils.base import Module
-from cfmUtils.metrics.pairwise import l2DistanceWithNorm, l2Distance
 
 from mcqc.layers.gumbelSoftmax import GumbelSoftmax
 from mcqc.layers.layerGroup import LayerGroup
@@ -520,7 +519,23 @@ class TransformerQuantizer(nn.Module):
             x = self._encoder(encoderIn, codebookQ)
             # [n, h*w, k]
             logit = self._select(x)
-            sample = F.gumbel_softmax(logit, temp, True)
+
+            logit = logit - logit.mean(1, keepdim=True)
+            logit = logit / logit.std(1, keepdim=True)
+
+            meanLogit = logit.detach().mean(1)
+
+            # [n, k], 3σ rule
+            bernoulli = Bernoulli(logits=meanLogit - 3.0)
+            # [h*w, n, k] -> [n, h*w, k] (0 or 1 -> choose or not choose)
+            randomFalseMask = bernoulli.sample((logit.shape[1], )).permute(1, 0, 2)
+            randomFalseMask *= -1e9
+            bernoulli = Bernoulli(logits=-meanLogit - 3.0)
+            randomTrueMask = bernoulli.sample((logit.shape[1], )).permute(1, 0, 2)
+            randomTrueMask *= 1e9
+            maskedLogit = logit + randomFalseMask + randomTrueMask
+
+            sample = F.gumbel_softmax(maskedLogit, temp, True)
             # [1, k, c]
             codewords = self._codebookEncoder(codebook)
             # [n, h*w, c]
