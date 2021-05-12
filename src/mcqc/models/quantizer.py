@@ -473,6 +473,9 @@ class TransformerQuantizer(nn.Module):
             x = self._encoder(encoderIn, codebookQ)
             # [n, h*w, k]
             logit = self._select(x)
+
+            # logit = logit - logit.mean(-1, keepdim=True)
+            # logit = logit / logit.std(-1, keepdim=True)
             # [n, h, w]
             sample = F.gumbel_softmax(logit, 1.0, True).argmax(-1).reshape(n, h, w)
             zs.append(x)
@@ -501,10 +504,11 @@ class TransformerQuantizer(nn.Module):
             quantizeds.append(deTransformed)
         return quantizeds
 
-    def forward(self, latents, temp, *_):
+    def forward(self, latents, maskProb, *_):
         quantizeds = list()
         codes = list()
         logits = list()
+        xs = list()
         for xRaw in latents:
             n, c, h, w = xRaw.shape
             # [1, k, c]
@@ -517,25 +521,21 @@ class TransformerQuantizer(nn.Module):
             codebookQ = self._codebookQuery(codebook)
             # [n, h*w, c]
             x = self._encoder(encoderIn, codebookQ)
+            xs.append(x)
             # [n, h*w, k]
             logit = self._select(x)
 
-            logit = logit - logit.mean(1, keepdim=True)
-            logit = logit / logit.std(1, keepdim=True)
+            # [k]
+            bernoulli = Bernoulli(probs=maskProb)
+            # [n, h*w, k] (0 or 1 -> choose or not choose)
+            randomFalseMask = bernoulli.sample((n, h*w, )).bool()
 
-            meanLogit = logit.detach().mean(1)
+            maskedLogit = logit.masked_fill(randomFalseMask, -1e9)
 
-            # [n, k], 3σ rule
-            bernoulli = Bernoulli(logits=meanLogit - 3.0)
-            # [h*w, n, k] -> [n, h*w, k] (0 or 1 -> choose or not choose)
-            randomFalseMask = bernoulli.sample((logit.shape[1], )).permute(1, 0, 2)
-            randomFalseMask *= -1e9
-            bernoulli = Bernoulli(logits=-meanLogit - 3.0)
-            randomTrueMask = bernoulli.sample((logit.shape[1], )).permute(1, 0, 2)
-            randomTrueMask *= 1e9
-            maskedLogit = logit + randomFalseMask + randomTrueMask
+            # randomFalseMask *= -1e9
+            # maskedLogit = logit + randomFalseMask # + randomTrueMask
 
-            sample = F.gumbel_softmax(maskedLogit, temp, True)
+            sample = F.gumbel_softmax(maskedLogit, 1.0, True)
             # [1, k, c]
             codewords = self._codebookEncoder(codebook)
             # [n, h*w, c]
@@ -551,4 +551,4 @@ class TransformerQuantizer(nn.Module):
             quantizeds.append(deTransformed)
             codes.append(sample.argmax(-1).reshape(n, h, w))
             logits.append(logit.reshape(n, h, w, -1))
-        return quantizeds, codes, logits
+        return quantizeds, codes, logits, xs

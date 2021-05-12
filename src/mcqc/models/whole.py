@@ -4,11 +4,10 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 import storch
 
-from mcqc.losses.structural import CompressionLoss, QError, CompressionReward, CompressionLossTwoStage, CompressionLossTwoStageWithGan
-
-from .compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted
-from .critic import SimpleCritic
-from .discriminator import FullDiscriminator, LatentsDiscriminator
+from mcqc.losses.structural import CompressionLoss, QError
+from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted
+from mcqc.models.critic import SimpleCritic
+from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
 
 
 class Whole(nn.Module):

@@ -21,10 +21,11 @@ def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 1e12
+INCRE_STEP = 1e5
 def _tuneReg(step, start=False):
-    if start:
-        return min(step / INCRE_STEP, 10 / 2048)
+    # return 1
+    if True:
+        return min(1 + step / INCRE_STEP, 10)
     else:
         return 0.0
 
@@ -86,10 +87,10 @@ class Plain(Algorithm):
         images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        uniqueCodes = self._eval(testLoader, step)
+        uniqueCodes, ratio = self._eval(testLoader, step)
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature, regScale=regScale)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e, P = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature, regScale)
-        return uniqueCodes
+        return uniqueCodes, ratio
 
     def _slowHook(self, **kwArgs):
         step = kwArgs["now"]
@@ -108,9 +109,11 @@ class Plain(Algorithm):
 
         temperature = 10.0
         initTemp = 10.0
-        finalTemp = 0.01
-        annealRange = int(1e6 // epochSteps)
+        finalTemp = 1.0
+        annealRange = int(5e6 // epochSteps)
         initEpoch = 0
+
+        maskProb = torch.zeros([2048]).cuda()
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
@@ -121,18 +124,23 @@ class Plain(Algorithm):
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         if self._rank == 0:
-            uniqueCodes = self._eval(testLoader, step)
-
+            uniqueCodes, ratio = self._eval(testLoader, step)
+            regScale = self._config.Model.k[0] / uniqueCodes.numel()
+            maskRate = 1 - (uniqueCodes.numel() / self._config.Model.k[0])
+            maskProb.scatter_(0, uniqueCodes, ratio)
+            maskProb *= maskRate
+        torch.distributed.broadcast(maskProb, 0)
         dist.barrier()
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
-            temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
+            # temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
+            # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature)
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + 0.0 * reg).mean().backward()
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, maskProb)
+                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + regScale * self._config.Coef.reg * reg).mean().backward()
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
@@ -142,9 +150,16 @@ class Plain(Algorithm):
                 if self._loggingHook is not None:
                     with torch.no_grad():
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg, logits=logits)
-                        uniqueCodes = results.get(1000, None)
-                        if uniqueCodes is not None:
-                            regScale = self._config.Model.k[0] / uniqueCodes
+                        codesAndCounts = results.get(1000, None)
+                        if codesAndCounts is not None:
+                            uniqueCodes, ratio = codesAndCounts
+                            regScale = self._config.Model.k[0] / uniqueCodes.numel()
+                            maskRate = 1 - (uniqueCodes.numel() / self._config.Model.k[0])
+                            maskProb.scatter_(0, uniqueCodes, ratio)
+                            maskProb *= maskRate
+                torch.distributed.broadcast(maskProb, 0)
+                dist.barrier()
+
 
     # pylint: disable=protected-access
     @torch.no_grad()
@@ -181,18 +196,18 @@ class Plain(Algorithm):
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
-        b = torch.cat(bs, 0).cpu().numpy()
-        latent = torch.cat(latents, 0).cpu().numpy()
-        qs = torch.cat(qs, 0).cpu().numpy()
+        b = torch.cat(bs, 0)
+        latent = torch.cat(latents, 0)
+        qs = torch.cat(qs, 0)
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._saver.add_images("Eval/Res", restored, global_step=step)
-        uniqueCodes = np.unique(b).shape[0]
-        self._saver.add_scalar("Eval/UniqueCodes", uniqueCodes, global_step=step)
+        uniqueCodes, counts = torch.unique(b, return_counts=True)
+        self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
-        np.save("q.npy", qs)
-        np.save("z.npy", latent)
+        # np.save("q.npy", qs)
+        # np.save("z.npy", latent)
         # del bs, zs
         self._model.train()
-        return int(uniqueCodes)
+        return uniqueCodes.detach().cuda(), (counts / b.numel()).detach().cuda()
