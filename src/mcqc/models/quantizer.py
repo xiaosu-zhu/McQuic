@@ -504,11 +504,12 @@ class TransformerQuantizer(nn.Module):
             quantizeds.append(deTransformed)
         return quantizeds
 
-    def forward(self, latents, maskProb, *_):
+    def forward(self, latents, maskProb, temperature, *_):
         quantizeds = list()
         codes = list()
         logits = list()
         xs = list()
+        transformedCodewords = list()
         for xRaw in latents:
             n, c, h, w = xRaw.shape
             # [1, k, c]
@@ -519,6 +520,7 @@ class TransformerQuantizer(nn.Module):
             encoderIn = self._position(encoderIn).reshape(n, -1, c)
             # [1, k, c]
             codebookQ = self._codebookQuery(codebook)
+            transformedCodewords.append(codebookQ)
             # [n, h*w, c]
             x = self._encoder(encoderIn, codebookQ)
             xs.append(x)
@@ -535,9 +537,10 @@ class TransformerQuantizer(nn.Module):
             # randomFalseMask *= -1e9
             # maskedLogit = logit + randomFalseMask # + randomTrueMask
 
-            sample = F.gumbel_softmax(maskedLogit, 1.0, True)
+            sample = F.gumbel_softmax(maskedLogit, temperature, True)
             # [1, k, c]
             codewords = self._codebookEncoder(codebook)
+            transformedCodewords.append(codewords)
             # [n, h*w, c]
             quantized = sample @ codewords[0, ...]
             # [n, h*w, c]
@@ -551,4 +554,4 @@ class TransformerQuantizer(nn.Module):
             quantizeds.append(deTransformed)
             codes.append(sample.argmax(-1).reshape(n, h, w))
             logits.append(logit.reshape(n, h, w, -1))
-        return quantizeds, codes, logits, xs
+        return quantizeds, codes, logits, (xs, transformedCodewords)

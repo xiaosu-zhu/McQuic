@@ -110,7 +110,7 @@ class Plain(Algorithm):
         temperature = 10.0
         initTemp = 10.0
         finalTemp = 1.0
-        annealRange = int(5e6 // epochSteps)
+        annealRange = int(1e5 // epochSteps)
         initEpoch = 0
 
         maskProb = torch.zeros([2048]).cuda()
@@ -134,13 +134,13 @@ class Plain(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
-            # temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
+            temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, maskProb)
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + regScale * self._config.Coef.reg * reg).mean().backward()
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, maskProb, temperature)
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + regScale * self._config.Coef.reg * reg).backward()
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
