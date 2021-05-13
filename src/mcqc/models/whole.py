@@ -19,8 +19,8 @@ class Whole(nn.Module):
         self._cLoss = CompressionLoss()
         self._qLoss = QError()
 
-    def forward(self, image, temp):
-        restored, codes, latents, logits, quantizeds = self._compressor(image, temp, True)
+    def forward(self, image, maskProb, temp):
+        restored, codes, latents, logits, quantizeds = self._compressor(image, maskProb, temp, True)
         # if step % 2 == 0:
         #     real = self._discriminator(image.detach())
         #     fake = self._discriminator(restored.detach())

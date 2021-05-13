@@ -45,23 +45,35 @@ class CompressionLoss(nn.Module):
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
         regs = list()
 
+        xs, transformedCodewords = xs
+
         for x in xs:
-            # [N, h*w]
-            mu = x.mean(-1)
-            sigma = x.std(-1)
+            # [N, ]
+            mu = x.mean(axis=-1)
+            sigma = x.std(axis=-1)
             posterior = torch.distributions.Normal(mu, sigma)
             prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
-            reg = torch.distributions.kl_divergence(posterior, prior).mean(-1)
+            reg = torch.distributions.kl_divergence(posterior, prior).mean()
             regs.append(reg)
 
-            mu = x.mean(1)
-            sigma = x.std(1)
+            # mu = x.mean(1)
+            # sigma = x.std(1)
+            # posterior = torch.distributions.Normal(mu, sigma)
+            # prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
+            # reg = torch.distributions.kl_divergence(posterior, prior).mean(-1)
+            # regs.append(1e-4 * reg)
+
+        for t in transformedCodewords:
+            # [1, ]
+            mu = t.mean(axis=-1)
+            sigma = t.std(axis=-1)
             posterior = torch.distributions.Normal(mu, sigma)
             prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
-            reg = torch.distributions.kl_divergence(posterior, prior).mean(-1)
+            reg = torch.distributions.kl_divergence(posterior, prior).mean()
             regs.append(reg)
-
+        # [,]
         regs = sum(regs)
+
 
         # if logits is not None:
         #     for logit in logits:
