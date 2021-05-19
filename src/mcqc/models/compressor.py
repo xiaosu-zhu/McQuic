@@ -9,7 +9,7 @@ import storch
 
 from .encoder import Encoder, MultiScaleEncoder, TransformerEncoder
 from .decoder import Decoder, MultiScaleDecoder, TransformerDecoder
-from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
+from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer, GaussianCondition
 from mcqc.losses.structural import CompressionLoss
 from mcqc.layers.blocks import L2Normalize
 
@@ -18,7 +18,7 @@ class MultiScaleCompressor(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
         self._encoder = MultiScaleEncoder(channel, 3, 1)
-        self._quantizer = TransformerQuantizer(numLayers, k, channel, 0.1)
+        self._quantizer = GaussianCondition(numLayers, k, channel, 0.1)
         self._decoder = MultiScaleDecoder(channel, 3, 1)
 
     def forward(self, x: torch.Tensor, maskProb: torch.BoolTensor, temp: float, e2e: bool):
@@ -26,6 +26,31 @@ class MultiScaleCompressor(nn.Module):
         quantizeds, codes, logits, xs = self._quantizer(latents, maskProb, temp, True)
         restored = torch.tanh(self._decoder(quantizeds))
         return restored, codes, latents, logits, xs
+
+
+class PQCompressor(nn.Module):
+    def __init__(self, k, channel, numLayers):
+        super().__init__()
+        self._k = k
+        self._encoder = MultiScaleEncoder(channel, 3, 1)
+        self._quantizer = nn.ModuleList(GaussianCondition(numLayers, x, channel // len(k), 0.1) for x in k)
+        self._decoder = MultiScaleDecoder(channel, 3, 1)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latent = self._encoder(x)[0]
+        # M * [n, c // M, h, w]
+        splits = torch.chunk(latent, len(self._k), 1)
+        qs = list()
+        codes = list()
+        logits = list()
+        for quantizer, split in zip(self._quantizer, splits):
+            q, c, l = quantizer(split, temp, True)
+            qs.append(q)
+            codes.append(c)
+            logits.append(l)
+        quantized = torch.cat(qs, 1)
+        restored = torch.tanh(self._decoder([quantized,]))
+        return restored, codes, logits
 
 
 class MultiScaleCompressorSplitted(nn.Module):
