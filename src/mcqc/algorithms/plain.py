@@ -195,7 +195,7 @@ class Plain(Algorithm):
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
-            ssims.append(1.0 - ssim)
+            ssims.append(ssim)
             # ssims.append(20 * (1.0 / (1.0 - ssim).sqrt()).log10())
             psnrs.append(psnr(restored.detach(), raw.detach()))
 
