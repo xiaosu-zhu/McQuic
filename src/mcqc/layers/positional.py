@@ -55,29 +55,32 @@ class PositionalEncoding2D(nn.Module):
 
 
 class NPositionalEncoding2D(nn.Module):
-    def __init__(self, d_model, height, width, dropout=0.1):
+    def __init__(self, d_model, height, width, learnable: bool = False, dropout=0.1):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
         if d_model % 4 != 0:
             raise ValueError("Cannot use sin/cos positional encoding with "
                             "odd dimension (got dim={:d})".format(d_model))
-        pe = torch.zeros(d_model, height, width)
-        # Each dimension use half of d_model
-        d_model = int(d_model / 2)
-        div_term = torch.exp(torch.arange(0., d_model, 2) * -(math.log(10000.0) / d_model))
-        pos_w = torch.arange(0., width).unsqueeze(1)
-        pos_h = torch.arange(0., height).unsqueeze(1)
-        pe[0:d_model:2, :, :] = torch.sin(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
-        pe[1:d_model:2, :, :] = torch.cos(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
-        pe[d_model::2, :, :] = torch.sin(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
-        pe[d_model + 1::2, :, :] = torch.cos(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
-        # [1, h, w, d]
-        pe = pe.permute(1, 2, 0).unsqueeze(0)
+        if learnable:
+            self.pe = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(1, height, width, d_model)))
+        else:
+            pe = torch.zeros(d_model, height, width)
+            # Each dimension use half of d_model
+            d_model = int(d_model / 2)
+            div_term = torch.exp(torch.arange(0., d_model, 2) * -(math.log(10000.0) / d_model))
+            pos_w = torch.arange(0., width).unsqueeze(1)
+            pos_h = torch.arange(0., height).unsqueeze(1)
+            pe[0:d_model:2, :, :] = torch.sin(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
+            pe[1:d_model:2, :, :] = torch.cos(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
+            pe[d_model::2, :, :] = torch.sin(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
+            pe[d_model + 1::2, :, :] = torch.cos(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
+            # [1, h, w, d]
+            pe = pe.permute(1, 2, 0).unsqueeze(0)
 
-        self.register_buffer('pe', pe)
+            self.register_buffer('pe', pe)
 
-    def forward(self, x):
+    def forward(self, x, randomPosition: bool = False):
         _, h, w, _ = x.shape
         x = x + self.pe[:, :h, :w, :]
         return self.dropout(x)

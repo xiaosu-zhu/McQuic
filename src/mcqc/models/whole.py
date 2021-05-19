@@ -5,9 +5,27 @@ from torch.distributions import Categorical
 import storch
 
 from mcqc.losses.structural import CompressionLoss, QError
-from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted
+from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted, PQCompressor
 from mcqc.models.critic import SimpleCritic
 from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
+
+
+
+class WholePQ(nn.Module):
+    def __init__(self, k, channel, numLayers):
+        super().__init__()
+        self._compressor = PQCompressor(k, channel, numLayers)
+        # self._discriminator = FullDiscriminator(channel // 4)
+
+        self._cLoss = CompressionLoss()
+        self._qLoss = QError()
+
+    def forward(self, image, temp, **_):
+        restored, codes, logits = self._compressor(image, temp, True)
+
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, None, logits, None)
+
 
 
 class Whole(nn.Module):

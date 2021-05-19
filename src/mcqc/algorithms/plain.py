@@ -19,15 +19,13 @@ from mcqc import Config
 WARMUP_STEP = 20000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 0.999999 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 1e5
+INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    # return 1
-    if True:
-        return min(1 + step / INCRE_STEP, 10)
-    else:
-        return 0.0
+    return 0
+    # step = step + 1
+    # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
 class Plain(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -113,7 +111,7 @@ class Plain(Algorithm):
         annealRange = int(1e5 // epochSteps)
         initEpoch = 0
 
-        maskProb = torch.zeros([2048]).cuda()
+        maskProb = torch.zeros([self._config.Model.k[0]]).cuda()
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
@@ -139,9 +137,9 @@ class Plain(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, maskProb, temperature)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, latents, logits, quantizeds) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + regScale * self._config.Coef.reg * reg).backward()
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 step += 1
@@ -175,23 +173,30 @@ class Plain(Algorithm):
         qs = list()
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
+
             latent = model._encoder(raw)
-            b, _ = model._quantizer.encode(latent)
+
+            # M * [n, c // M, h, w]
+            splits = torch.chunk(latent[0], len(model._k), 1)
+            lHat = list()
+            for i in range(len(model._k)):
+                b, _ = model._quantizer[i].encode(splits[i])
+                q = model._quantizer[i].decode(b)
+                lHat.append(q)
+            quantized = torch.cat(lHat, 1)
+            restored = torch.tanh(model._decoder([quantized,]))
 
             latents.append(latent[0].detach().cpu())
             bs.append(b[0].detach().cpu())
+            qs.append(quantized.detach().cpu())
 
-            quantized = model._quantizer.decode(b)
-
-            qs.append(quantized[0].detach().cpu())
-
-            restored = model._decoder(quantized)
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
-            ssims.append(20 * (1.0 / (1.0 - ssim).sqrt()).log10())
+            ssims.append(1.0 - ssim)
+            # ssims.append(20 * (1.0 / (1.0 - ssim).sqrt()).log10())
             psnrs.append(psnr(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
@@ -199,7 +204,7 @@ class Plain(Algorithm):
         b = torch.cat(bs, 0)
         latent = torch.cat(latents, 0)
         qs = torch.cat(qs, 0)
-        self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
+        self._logger.info("MS-SSIM: %2.2f", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._saver.add_images("Eval/Res", restored, global_step=step)
         uniqueCodes, counts = torch.unique(b, return_counts=True)

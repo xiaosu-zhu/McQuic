@@ -4,15 +4,16 @@ vRam: -1
 wantsMore: false
 dataset: clic/train
 valDataset: clic/valid
-batchSize: 3
+batchSize: 4
 lr: 1.e-5
 coef:
-    ssim: 0.0
-    l1l2: 1.0
+    ssim: 1.0
+    l1l2: 0.0
     reg: 1.0
     gen: 1.0
     dis: 0.0
 model:
+    type: pq
     channel: 512
-    k: [2048]
-    numLayers: 3
+    k: [256, 256, 256, 256]
+    numLayers: 1

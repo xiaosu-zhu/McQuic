@@ -2,7 +2,7 @@ import math
 
 import torch
 from torch import nn
-import torch.nn.functional as f
+import torch.nn.functional as F
 
 
 class MHAttention(nn.Module):
@@ -46,7 +46,7 @@ class MHAttention(nn.Module):
             q: 请求的形状 == (N or 1, ..., seq_len_q, depth)
             k: 主键的形状 == (N or 1, ..., seq_len_k, depth)
             v: 数值的形状 == (N or 1, ..., seq_len_k, depth_v)
-            mask: Float 张量，其形状能转换成
+            mask: Bool 张量，其形状能转换成
                         (N or 1, ..., seq_len_q, seq_len_k)。默认为None。
 
         返回值:
@@ -57,7 +57,7 @@ class MHAttention(nn.Module):
 
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
-            qkLogits += (mask * -1e9)
+            qkLogits = qkLogits.masked_fill(mask, -1e9)
 
         # softmax 在最后一个轴（seq_len_k）上归一化，因此分数
         # 相加等于1。
@@ -65,6 +65,68 @@ class MHAttention(nn.Module):
 
         # [N, ..., lq, depthV]
         return torch.matmul(weights, v)
+
+
+class GumbelAttention(nn.Module):
+    def __init__(self, dIn):
+        super().__init__()
+        self._dIn = dIn
+        self._scale = math.sqrt(self._dIn)
+        self.wq = nn.Linear(dIn, dIn, bias=False)
+        self.wk = nn.Linear(dIn, dIn, bias=False)
+        self.wv = nn.Linear(dIn, dIn, bias=False)
+        self.pl = nn.Linear(dIn, dIn, bias=False)
+
+    def forward(self, q, k, v, mask, mode, sample, temperature=1.0, greedy=False):
+        """[summary]
+
+        Args:
+            q (torch.Tensor): [N, ..., seq_len_q, d]
+            k (torch.Tensor): [N, ..., seq_len_k, d]
+            v (torch.Tensor): [N, ..., seq_len_k, d]
+            temperature (float): temperature of gumbel
+            mask (torch.Tensor): [N, ..., seq_len_q, seq_len_k]
+
+        Returns:
+            torch.Tensor, torch.Tensor: hard attention result and logit
+        """
+        if mode == "all":
+            # [N, ..., seq_len_q, d]
+            q = self.wq(q)
+            # [N, ..., seq_len_k, d]
+            k = self.wk(k)
+            v = self.wv(v)
+
+            # [N, ..., seq_len_q, seq_len_k]
+            qkLogits = torch.matmul(q, k.transpose(-1, -2)) / self._scale
+            # 将 mask 加入到缩放的张量上。
+            if mask is not None:
+                qkLogits = qkLogits.masked_fill(mask, -1e9)
+
+            if greedy:
+                # [N, ..., seq_len_q, 1]
+                sample = qkLogits.argmax(-1)
+                sample = F.one_hot(sample, qkLogits.shape[-1]).float()
+            else:
+                # [N, ..., seq_len_q, seq_len_k]
+                sample = F.gumbel_softmax(qkLogits, temperature, True)
+
+            return torch.matmul(sample, v), sample, qkLogits
+        elif mode == "encode":
+            # [N, ..., seq_len_q, d]
+            q = self.wq(q)
+            # [N, ..., seq_len_k, d]
+            k = self.wk(k)
+
+            # [N, ..., seq_len_q, seq_len_k]
+            qkLogits = torch.matmul(q, k.transpose(-1, -2)) / self._scale
+            # [N, ..., seq_len_q, 1]
+            sample = qkLogits.argmax(-1)
+            sample = F.one_hot(sample, qkLogits.shape[-1]).float()
+            return sample
+        else:
+            v = self.wv(v)
+            return torch.matmul(sample, v)
 
 
 class EncoderLayer(nn.Module):
