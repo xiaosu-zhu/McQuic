@@ -20,8 +20,8 @@ from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
-from mcqc.algorithms import Plain, TwoStageWithGan, Reinforce, TwoStage, ExpTwoStage
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQ
+from mcqc.algorithms import Plain
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQMLM
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -62,9 +62,9 @@ def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_PORT"] = "29811"
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
-    torch.manual_seed(0)
-    random.seed(0)
-    np.random.seed(0)
+    torch.manual_seed(rank)
+    random.seed(rank)
+    np.random.seed(rank)
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
     dist.barrier()
@@ -106,7 +106,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = WholePQ(config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = WholePQMLM(config.Model.k, config.Model.channel, config.Model.numLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
@@ -121,7 +121,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     # batchSampler = torch.utils.data.BatchSampler(trainSampler, config.BatchSize, drop_last=True)
 
     trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=config.BatchSize, num_workers=config.BatchSize + 4, pin_memory=True, drop_last=True)
-    valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize * 4, shuffle=True, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
+    valLoader = torch.utils.data.DataLoader(Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform()), batch_size=config.BatchSize * 4, shuffle=False, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
     method.run(trainLoader, trainSampler, valLoader if rank == 0 else None)
 
 
