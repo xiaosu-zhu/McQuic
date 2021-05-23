@@ -88,7 +88,7 @@ class CompressionLoss(nn.Module):
             prior = Categorical(logits=torch.zeros_like(logit))
             reg = torch.distributions.kl_divergence(posterior, prior).mean() # + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
             regs.append(reg)
-        regs = sum(regs)
+        regs = sum(regs) / len(logits)
 
 
         # if logits is not None:
