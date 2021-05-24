@@ -156,10 +156,10 @@ def evalSSIM(img1, img2, dB = False):
     # res = _ms_ssim(img1.transpose(0, 2, 3, 1), img2.transpose(0, 2, 3, 1))
     res = _EVALSSIM(img1.float(), img2.float())
     if dB:
-        return 20 * (1.0 / (1.0 - res).sqrt()).log10()
+        return -10 * (1.0 - res).log10()
     return res
 
 
 def psnr(img1: np.ndarray, img2: np.ndarray):
     mse = ((img1.float() - img2.float()) ** 2).mean(axis=(1, 2, 3))
-    return 20 * (255.0 / mse.sqrt()).log10()
+    return 10 * (65025.0 / mse).log10()

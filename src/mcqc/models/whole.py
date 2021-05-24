@@ -48,7 +48,7 @@ class WholePQMLM(nn.Module):
         mlmLoss = list()
         for mlm, logit, mask, target in zip(self._mLoss, predicts, masks, targets):
             mlmLoss.append(mlm(logit, target, mask))
-        return (ssimLoss, l1l2Loss, sum(mlmLoss) / len(self._mLoss) + 0.1 * reg), (restored, codes, None, logits, None)
+        return (ssimLoss, l1l2Loss, sum(mlmLoss) / len(self._mLoss)), (restored, codes, None, logits, None)
 
 
 class Whole(nn.Module):
