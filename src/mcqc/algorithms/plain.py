@@ -25,7 +25,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    return 5e-1
+    return 1e-2
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -176,9 +176,7 @@ class Plain(Algorithm):
                 b, _ = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
-                if not ((0 <= b).all() and (b < 256).all()):
-                    raise ValueError("codes overflows 8bit threshold.")
-                bs[i].append(b.byte().detach().cpu())
+                bs[i].append(b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
@@ -211,9 +209,8 @@ class Plain(Algorithm):
         # del bs, zs
         self._model.train()
 
-        encoded, bpp = self._compress(bs)
-
-        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        # encoded, bpp = self._compress(bs)
+        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
         return uniqueCodes.detach().cuda(), (counts / b.numel()).detach().cuda()
 
