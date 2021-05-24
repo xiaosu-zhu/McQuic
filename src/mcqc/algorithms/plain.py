@@ -1,22 +1,25 @@
 from typing import Callable, Iterator, List
 from logging import Logger
 import math
+from itertools import chain
 
 import numpy as np
 import torch
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
+from torch.utils.tensorboard.summary import image
+from compressai._CXX import pmf_to_quantized_cdf
+from compressai import ans
 from cfmUtils.saver import Saver
 from cfmUtils.base import FrequecyHook
-from torch.utils.tensorboard.summary import image
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.losses.ssim import MsSSIM
 from mcqc.models.whole import Whole
 from mcqc import Config
-from mcqc.utils.rANS import Encoder, Decoder
+
 
 WARMUP_STEP = 20000
 def _transformerLR(step):
@@ -209,31 +212,38 @@ class Plain(Algorithm):
         # del bs, zs
         self._model.train()
 
-        # encoded, bpp = self._compress(bs)
-        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        encoded, bpp = self._compress(bs)
+        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
         return uniqueCodes.detach().cuda(), (counts / b.numel()).detach().cuda()
 
     def _compress(self, codes: List[torch.Tensor]):
         compressed = list()
-        for i, b in enumerate(codes):
+        cdfs = list()
+        # b: Tensor of [N, 32, 32]
+        for b, k in zip(codes, self._config.Model.k):
             # list of 256 probs
-            prob = self._calculateFreq(b)
-            # N * [32, 32]
-            for code in b:
-                encoder = Encoder()
-                for symbol in code.flatten():
-                    encoder.encode_symbol(prob.tolist(), int(symbol))
-                binary = encoder.get_encoded()
-                compressed.append(binary)
-        # b: 32 bits per word
-        # N * M * [binaries]
-        total = 32 * sum(len(b) for b in compressed)
+            prob = self._calculateFreq(b, k)
+            cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
+            # M * [cdf]
+            cdfs.append(cdf)
+        encoder = ans.RansEncoder()
+        # codePerImage: M * [Tensor of [32 * 32]]
+        for codePerImage in zip(*codes):
+            # [M, 32, 32]
+            codePerImage = torch.stack(codePerImage, 0)
+            # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
+            # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
+            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, self._config.Model.k, torch.zeros_like(codePerImage).flatten().int().tolist())
+            compressed.append(binary)
+        # binary: 1 byte per word
+        # N * [binaries]
+        total = 8 * sum(len(binary) for binary in compressed)
         totalPixel = len(codes[0]) * self._imgSize
         bpp = float(total) / totalPixel
         self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, len(codes[0]), bpp)
         return compressed, bpp
 
-    def _calculateFreq(self, code: torch.Tensor):
-        count = torch.bincount(code.flatten(), minlength=256)
+    def _calculateFreq(self, code: torch.Tensor, k):
+        count = torch.bincount(code.flatten(), minlength=k)
         return count / code.numel()
