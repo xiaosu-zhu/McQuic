@@ -33,14 +33,13 @@ class ResidualEncoder(nn.Module):
         self._net = nn.Sequential(
             ResidualBlockWithStride(3, channel, stride=2),
             ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
+            ResidualBlockWithStride(channel, channel, stride=2),
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
             ResidualBlockWithStride(channel, channel, stride=2),
             ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
-            ResidualBlockWithStride(channel, channel, stride=2),
-            ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
             conv3x3(channel, channel, stride=2),
+            AttentionBlock(channel),
         )
 
     def forward(self, x: torch.Tensor):
