@@ -274,8 +274,6 @@ class TransformerQuantizer(nn.Module):
             # [n, h*w, k]
             logit = self._select(x)
 
-            logit = logit
-
             # [k]
             bernoulli = Bernoulli(probs=maskProb)
             # [n, h*w, k] (0 or 1 -> choose or not choose)
@@ -334,15 +332,16 @@ class AttentiveQuantizer(nn.Module):
             k = self._wk(k)
 
         # [n, h, w, k]
-        logit = q @ k.permute(1, 0)
-        return logit.argmax(-1), None
+        logit = q @ k.permute(1, 0) / self._scale
+        sample = F.gumbel_softmax(logit, 1.0, True)
+        return sample.argmax(-1), None
 
     def decode(self, code):
         k, c = self.xCodebook.shape
         # [n, h, w, k]
         sample = F.one_hot(code, k).float()
         if self._additionWeight:
-            v = self.xCodebook
+            v = self._wv(self.xCodebook)
         else:
             v = self.xCodebook
         # [n, h, w, c] -> [n, c, h, w]
@@ -388,4 +387,5 @@ class AttentiveQuantizer(nn.Module):
     def forward(self, latent, temperature, *_):
         # latent = self._randomErase(latent)
         quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self.xCodebook, self.xCodebook, None, 1.0)
+        # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
         return quantized.permute(0, 3, 1, 2), sample.argmax(-1), logit, wv
