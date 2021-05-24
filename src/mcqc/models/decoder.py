@@ -11,13 +11,13 @@ class Decoder(nn.Module):
     def __init__(self, inChannel=384, intermediateChannel=192):
         super().__init__()
         self._net = nn.Sequential(
-            deconv5x5(inChannel, intermediateChannel),
+            deconv5x5(inChannel, intermediateChannel, 2),
             GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5(intermediateChannel, intermediateChannel),
+            deconv5x5(intermediateChannel, intermediateChannel, 2),
             GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5(intermediateChannel, intermediateChannel),
+            deconv5x5(intermediateChannel, intermediateChannel, 2),
             GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5(intermediateChannel, 3)
+            deconv5x5(intermediateChannel, 3, 2)
         )
 
     def forward(self, x: torch.Tensor):
@@ -29,17 +29,15 @@ class ResidualDecoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(
+            AttentionBlock(channel),
             ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
-            # AttentionBlock(channel),
             subPixelConv3x3(channel, 3, 2),
         )
 
