@@ -4,12 +4,30 @@ import logging
 import torch
 from torch import nn
 
-from mcqc.layers.convs import conv3x3
+from mcqc.layers.convs import conv3x3, conv5x5
+from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample, L2Normalize
 from mcqc.layers.positional import PositionalEncoding2D
 
 
 class Encoder(nn.Module):
+    def __init__(self, intermediateChannel=192, outChannel=384):
+        super().__init__()
+        self._net = nn.Sequential(
+            conv5x5(3, intermediateChannel),
+            GenDivNorm(intermediateChannel),
+            conv5x5(intermediateChannel, intermediateChannel),
+            GenDivNorm(intermediateChannel),
+            conv5x5(intermediateChannel, intermediateChannel),
+            GenDivNorm(intermediateChannel),
+            conv5x5(intermediateChannel, outChannel)
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+class ResidualEncoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(

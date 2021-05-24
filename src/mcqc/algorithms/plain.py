@@ -25,7 +25,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    return 1e-1
+    return 5e-1
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -170,7 +170,7 @@ class Plain(Algorithm):
             latent = model._encoder(raw)
 
             # M * [n, c // M, h, w]
-            splits = torch.chunk(latent[0], len(model._k), 1)
+            splits = torch.chunk(latent, len(model._k), 1)
             lHat = list()
             for i in range(len(model._k)):
                 b, _ = model._quantizer[i].encode(splits[i])
@@ -180,9 +180,9 @@ class Plain(Algorithm):
                     raise ValueError("codes overflows 8bit threshold.")
                 bs[i].append(b.byte().detach().cpu())
             quantized = torch.cat(lHat, 1)
-            restored = torch.tanh(model._decoder([quantized,]))
+            restored = torch.tanh(model._decoder(quantized))
 
-            latents.append(latent[0].detach().cpu())
+            latents.append(latent.detach().cpu())
             qs.append(quantized.detach().cpu())
 
             raw = self._deTrans(raw)
@@ -234,7 +234,7 @@ class Plain(Algorithm):
         total = 32 * sum(len(b) for b in compressed)
         totalPixel = len(codes[0]) * self._imgSize
         bpp = float(total) / totalPixel
-        self._logger.info("%db, BPP: %.4f", total, bpp)
+        self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, len(codes[0]), bpp)
         return compressed, bpp
 
     def _calculateFreq(self, code: torch.Tensor):

@@ -308,15 +308,17 @@ class TransformerQuantizer(nn.Module):
 
 
 class AttentiveQuantizer(nn.Module):
-    def __init__(self, k: int, cin: int, rate: float = 0.1):
+    def __init__(self, k: int, cin: int, additionWeight=False):
         super().__init__()
 
         self.xCodebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin)))
 
-        self._wq = nn.Linear(cin, cin, bias=False)
-        self._wk = nn.Linear(cin, cin, bias=False)
-        self._wv = nn.Linear(cin, cin, bias=False)
+        if additionWeight:
+            self._wq = nn.Linear(cin, cin, bias=False)
+            self._wk = nn.Linear(cin, cin, bias=False)
+            self._wv = nn.Linear(cin, cin, bias=False)
         self._scale = math.sqrt(cin)
+        self._additionWeight = additionWeight
 
 
     def encode(self, latent):
@@ -325,10 +327,12 @@ class AttentiveQuantizer(nn.Module):
         # [k, c]
         k = self.xCodebook
 
-        # [n, h, w, c]
-        q = self._wq(q)
-        # [k, c]
-        k = self._wk(k)
+        if self._additionWeight:
+            # [n, h, w, c]
+            q = self._wq(q)
+            # [k, c]
+            k = self._wk(k)
+
         # [n, h, w, k]
         logit = q @ k.permute(1, 0)
         return logit.argmax(-1), None
@@ -337,17 +341,22 @@ class AttentiveQuantizer(nn.Module):
         k, c = self.xCodebook.shape
         # [n, h, w, k]
         sample = F.one_hot(code, k).float()
+        if self._additionWeight:
+            v = self.xCodebook
+        else:
+            v = self.xCodebook
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = (sample @ self._wv(self.xCodebook)).permute(0, 3, 1, 2)
+        quantized = (sample @ v).permute(0, 3, 1, 2)
 
         return quantized
 
     def _gumbelAttention(self, q, k, v, mask, temperature=1.0):
-        # [n, h, w, c]
-        q = self._wq(q)
-        # [k, c]
-        k = self._wk(k)
-        v = self._wv(v)
+        if self._additionWeight:
+            # [n, h, w, c]
+            q = self._wq(q)
+            # [k, c]
+            k = self._wk(k)
+            v = self._wv(v)
 
         # [n, h, w, k]
         logit = (q @ k.permute(1, 0)) / self._scale

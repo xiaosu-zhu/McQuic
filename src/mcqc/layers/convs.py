@@ -32,6 +32,13 @@ def conv3x3(in_ch, out_ch, stride=1, bias=True):
     """3x3 convolution with padding."""
     return nn.Conv2d(in_ch, out_ch, bias=bias, kernel_size=3, stride=stride, padding=1, padding_mode="reflect")
 
+def conv5x5(in_ch, out_ch, stride=2, bias=True):
+    """5x5 convolution with padding."""
+    return nn.Conv2d(in_ch, out_ch, bias=bias, kernel_size=5, stride=stride, padding=2, padding_mode="reflect")
+
+def deconv5x5(in_ch, out_ch, stride=2, bias=True):
+    """5x5 convolution with padding."""
+    return nn.ConvTranspose2d(in_ch, out_ch, bias=bias, kernel_size=5, stride=stride, padding=2, output_padding=1)
 
 def subPixelConv3x3(in_ch, out_ch, r=1):
     """3x3 sub-pixel convolution for up-sampling."""
