@@ -21,7 +21,7 @@ from cfmUtils.vision.utils import verifyTruncated
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQMLM
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -106,7 +106,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = WholePQMLM(config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = WholePQSAG(config.Model.k, config.Model.channel, config.Model.numLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
@@ -119,8 +119,8 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     trainSampler = torch.utils.data.DistributedSampler(trainDataset, worldSize, rank)
     valDataset = Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform())
 
-    trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=True)
-    valLoader = torch.utils.data.DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=worldSize * 4, pin_memory=True, drop_last=True)
+    trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)
+    valLoader = torch.utils.data.DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=worldSize * 4, pin_memory=True, drop_last=False)
     method.run(trainLoader, trainSampler, valLoader if rank == 0 else None)
 
 
