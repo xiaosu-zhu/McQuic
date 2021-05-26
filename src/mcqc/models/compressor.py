@@ -59,7 +59,7 @@ class PQMLMCompressor(nn.Module):
         super().__init__()
         self._k = k
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), 0.1) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False) for x in k)
         self._decoder = ResidualDecoder(channel)
         self._context = nn.ModuleList(MaskedLangugeModel(channel // len(k), 1, numLayers, channel // len(k), x) for x in k)
         # self._context = MaskedLangugeModel(channel // len(k), 4, numLayers, channel // len(k), k[0])
