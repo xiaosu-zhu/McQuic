@@ -306,7 +306,7 @@ class TransformerQuantizer(nn.Module):
 
 
 class AttentiveQuantizer(nn.Module):
-    def __init__(self, k: int, cin: int, additionWeight=False):
+    def __init__(self, k: int, cin: int, additionWeight: bool = False):
         super().__init__()
 
         self.xCodebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin)))
