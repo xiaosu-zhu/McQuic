@@ -16,10 +16,10 @@ class MLMLoss(nn.Module):
         logit = logit[positionToCalculate]
         # [?]
         target = target[positionToCalculate]
-        noise = torch.rand(target.shape, device=target.device) < 0.012
-        randomint = torch.randint(0, self._k, noise.shape, device=noise.device)
+        # noise = torch.rand(target.shape, device=target.device) < 0.012
+        # randomint = torch.randint(0, self._k, noise.shape, device=noise.device)
 
-        target[noise] = randomint[noise]
+        # target[noise] = randomint[noise]
         # [?] <-> [?] -> scalar
         loss = self._ceLoss(logit, target)
 
