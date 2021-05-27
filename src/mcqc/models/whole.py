@@ -15,15 +15,11 @@ from mcqc.utils.vision import Masking
 class WholePQ(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
-        self._masking = Masking()
         self._compressor = PQCompressor(k, channel, numLayers)
-        # self._discriminator = FullDiscriminator(channel // 4)
-
         self._cLoss = CompressionLoss()
         self._qLoss = QError()
 
     def forward(self, image, temp, **_):
-        # maskedImage = self._masking(image)
         restored, codes, logits = self._compressor(image, temp, True)
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
@@ -33,10 +29,7 @@ class WholePQ(nn.Module):
 class WholePQMLM(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
-        self._masking = Masking()
         self._compressor = PQMLMCompressor(k, channel, numLayers)
-        # self._discriminator = FullDiscriminator(channel // 4)
-
         self._cLoss = CompressionLoss()
         self._mLoss = nn.ModuleList(MLMLoss(x) for x in k)
 
@@ -48,7 +41,7 @@ class WholePQMLM(nn.Module):
         mlmLoss = list()
         for mlm, logit, mask, target in zip(self._mLoss, predicts, masks, targets):
             mlmLoss.append(mlm(logit, target, mask))
-        return (ssimLoss, l1l2Loss, sum(mlmLoss) / len(self._mLoss)), (restored, codes, None, logits, None)
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, None, logits, None)
 
 
 class Whole(nn.Module):
