@@ -33,24 +33,24 @@ class PQCompressor(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
         self._k = k
-        self._encoder = MultiScaleEncoder(channel, 3, 1)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(numLayers, x, channel // len(k), 0.1) for x in k)
-        self._decoder = MultiScaleDecoder(channel, 3, 1)
+        self._encoder = ResidualEncoder(channel)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), True) for x in k)
+        self._decoder = ResidualDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
-        latent = self._encoder(x)[0]
+        latent = self._encoder(x)
         # M * [n, c // M, h, w]
         splits = torch.chunk(latent, len(self._k), 1)
         qs = list()
         codes = list()
         logits = list()
         for quantizer, split in zip(self._quantizer, splits):
-            q, c, l = quantizer(split, temp, True)
+            q, c, l, wv = quantizer(split, temp, True)
             qs.append(q)
             codes.append(c)
             logits.append(l)
         quantized = torch.cat(qs, 1)
-        restored = torch.tanh(self._decoder([quantized,]))
+        restored = torch.tanh(self._decoder(quantized))
         return restored, codes, logits
 
 
@@ -59,10 +59,9 @@ class PQMLMCompressor(nn.Module):
         super().__init__()
         self._k = k
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), True) for x in k)
         self._decoder = ResidualDecoder(channel)
         self._context = nn.ModuleList(MaskedLangugeModel(channel // len(k), 1, numLayers, channel // len(k), x) for x in k)
-        # self._context = MaskedLangugeModel(channel // len(k), 4, numLayers, channel // len(k), k[0])
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
