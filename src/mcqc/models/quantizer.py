@@ -1,4 +1,5 @@
 import math
+from random import sample
 from typing import Callable, List, Optional
 from math import sqrt
 
@@ -306,7 +307,7 @@ class TransformerQuantizer(nn.Module):
 
 
 class AttentiveQuantizer(nn.Module):
-    def __init__(self, k: int, cin: int, additionWeight: bool = False):
+    def __init__(self, k: int, cin: int, deterministic: bool = False, additionWeight: bool = True):
         super().__init__()
 
         self.xCodebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin)))
@@ -317,6 +318,7 @@ class AttentiveQuantizer(nn.Module):
             self._wv = nn.Linear(cin, cin, bias=False)
         self._scale = math.sqrt(cin)
         self._additionWeight = additionWeight
+        self._deterministic = deterministic
 
 
     def encode(self, latent):
@@ -333,8 +335,17 @@ class AttentiveQuantizer(nn.Module):
 
         # [n, h, w, k]
         logit = q @ k.permute(1, 0) / self._scale
-        sample = F.gumbel_softmax(logit, 1.0, True)
-        return sample.argmax(-1), None
+        # sample = F.gumbel_softmax(logit, 1.0, True)
+        return logit.argmax(-1), None
+
+    def _softStraightThrough(self, logit, value):
+        k, c = value.shape
+        soft = logit.softmax(-1)
+        sample = logit.argmax(-1)
+        sample = F.one_hot(sample, k).float()
+        soft = soft @ value
+        hard = sample @ value
+        return (hard - soft).detach() + soft, sample
 
     def decode(self, code):
         k, c = self.xCodebook.shape
@@ -362,10 +373,14 @@ class AttentiveQuantizer(nn.Module):
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
             logit = logit.masked_fill(mask, -1e9)
-        # [n, h, w, k]
-        sample = F.gumbel_softmax(logit, temperature, True)
+        if self._deterministic:
+            result, sample = self._softStraightThrough(logit, v)
+        else:
+            # [n, h, w, k]
+            sample = F.gumbel_softmax(logit, temperature, True)
+            result = sample @ v
 
-        return sample @ v, sample, logit, v
+        return result, sample, logit, v
 
     # def _randomErase(self, x: torch.Tensor):
     #     n, c, h, w = x.shape
