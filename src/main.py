@@ -21,7 +21,7 @@ from cfmUtils.vision.utils import verifyTruncated
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQMLM, WholePQ
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -106,7 +106,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = WholePQ(config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = WholePQSAG(config.Model.k, config.Model.channel, config.Model.numLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
