@@ -27,7 +27,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    return 0.0
+    return 1e1
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -166,6 +166,7 @@ class Plain(Algorithm):
         bs = [list() for _ in self._config.Model.k]
         latents = list()
         qs = list()
+        predicts = [list() for _ in self._config.Model.k[:-1]]
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
 
@@ -179,6 +180,9 @@ class Plain(Algorithm):
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].append(b.int().detach().cpu())
+            predict = model._context.predict(splits)
+            for i, p in enumerate(predict):
+                predicts[i].append(p.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
@@ -197,15 +201,23 @@ class Plain(Algorithm):
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         bs = [torch.cat(x, 0) for x in bs]
+        predicts = [torch.cat(predict, 0) for predict in predicts]
+        ratios = list()
+        for predict, target in zip(predicts, bs[1:]):
+            success = predict == target
+            ratio = torch.sum(success) / success.numel()
+            ratios.append(ratio)
         latent = torch.cat(latents, 0)
         qs = torch.cat(qs, 0)
         self._logger.info("MS-SSIM: %2.2f", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
+        self._logger.info("Predict ratio: [%s]", " ".join(f"{r * 100: .1f}%" for r in ratios))
         self._saver.add_images("Eval/Res", restored, global_step=step)
         uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
+        self._saver.add_scalar("Eval/Predict", sum(ratios) / len(ratios), global_step=step)
         # np.save("q.npy", qs)
         # np.save("z.npy", latent)
         # del bs, zs
