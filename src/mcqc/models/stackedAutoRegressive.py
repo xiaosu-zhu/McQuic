@@ -17,7 +17,6 @@ class StackedAutoRegressive(nn.Module):
     def predict(self, latents):
         predicts = list()
         for latent, transformer, ffn in zip(latents, self._transformer, self._ffn):
-            latent = latent.detach()
             n, d, h, w = latent.shape
             # [h, w, n, d]
             latent = latent.permute(2, 3, 0, 1)
@@ -33,8 +32,8 @@ class StackedAutoRegressive(nn.Module):
     def forward(self, latents, codes):
         logits = list()
         targets = list()
-        for latent, code, transformer, ffn in zip(latents, codes, self._transformer, self._ffn):
-            latent = latent.detach()
+        for latent, code, transformer, ffn in zip(latents, codes[1:], self._transformer, self._ffn):
+            # latent = latent.detach()
             n, d, h, w = latent.shape
             # [h, w, n, d]
             latent = latent.permute(2, 3, 0, 1)
