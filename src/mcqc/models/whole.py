@@ -43,7 +43,7 @@ class WholePQSAG(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
         mlmLoss = self._mLoss(predicts, targets)
-        return (ssimLoss, l1l2Loss, mlmLoss), (restored, codes, None, logits, None)
+        return (ssimLoss, l1l2Loss, mlmLoss), (restored, codes, predicts, logits, targets)
 
 
 class Whole(nn.Module):
