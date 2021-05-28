@@ -11,6 +11,7 @@ from .encoder import ResidualEncoder, MultiScaleEncoder, TransformerEncoder
 from .decoder import ResidualDecoder, MultiScaleDecoder, TransformerDecoder
 from .maskedLanguageModel import MaskedLangugeModel
 from .stackedAutoRegressive import StackedAutoRegressive
+from .contextModel import ContextModel
 from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
 from mcqc.losses.structural import CompressionLoss
 from mcqc.layers.blocks import L2Normalize
@@ -35,7 +36,7 @@ class PQCompressor(nn.Module):
         super().__init__()
         self._k = k
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), True) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
         self._decoder = ResidualDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
@@ -55,12 +56,43 @@ class PQCompressor(nn.Module):
         return restored, codes, logits
 
 
+class PQContextCompressor(nn.Module):
+    def __init__(self, k, channel, numLayers):
+        super().__init__()
+        self._k = k
+        self._encoder = ResidualEncoder(channel)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
+        self._decoder = ResidualDecoder(channel)
+        self._context = nn.ModuleList(ContextModel(channel // len(k), 1, numLayers, channel // len(k), x) for x in k)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latent = self._encoder(x)
+        # M * [n, c // M, h, w]
+        splits = torch.chunk(latent, len(self._k), 1)
+        qs = list()
+        codes = list()
+        logits = list()
+        predicts = list()
+        targets = list()
+        for quantizer, context, split in zip(self._quantizer, self._context, splits):
+            q, c, l, wv = quantizer(split, temp, True)
+            predict, target = context(q, c)
+            predicts.append(predict)
+            targets.append(target)
+            qs.append(q)
+            codes.append(c)
+            logits.append(l)
+        quantized = torch.cat(qs, 1)
+        restored = torch.tanh(self._decoder(quantized))
+        return restored, codes, logits, predicts, targets
+
+
 class PQSAGCompressor(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
         self._k = k
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), True, True) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
         self._decoder = ResidualDecoder(channel)
         self._context = StackedAutoRegressive(channel // len(k), 1, numLayers, channel // len(k), k)
 
