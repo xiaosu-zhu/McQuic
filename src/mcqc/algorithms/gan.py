@@ -27,7 +27,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    return 0.1
+    return 1e-4
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -49,7 +49,7 @@ class Gan(Algorithm):
 
         compressor = self._model.module._compressor
 
-        self._optimizerD = optimizer(1e-4 * config.LearningRate, compressor._context.parameters(), 1e-5)
+        self._optimizerD = optimizer(config.LearningRate, compressor._context.parameters(), 1e-5)
         self._optimizerG = optimizer(config.LearningRate, list(compressor._encoder.parameters()) + list(compressor._decoder.parameters()) + list(compressor._quantizer.parameters()), 1e-5)
         self._schedulerD = torch.optim.lr_scheduler.LambdaLR(self._optimizerD, _transformerLR)
         self._schedulerG = torch.optim.lr_scheduler.LambdaLR(self._optimizerG, _transformerLR)
@@ -152,7 +152,7 @@ class Gan(Algorithm):
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + regScale * self._config.Coef.reg * reg).backward()
-                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()
                     self._schedulerD.step()

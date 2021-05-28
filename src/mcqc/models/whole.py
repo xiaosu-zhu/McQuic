@@ -39,7 +39,7 @@ class WholePQContext(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
         contextLoss = self._mLoss(predicts, targets, step)
-        return (ssimLoss, l1l2Loss, contextLoss), (restored, codes, predicts, logits, None)
+        return (ssimLoss, l1l2Loss, contextLoss + reg), (restored, codes, predicts, logits, None)
 
 
 class WholePQSAG(nn.Module):
