@@ -60,7 +60,7 @@ class ContextGANLoss(nn.Module):
                 # target: [n, h*w]
                 loss = self._ceLoss(logit, target)
             else:
-                # Generator step:  corrupt context relations
+                # Generator step: corrupt context relations
                 logit = logit.permute(0, 2, 1).reshape(-1, k)
                 p = Categorical(logits=logit)
                 q = Categorical(logits=torch.zeros_like(logit))
