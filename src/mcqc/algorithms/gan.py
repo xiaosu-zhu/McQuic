@@ -27,7 +27,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    return 1e-4
+    return 1e-3
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -77,10 +77,11 @@ class Gan(Algorithm):
 
     def _superHook(self, **kwArgs):
         reg, step = kwArgs["reg"], kwArgs["now"]
+        # !Caution, check which is D, which is G!
         if step % 2 == 0:
-            self._saver.add_scalar("Loss/D", reg.mean(), global_step=step)
-        else:
             self._saver.add_scalar("Loss/G", reg.mean(), global_step=step)
+        else:
+            self._saver.add_scalar("Loss/D", reg.mean(), global_step=step)
 
     def _fastHook(self, **kwArgs):
         ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits, = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
