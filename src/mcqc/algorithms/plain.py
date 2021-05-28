@@ -27,7 +27,7 @@ def _transformerLR(step):
 
 INCRE_STEP = 40000
 def _tuneReg(step, start=False):
-    return 1e2
+    return 1.0
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -41,10 +41,6 @@ class Plain(Algorithm):
         if self._rank != 0 and saver is not None:
             raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
-
-        # if torch.backends.cudnn.version() >= 7603:
-        #     self._channelLast = True
-        #     model = model.to(memory_format=torch.channels_last)
 
         self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
 
@@ -170,7 +166,7 @@ class Plain(Algorithm):
         bs = [list() for _ in self._config.Model.k]
         latents = list()
         qs = list()
-        predicts = [list() for _ in self._config.Model.k[:-1]]
+        predicts = [list() for _ in self._config.Model.k]
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
 
@@ -198,8 +194,7 @@ class Plain(Algorithm):
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
-            ssims.append(ssim)
-            # ssims.append(20 * (1.0 / (1.0 - ssim).sqrt()).log10())
+            ssims.append(-10 * (1.0 - ssim).log10())
             psnrs.append(psnr(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
@@ -207,13 +202,13 @@ class Plain(Algorithm):
         bs = [torch.cat(x, 0) for x in bs]
         predicts = [torch.cat(predict, 0) for predict in predicts]
         ratios = list()
-        for predict, target in zip(predicts, bs[1:]):
+        for predict, target in zip(predicts, bs[1:] + bs[:1]):
             success = predict == target
             ratio = torch.sum(success) / success.numel()
             ratios.append(ratio)
         latent = torch.cat(latents, 0)
         qs = torch.cat(qs, 0)
-        self._logger.info("MS-SSIM: %2.2f", ssims.mean())
+        self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
         self._logger.info("Predict ratio: [%s]", " ".join(f"{r * 100: .1f}%" for r in ratios))
         self._saver.add_images("Eval/Res", restored, global_step=step)

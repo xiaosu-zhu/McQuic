@@ -20,8 +20,8 @@ from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic
-from mcqc.algorithms import Plain
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG
+from mcqc.algorithms import Plain, Gan
+from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG, WholePQ, WholePQContext
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -106,14 +106,14 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = WholePQSAG(config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = WholePQContext(config.Model.k, config.Model.channel, config.Model.numLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     def schdrWrapper(optim):
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
-    method = Plain(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
+    method = Gan(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
     trainSampler = torch.utils.data.DistributedSampler(trainDataset, worldSize, rank)
