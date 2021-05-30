@@ -46,8 +46,6 @@ class Whole(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
         self._compressor = MultiScaleCompressor(k, channel, numLayers)
-        # self._discriminator = FullDiscriminator(channel // 4)
-
         self._cLoss = CompressionLoss()
         self._qLoss = QError()
 
