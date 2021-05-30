@@ -25,9 +25,9 @@ def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 40000
-def _tuneReg(step, start=False):
-    return 1e-3
+# INCRE_STEP = 40000
+# def _tuneReg(step, start=False):
+#     return 1e-1
     # step = step + 1
     # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
@@ -76,20 +76,19 @@ class Gan(Algorithm):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _superHook(self, **kwArgs):
-        reg, step = kwArgs["reg"], kwArgs["now"]
+        ganLoss, step = kwArgs["ganLoss"], kwArgs["now"]
         # !Caution, check which is D, which is G!
         if step % 2 == 0:
-            self._saver.add_scalar("Loss/G", reg.mean(), global_step=step)
+            self._saver.add_scalar("Loss/G", ganLoss.mean(), global_step=step)
         else:
-            self._saver.add_scalar("Loss/D", reg.mean(), global_step=step)
+            self._saver.add_scalar("Loss/D", ganLoss.mean(), global_step=step)
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits, = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, reg, step, temp, logits, = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
-        # self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
+        self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._schedulerG.get_last_lr()[0], global_step=step)
-        self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
         # for p, t in zip(predicts, targets):
@@ -98,13 +97,13 @@ class Gan(Algorithm):
         #     self._logger.info("ratio: %.1f%%", ratio * 100)
 
     def _mediumHook(self, **kwArgs):
-        images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
+        images, restored, testLoader, step, i, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
         uniqueCodes, ratio = self._eval(testLoader, step)
-        self._saver.save(self._logger, model=self._model, optimG=self._optimizerG, optimD=self._optimizerD, schdrG=self._schedulerG, schdrD=self._schedulerG, step=step, epoch=i, temperature=temperature, regScale=regScale)
-        self._logger.info("[%3dk]: LR = %.2e, T = %.2e, P = %.2e", (step) // 1000, self._schedulerG.get_last_lr()[0], temperature, regScale)
+        self._saver.save(self._logger, model=self._model, optimG=self._optimizerG, optimD=self._optimizerD, schdrG=self._schedulerG, schdrD=self._schedulerG, step=step, epoch=i, temperature=temperature)
+        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._schedulerG.get_last_lr()[0], temperature)
         return uniqueCodes, ratio
 
     def _slowHook(self, **kwArgs):
@@ -119,7 +118,6 @@ class Gan(Algorithm):
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         # uniqueCodes = 2048
         images = None
-        regScale = 1.0
 
         epochSteps = len(trainLoader.dataset) // (self._worldSize * trainLoader.batch_size)
 
@@ -131,7 +129,7 @@ class Gan(Algorithm):
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optimG=self._optimizerG, optimD=self._optimizerD, schdrG=self._schedulerG, schdrD=self._schedulerG, step=step, epoch=initEpoch, temperature=temperature, regScale=regScale)
+            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optimG=self._optimizerG, optimD=self._optimizerD, schdrG=self._schedulerG, schdrD=self._schedulerG, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
@@ -139,7 +137,6 @@ class Gan(Algorithm):
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         if self._rank == 0:
             uniqueCodes, ratio = self._eval(testLoader, step)
-            regScale = self._config.Model.k[0] / uniqueCodes.numel()
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -151,8 +148,8 @@ class Gan(Algorithm):
                 else:
                     self._optimizerG.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + regScale * self._config.Coef.reg * reg).backward()
+                (ssimLoss, l1l2Loss, ganLoss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()
@@ -161,15 +158,11 @@ class Gan(Algorithm):
                     self._optimizerG.step()
                     self._schedulerG.step()
                 step += 1
-                self._config.Coef.reg = _tuneReg(step, step > 14000)
+                # self._config.Coef.reg = _tuneReg(step, step > 14000)
                 # e2e = step % 2 == 0
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg, logits=logits)
-                        codesAndCounts = results.get(1000, None)
-                        if codesAndCounts is not None:
-                            uniqueCodes, ratio = codesAndCounts
-                            regScale = self._config.Model.k[0] / uniqueCodes.numel()
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, ganLoss=ganLoss, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, logits=logits)
 
 
     # pylint: disable=protected-access
