@@ -5,8 +5,8 @@ from torch.distributions import Categorical
 import storch
 
 from mcqc.losses.structural import CompressionLoss, QError
-from mcqc.losses.mlm import MLMLoss, SAGLoss
-from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted, PQCompressor, PQSAGCompressor
+from mcqc.losses.mlm import MLMLoss, SAGLoss, ContextGANLoss
+from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted, PQCompressor, PQSAGCompressor, PQContextCompressor
 from mcqc.models.critic import SimpleCritic
 from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
 from mcqc.utils.vision import Masking
@@ -26,6 +26,22 @@ class WholePQ(nn.Module):
         return (ssimLoss, l1l2Loss, reg), (restored, codes, None, logits, None)
 
 
+class WholePQContext(nn.Module):
+    def __init__(self, k, channel, numLayers):
+        super().__init__()
+        self._compressor = PQContextCompressor(k, channel, numLayers)
+        self._cLoss = CompressionLoss()
+        self._mLoss = ContextGANLoss()
+
+    def forward(self, image, temp, step, **_):
+        # maskedImage = self._masking(image)
+        restored, codes, logits, predicts, targets = self._compressor(image, temp, True)
+
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        contextLoss = self._mLoss(predicts, targets, step)
+        return (ssimLoss, l1l2Loss, contextLoss, reg), (restored, codes, predicts, logits, None)
+
+
 class WholePQSAG(nn.Module):
     def __init__(self, k, channel, numLayers):
         super().__init__()
@@ -39,7 +55,7 @@ class WholePQSAG(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
         mlmLoss = self._mLoss(predicts, targets)
-        return (ssimLoss, l1l2Loss, mlmLoss), (restored, codes, predicts, logits, targets)
+        return (ssimLoss, l1l2Loss, mlmLoss + 1e-5 * reg), (restored, codes, predicts, logits, None)
 
 
 class Whole(nn.Module):
