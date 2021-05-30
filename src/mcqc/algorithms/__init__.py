@@ -6,3 +6,4 @@ Exports:
     SoftActorCritic: Soft Actor-Critic algorithm.
 """
 from .plain import Plain
+from .gan import Gan

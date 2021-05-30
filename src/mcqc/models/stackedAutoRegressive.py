@@ -10,9 +10,9 @@ from mcqc.layers.positional import PositionalEncoding2D
 class StackedAutoRegressive(nn.Module):
     def __init__(self, d, nHead, nLayers, dFFN, ks: List[int], rate=0.1):
         super().__init__()
-        self._transformer = nn.ModuleList(nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers) for _ in ks[1:])
+        self._transformer = nn.ModuleList(nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers) for _ in ks)
         self._position = PositionalEncoding2D(d, 120, 120, rate)
-        self._ffn = nn.ModuleList(nn.Linear(d, k) for k in ks[1:])
+        self._ffn = nn.ModuleList(nn.Linear(d, k) for k in ks)
 
     def predict(self, latents):
         predicts = list()
@@ -32,8 +32,8 @@ class StackedAutoRegressive(nn.Module):
     def forward(self, latents, codes):
         logits = list()
         targets = list()
-        for latent, code, transformer, ffn in zip(latents, codes[1:], self._transformer, self._ffn):
-            # latent = latent.detach()
+        for latent, code, transformer, ffn in zip(latents, codes, self._transformer, self._ffn):
+            latent = latent.detach()
             n, d, h, w = latent.shape
             # [h, w, n, d]
             latent = latent.permute(2, 3, 0, 1)
