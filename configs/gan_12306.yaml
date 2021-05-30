@@ -9,8 +9,8 @@ lr: 5.e-5
 coef:
     ssim: 1.0
     l1l2: 1.0
-    reg: 0.0005
-    gen: 0.01
+    reg: 0.01
+    gen: 0.1
     dis: 0.0
 model:
     type: pq
