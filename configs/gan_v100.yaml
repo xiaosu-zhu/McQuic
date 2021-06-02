@@ -1,0 +1,20 @@
+epoch: 10000000000
+gpus: 4
+vRam: -1
+wantsMore: false
+dataset: clic/train
+valDataset: clic/valid
+batchSize: 4
+lr: 5.e-5
+coef:
+    ssim: 1.0
+    l1l2: 0.0
+    reg: 0.02
+    gen: 0.1
+    dis: 0.0
+model:
+    type: Context
+    channel: 256
+    k: [256, 256, 256, 256, 256, 256, 256, 256]
+    numLayers: 24
+method: MiniMax

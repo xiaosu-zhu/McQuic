@@ -25,11 +25,6 @@ def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99999 ** (step - WARMUP_STEP))
 
-INCRE_STEP = 40000
-def _tuneReg(step, start=False):
-    return 1.0
-    # step = step + 1
-    # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
 class Plain(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -82,19 +77,15 @@ class Plain(Algorithm):
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
-        # for p, t in zip(predicts, targets):
-        #     success = p.argmax(-1) == t
-        #     ratio = torch.mean(success.float())
-        #     self._logger.info("ratio: %.1f%%", ratio * 100)
 
     def _mediumHook(self, **kwArgs):
-        images, restored, testLoader, step, i, temperature, regScale = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"], kwArgs["regScale"]
+        images, restored, testLoader, step, i, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
         uniqueCodes, ratio = self._eval(testLoader, step)
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature, regScale=regScale)
-        self._logger.info("[%3dk]: LR = %.2e, T = %.2e, P = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature, regScale)
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
+        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
         return uniqueCodes, ratio
 
     def _slowHook(self, **kwArgs):
@@ -108,7 +99,6 @@ class Plain(Algorithm):
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         # uniqueCodes = 2048
         images = None
-        regScale = 1.0
 
         epochSteps = len(trainLoader.dataset) // (self._worldSize * trainLoader.batch_size)
 
@@ -120,15 +110,14 @@ class Plain(Algorithm):
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regScale=regScale)
+            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         if self._rank == 0:
-            uniqueCodes, ratio = self._eval(testLoader, step)
-            regScale = self._config.Model.k[0] / uniqueCodes.numel()
+            self._eval(testLoader, step)
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -137,22 +126,15 @@ class Plain(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + regScale * self._config.Coef.reg * reg).backward()
+                (ssimLoss, l1l2Loss, reg), (restored, codes, _, logits, targets) = self._model(images, temperature)
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 step += 1
-                self._config.Coef.reg = _tuneReg(step, step > 14000)
-                # e2e = step % 2 == 0
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regScale=regScale, regCoeff=self._config.Coef.reg, logits=logits)
-                        codesAndCounts = results.get(1000, None)
-                        if codesAndCounts is not None:
-                            uniqueCodes, ratio = codesAndCounts
-                            regScale = self._config.Model.k[0] / uniqueCodes.numel()
-
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
     # pylint: disable=protected-access
     @torch.no_grad()
@@ -166,7 +148,6 @@ class Plain(Algorithm):
         bs = [list() for _ in self._config.Model.k]
         latents = list()
         qs = list()
-        predicts = [list() for _ in self._config.Model.k]
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
 
@@ -180,9 +161,6 @@ class Plain(Algorithm):
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].append(b.int().detach().cpu())
-            predict = model._context.predict(lHat)
-            for i, p in enumerate(predict):
-                predicts[i].append(p.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
@@ -200,23 +178,15 @@ class Plain(Algorithm):
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         bs = [torch.cat(x, 0) for x in bs]
-        predicts = [torch.cat(predict, 0) for predict in predicts]
-        ratios = list()
-        for predict, target in zip(predicts, bs[1:] + bs[:1]):
-            success = predict == target
-            ratio = torch.sum(success) / success.numel()
-            ratios.append(ratio)
         latent = torch.cat(latents, 0)
         qs = torch.cat(qs, 0)
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
-        self._logger.info("Predict ratio: [%s]", " ".join(f"{r * 100: .1f}%" for r in ratios))
         self._saver.add_images("Eval/Res", restored, global_step=step)
         uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
-        self._saver.add_scalar("Eval/Predict", sum(ratios) / len(ratios), global_step=step)
         # np.save("q.npy", qs)
         # np.save("z.npy", latent)
         # del bs, zs
