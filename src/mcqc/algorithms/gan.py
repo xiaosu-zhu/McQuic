@@ -64,7 +64,7 @@ class Gan(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({1: self._superHook, 100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
 
@@ -84,13 +84,14 @@ class Gan(Algorithm):
             self._saver.add_scalar("Loss/D", ganLoss.mean(), global_step=step)
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, temp, logits, = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, reg, step, temp, logits, ganLoss = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["temperature"], kwArgs["logits"], kwArgs["ganLoss"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._schedulerG.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
+        self._saver.add_scalar("Loss/G", ganLoss.mean(), global_step=step)
         # for p, t in zip(predicts, targets):
         #     success = p.argmax(-1) == t
         #     ratio = torch.mean(success.float())

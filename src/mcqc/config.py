@@ -13,6 +13,7 @@ class Coef:
 
 @dataclass
 class ModelSpec:
+    type: str
     k: List[int]
     channel: int = 512
     numLayers: int = 3
@@ -22,7 +23,7 @@ class ModelSpec:
 class Config:
     lr: float = 5e-6
     coef: Coef = Coef()
-    model: ModelSpec = ModelSpec(k=[256])
+    model: ModelSpec = ModelSpec(type="Plain", k=[256])
     batchSize: int = 32
     epoch: int = 10
     gpus: int = 1
@@ -30,6 +31,7 @@ class Config:
     wantsMore: bool = False
     dataset: str = "clic/train"
     valDataset: str = "clic/valid"
+    method: str = "Plain"
 
     @property
     def LearningRate(self) -> float:
@@ -70,3 +72,7 @@ class Config:
     @property
     def ValDataset(self) -> str:
         return self.valDataset
+
+    @property
+    def Method(self) -> str:
+        return self.method

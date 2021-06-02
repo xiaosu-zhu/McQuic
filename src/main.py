@@ -96,6 +96,16 @@ def _generalConfig(rank: int, worldSize: int):
 #     runner = Eval(False, os.path.join(saveDir, Consts.CheckpointName), dataset, Env(**paramsForEnv), methods[config.Method](**paramsForActorCritic))
 #     runner.Test()
 
+models = {
+    "Base": WholePQ,
+    "Context": WholePQContext
+}
+
+methods = {
+    "Plain": Plain,
+    "MiniMax": Gan
+}
+
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
     _generalConfig(rank, worldSize)
     savePath = Saver.composePath(saveDir, "saved.ckpt")
@@ -106,14 +116,14 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = WholePQContext(config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = models[config.Model.type](config.Model.k, config.Model.channel, config.Model.numLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
         return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     def schdrWrapper(optim):
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
-    method = Gan(config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
+    method = methods[config.Method](config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
     trainSampler = torch.utils.data.DistributedSampler(trainDataset, worldSize, rank)
