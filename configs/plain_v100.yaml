@@ -8,13 +8,13 @@ batchSize: 8
 lr: 5.e-5
 coef:
     ssim: 1.0
-    l1l2: 0.0
-    reg: 0.02
+    l1l2: 1.0
+    reg: 0.0
     gen: 0.0
     dis: 0.0
 model:
     type: Base
     channel: 256
     k: [256, 256, 256, 256, 256, 256, 256, 256]
-    numLayers: 24
+    numLayers: 0
 method: Plain

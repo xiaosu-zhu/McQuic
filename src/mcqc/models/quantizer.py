@@ -401,6 +401,6 @@ class AttentiveQuantizer(nn.Module):
 
     def forward(self, latent, temperature, *_):
         # latent = self._randomErase(latent)
-        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self.xCodebook, self.xCodebook, None, 1.0)
+        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self.xCodebook, self.xCodebook, None, temperature)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
         return quantized.permute(0, 3, 1, 2), sample.argmax(-1), logit, wv
