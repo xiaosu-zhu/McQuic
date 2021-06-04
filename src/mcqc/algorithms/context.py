@@ -38,7 +38,7 @@ def _tuneReg(step):
         return 0.9977000638225533 ** (step - WARMUP_STEP)
 
 
-class Plain(Algorithm):
+class Context(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
@@ -149,6 +149,15 @@ class Plain(Algorithm):
                     with torch.no_grad():
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
+    def _predictByAutoRegressive(self, latents: List[torch.Tensor], bs: List[torch.Tensor], contextModel: nn.Module):
+        corrects = list()
+        # [N, 32, 32]
+        for latent, b in zip(latents, bs):
+            # [N, 32, 32]
+            correctness = contextModel.predict(latent, b)
+            corrects.append(correctness)
+        return corrects
+
     # pylint: disable=protected-access
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
@@ -190,11 +199,19 @@ class Plain(Algorithm):
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
+        # list of M * [N, 32, 32] codes
         bs = [torch.cat(x, 0) for x in bs]
+
+        corrects = self._predictByAutoRegressive(bs, model._context)
+        # [M, N, 32, 32] bool Tensor
+        corrects = torch.stack(corrects, 0)
+
+
         latent = torch.cat(latents, 0)
         qs = torch.cat(qs, 0)
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
+        self._logger.info("Context masking rate: %.2f%%", corrects.float().mean() * 100)
         self._saver.add_images("Eval/Res", restored, global_step=step)
         uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)

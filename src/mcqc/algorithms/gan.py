@@ -20,16 +20,23 @@ from mcqc.models.whole import Whole
 from mcqc import Config
 
 
-WARMUP_STEP = 20000
+WARMUP_STEP = 40000
 def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99999 ** (step - WARMUP_STEP))
 
-# INCRE_STEP = 40000
-# def _tuneReg(step, start=False):
-#     return 1e-1
-    # step = step + 1
-    # return 1e-2 * min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
+
+def _tuneReg(step):
+    step = step + 1
+    if step < 20000:
+        return 2e-4
+    elif step < 30000:
+        return 2e-3
+    elif step < 40000:
+        return 2e-2
+    else:
+        return 0.9977000638225533 ** (step - WARMUP_STEP)
+
 
 class Gan(Algorithm):
     def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
@@ -141,7 +148,7 @@ class Gan(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
-            temperature = initTemp * (finalTemp / initTemp) ** (i / annealRange)
+            temperature = max(finalTemp, initTemp * (finalTemp / initTemp) ** (i / annealRange))
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
                 if step % 2 == 0:
@@ -150,8 +157,11 @@ class Gan(Algorithm):
                     self._optimizerG.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, ganLoss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
+                if step % 2 == 0:
+                    (self._config.Coef.gen * ganLoss).backward()
+                else:
+                    ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
+                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()
                     self._schedulerD.step()
@@ -159,8 +169,7 @@ class Gan(Algorithm):
                     self._optimizerG.step()
                     self._schedulerG.step()
                 step += 1
-                # self._config.Coef.reg = _tuneReg(step, step > 14000)
-                # e2e = step % 2 == 0
+                self._config.Coef.reg = _tuneReg(step, step > 14000)
                 if self._loggingHook is not None:
                     with torch.no_grad():
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, ganLoss=ganLoss, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, logits=logits)
