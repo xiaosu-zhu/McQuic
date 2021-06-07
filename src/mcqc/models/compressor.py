@@ -6,10 +6,12 @@ from torch import nn
 import torch.nn.functional as F
 from cfmUtils.base import parallelFunction, Module
 import storch
+from mcqc.models.encoderDecoder import EncoderDecoder
 
+from mcqc.models.maskingModel import MaskingModel
 from .encoder import ResidualEncoder, MultiScaleEncoder, TransformerEncoder
-from .decoder import ResidualDecoder, MultiScaleDecoder, TransformerDecoder
 from .maskedLanguageModel import MaskedLangugeModel
+from .decoder import ResidualDecoder, MultiScaleDecoder, TransformerDecoder
 from .stackedAutoRegressive import StackedAutoRegressive
 from .contextModel import ContextModel
 from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
@@ -94,7 +96,7 @@ class PQSAGCompressor(nn.Module):
         self._encoder = ResidualEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
         self._decoder = ResidualDecoder(channel)
-        self._context = StackedAutoRegressive(channel // len(k), 1, numLayers, channel // len(k), k)
+        self._context = nn.ModuleList(EncoderDecoder(channel // len(k), 1, numLayers, channel // len(k), x) for x in k)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
@@ -103,12 +105,16 @@ class PQSAGCompressor(nn.Module):
         qs = list()
         codes = list()
         logits = list()
-        for quantizer, split in zip(self._quantizer, splits):
+        predicts = list()
+        targets = list()
+        for quantizer, context, split in zip(self._quantizer, self._context, splits):
             q, c, l, wv = quantizer(split, temp, True)
+            predict, target = context(q, c)
+            predicts.append(predict)
+            targets.append(target)
             qs.append(q)
             codes.append(c)
             logits.append(l)
-        predicts, targets = self._context(qs, codes)
         quantized = torch.cat(qs, 1)
         restored = torch.tanh(self._decoder(quantized))
         return restored, codes, logits, predicts, targets

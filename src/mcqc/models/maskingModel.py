@@ -10,8 +10,6 @@ class MaskingModel(nn.Module):
     def __init__(self, d, nHead, nLayers, dFFN, k, rate=0.1):
         super().__init__()
         self._transformer = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
-        # contains [START, END, MASK]
-        self._specialTokens = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(3, d)))
         self._position = PositionalEncoding2D(d, 120, 120, rate)
 
         self._dropout = nn.Dropout(rate, True)
@@ -22,33 +20,37 @@ class MaskingModel(nn.Module):
         latent = latent.permute(2, 3, 0, 1)
         latent = self._position(latent)
         latent = latent.reshape(h*w, n, d)
-        return latent, torch.triu(torch.ones(h*w, h*w, dtype=bool, device=latent.device))
+        # mask should not all True in a row, otherwise output will be nan
+        return latent, torch.triu(torch.ones(h*w, h*w, dtype=bool, device=latent.device), diagonal=1)
 
     def forward(self, latent, code):
         # [hw, n, d], [hw, hw]
-        latent, mask = self._createInputandMask(latent)
+        # at i-th row, predict code at (i+1)-th position while x>=(i+1) are masked
+        latent, mask = self._createInputandMask(latent.detach())
         hw, n, d = latent.shape
         # [hw, n, d]
         encoded = self._transformer(latent, mask)
         # [hw, n, k]
+        # predict logit
         logit = self._ffn(self._dropout(encoded))
-        # [n, k, hw], [n, hw]
-        return logit.permute(1, 2, 0), code.reshape(n, -1)
+        # ignore last row
+        # i-th row to predict (i+1)-th code
+        # [n, k, hw - 1], [n, hw - 1]
+        return logit.permute(1, 2, 0)[:, :, :-1], code.reshape(n, -1)[:, 1:]
 
     def predict(self, latent, code):
-        n, d, h, w = latent.shape
-        latent = latent.permute(2, 3, 0, 1)
-        latent = self._position(latent)
-        latent = latent.reshape(h*w, n, d)
-        predicts = list()
-        for i in range(h*w):
-            # [?, n, d] -> [?, n, d] -> pick the last -> [n, d]
-            encoded = self._transformer(latent[:(i+1)])[-1]
-            # [n, k]
-            logit = self._ffn(encoded)
-            # [n] at position i
-            predict = logit.argmax(-1)
-            predicts.append(predict)
-        # [n, h*w] -> [n, h, w]
-        predicts = torch.stack(predicts, -1).reshape((n, h, w))
-        return predicts == code
+        # [hw, n, d], [hw, hw]
+        # predict code at i-th position while x>=i are masked
+        latent, mask = self._createInputandMask(latent)
+        n, h, w = code.shape
+        # [hw, n, d]
+        encoded = self._transformer(latent, mask)
+        # [hw, n, k]
+        # predict logit
+        logit = self._ffn(self._dropout(encoded))
+        # [hw, n]
+        predict = logit.argmax(-1)
+        # [n, hw - 1]
+        predict = predict.permute(1, 0)[:, :-1]
+        code = code.reshape(n, -1)[:, 1:]
+        return predict == code

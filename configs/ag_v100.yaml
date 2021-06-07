@@ -1,0 +1,20 @@
+epoch: 10000000000
+gpus: 2
+vRam: -1
+wantsMore: false
+dataset: clic/train
+valDataset: clic/valid
+batchSize: 4
+lr: 5.e-5
+coef:
+    ssim: 0.0
+    l1l2: 0.0
+    reg: 0.0
+    gen: 1.0
+    dis: 0.0
+model:
+    type: AutoRegressive
+    channel: 256
+    k: [256, 256, 256, 256, 256, 256, 256, 256]
+    numLayers: 6
+method: AutoRegressive

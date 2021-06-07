@@ -35,7 +35,7 @@ def _tuneReg(step):
     elif step < 20000:
         return 2e-2
     else:
-        return 0.9977000638225533 ** (step - WARMUP_STEP)
+        return 2e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
 
 
 class Context(Algorithm):
@@ -55,9 +55,9 @@ class Context(Algorithm):
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
-        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
+        self._optimizer: torch.optim.Optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
         # self._scheduler = scheduler(self._optimizer)
-        self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
+        self._scheduler: torch.optim.lr_scheduler.LambdaLR = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
         dist.barrier()
 
@@ -81,10 +81,11 @@ class Context(Algorithm):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits, = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits, mlmLoss = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"], kwArgs["mlmLoss"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
+        self._saver.add_scalar("Loss/MLE", mlmLoss.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
@@ -122,7 +123,8 @@ class Context(Algorithm):
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            # loaded = Saver.load(self._savePath, mapLocation, False, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, False, self._logger, model=self._model, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
@@ -138,23 +140,23 @@ class Context(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, _, logits, targets) = self._model(images, temperature)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
-                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                (ssimLoss, l1l2Loss, mlmLoss, reg), (restored, codes, _, logits, targets) = self._model(images, temperature)
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * mlmLoss + self._config.Coef.reg * reg).backward()
+                torch.nn.utils.clip_grad_norm_(self._model.module._compressor._context.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 self._config.Coef.reg = _tuneReg(step)
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, mlmLoss=mlmLoss, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
-    def _predictByAutoRegressive(self, latents: List[torch.Tensor], bs: List[torch.Tensor], contextModel: nn.Module):
+    def _predictByAutoRegressive(self, latents: List[torch.Tensor], bs: List[torch.Tensor], contextModel: nn.ModuleList):
         corrects = list()
         # [N, 32, 32]
-        for latent, b in zip(latents, bs):
+        for latent, b, context in zip(latents, bs, contextModel):
             # [N, 32, 32]
-            correctness = contextModel.predict(latent, b)
+            correctness = context.predict(latent.to(self._rank), b.to(self._rank))
             corrects.append(correctness)
         return corrects
 
@@ -168,7 +170,8 @@ class Context(Algorithm):
         ssims = list()
         psnrs = list()
         bs = [list() for _ in self._config.Model.k]
-        latents = list()
+        latents = [list() for _ in self._config.Model.k]
+        zs = list()
         qs = list()
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
@@ -183,10 +186,11 @@ class Context(Algorithm):
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].append(b.int().detach().cpu())
+                latents[i].append(q.detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
-            latents.append(latent.detach().cpu())
+            zs.append(latent.detach().cpu())
             qs.append(quantized.detach().cpu())
 
             raw = self._deTrans(raw)
@@ -201,13 +205,13 @@ class Context(Algorithm):
         psnrs = torch.cat(psnrs, 0)
         # list of M * [N, 32, 32] codes
         bs = [torch.cat(x, 0) for x in bs]
+        latents = [torch.cat(x, 0) for x in latents]
 
-        corrects = self._predictByAutoRegressive(bs, model._context)
+        corrects = self._predictByAutoRegressive(latents, bs, model._context)
         # [M, N, 32, 32] bool Tensor
         corrects = torch.stack(corrects, 0)
 
-
-        latent = torch.cat(latents, 0)
+        zs = torch.cat(zs, 0)
         qs = torch.cat(qs, 0)
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
@@ -216,10 +220,7 @@ class Context(Algorithm):
         uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
-        self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
-        # np.save("q.npy", qs)
-        # np.save("z.npy", latent)
-        # del bs, zs
+        self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
         encoded, bpp = self._compress(bs)

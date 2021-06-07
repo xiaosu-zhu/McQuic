@@ -5,7 +5,7 @@ from torch.distributions import Categorical
 import storch
 
 from mcqc.losses.structural import CompressionLoss, QError
-from mcqc.losses.mlm import MLMLoss, SAGLoss, ContextGANLoss
+from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss
 from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted, PQCompressor, PQSAGCompressor, PQContextCompressor
 from mcqc.models.critic import SimpleCritic
 from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
@@ -47,7 +47,7 @@ class WholePQSAG(nn.Module):
         super().__init__()
         self._compressor = PQSAGCompressor(k, channel, numLayers)
         self._cLoss = CompressionLoss()
-        self._mLoss = SAGLoss()
+        self._mLoss = MLELoss()
 
     def forward(self, image, temp, **_):
         # maskedImage = self._masking(image)
@@ -55,7 +55,7 @@ class WholePQSAG(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
         mlmLoss = self._mLoss(predicts, targets)
-        return (ssimLoss, l1l2Loss, mlmLoss + 1e-5 * reg), (restored, codes, predicts, logits, None)
+        return (ssimLoss, l1l2Loss, mlmLoss, reg), (restored, codes, predicts, logits, None)
 
 
 class Whole(nn.Module):
