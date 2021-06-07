@@ -13,9 +13,9 @@ from mcqc.utils.vision import Masking
 
 
 class WholePQ(nn.Module):
-    def __init__(self, k, channel, numLayers):
+    def __init__(self, m, k, channel, numLayers):
         super().__init__()
-        self._compressor = PQCompressor(k, channel, numLayers)
+        self._compressor = PQCompressor(m, k, channel, numLayers)
         self._cLoss = CompressionLoss()
         self._qLoss = QError()
 
@@ -27,9 +27,9 @@ class WholePQ(nn.Module):
 
 
 class WholePQContext(nn.Module):
-    def __init__(self, k, channel, numLayers):
+    def __init__(self, m, k, channel, numLayers):
         super().__init__()
-        self._compressor = PQContextCompressor(k, channel, numLayers)
+        self._compressor = PQContextCompressor(m, k, channel, numLayers)
         self._cLoss = CompressionLoss()
         self._mLoss = ContextGANLoss()
 
@@ -43,9 +43,9 @@ class WholePQContext(nn.Module):
 
 
 class WholePQSAG(nn.Module):
-    def __init__(self, k, channel, numLayers):
+    def __init__(self, m, k, channel, numLayers):
         super().__init__()
-        self._compressor = PQSAGCompressor(k, channel, numLayers)
+        self._compressor = PQSAGCompressor(m, k, channel, numLayers)
         self._cLoss = CompressionLoss()
         self._mLoss = MLELoss()
 

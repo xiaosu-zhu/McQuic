@@ -123,8 +123,7 @@ class Context(Algorithm):
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            # loaded = Saver.load(self._savePath, mapLocation, False, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
-            loaded = Saver.load(self._savePath, mapLocation, False, self._logger, model=self._model, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, False, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
@@ -142,7 +141,7 @@ class Context(Algorithm):
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, mlmLoss, reg), (restored, codes, _, logits, targets) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * mlmLoss + self._config.Coef.reg * reg).backward()
-                torch.nn.utils.clip_grad_norm_(self._model.module._compressor._context.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_norm_(self._model.module._compressor._context.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
                 self._config.Coef.reg = _tuneReg(step)
@@ -169,8 +168,8 @@ class Context(Algorithm):
         model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        bs = [list() for _ in self._config.Model.k]
-        latents = [list() for _ in self._config.Model.k]
+        bs = [list() for _ in range(self._config.Model.m)]
+        latents = [list() for _ in range(self._config.Model.m)]
         zs = list()
         qs = list()
         for raw in dataLoader:
@@ -179,9 +178,9 @@ class Context(Algorithm):
             latent = model._encoder(raw)
 
             # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, len(model._k), 1)
+            splits = torch.chunk(latent, self._config.Model.m, 1)
             lHat = list()
-            for i in range(len(model._k)):
+            for i in range(self._config.Model.m):
                 b, _ = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
@@ -232,9 +231,9 @@ class Context(Algorithm):
         compressed = list()
         cdfs = list()
         # b: Tensor of [N, 32, 32]
-        for b, k in zip(codes, self._config.Model.k):
+        for b in codes:
             # list of 256 probs
-            prob = self._calculateFreq(b, k)
+            prob = self._calculateFreq(b, self._config.Model.k)
             cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
             # M * [cdf]
             cdfs.append(cdf)
@@ -245,7 +244,7 @@ class Context(Algorithm):
             codePerImage = torch.stack(codePerImage, 0)
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, self._config.Model.k, torch.zeros_like(codePerImage).flatten().int().tolist())
+            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
             compressed.append(binary)
         # binary: 1 byte per word
         # N * [binaries]

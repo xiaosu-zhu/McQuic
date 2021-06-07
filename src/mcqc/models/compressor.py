@@ -34,17 +34,18 @@ class MultiScaleCompressor(nn.Module):
 
 
 class PQCompressor(nn.Module):
-    def __init__(self, k, channel, numLayers):
+    def __init__(self, m, k, channel, numLayers):
         super().__init__()
         self._k = k
+        self._m = m
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
         # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, len(self._k), 1)
+        splits = torch.chunk(latent, self._m, 1)
         qs = list()
         codes = list()
         logits = list()
@@ -59,18 +60,19 @@ class PQCompressor(nn.Module):
 
 
 class PQContextCompressor(nn.Module):
-    def __init__(self, k, channel, numLayers):
+    def __init__(self, m, k, channel, numLayers):
         super().__init__()
         self._k = k
+        self._m = m
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
-        self._context = nn.ModuleList(ContextModel(channel // len(k), 1, numLayers, channel // len(k), x) for x in k)
+        self._context = nn.ModuleList(ContextModel(channel // m, 1, numLayers, channel // m, k) for _ in range(m))
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
         # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, len(self._k), 1)
+        splits = torch.chunk(latent, self._m, 1)
         qs = list()
         codes = list()
         logits = list()
@@ -90,18 +92,19 @@ class PQContextCompressor(nn.Module):
 
 
 class PQSAGCompressor(nn.Module):
-    def __init__(self, k, channel, numLayers):
+    def __init__(self, m, k, channel, numLayers):
         super().__init__()
         self._k = k
+        self._m = m
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(x, channel // len(k), False, True) for x in k)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
-        self._context = nn.ModuleList(EncoderDecoder(channel // len(k), 1, numLayers, channel // len(k), x) for x in k)
+        self._context = nn.ModuleList(EncoderDecoder(channel // m, 1, numLayers, channel // m, k) for _ in range(m))
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
         # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, len(self._k), 1)
+        splits = torch.chunk(latent, self._m, 1)
         qs = list()
         codes = list()
         logits = list()

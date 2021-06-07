@@ -158,7 +158,7 @@ class Plain(Algorithm):
         model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        bs = [list() for _ in self._config.Model.k]
+        bs = [list() for _ in range(self._config.Model.m)]
         latents = list()
         qs = list()
         for raw in dataLoader:
