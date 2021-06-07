@@ -19,6 +19,7 @@ from cfmUtils.config import read, summary
 from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
+from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain, Gan
 from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG, WholePQ, WholePQContext
@@ -98,12 +99,14 @@ def _generalConfig(rank: int, worldSize: int):
 
 models = {
     "Base": WholePQ,
-    "Context": WholePQContext
+    "Context": WholePQContext,
+    "AutoRegressive": WholePQSAG
 }
 
 methods = {
     "Plain": Plain,
-    "MiniMax": Gan
+    "MiniMax": Gan,
+    "AutoRegressive": Context
 }
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):

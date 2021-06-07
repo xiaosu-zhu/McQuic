@@ -10,8 +10,6 @@ class ContextModel(nn.Module):
     def __init__(self, d, nHead, nLayers, dFFN, k, rate=0.1):
         super().__init__()
         self._transformer = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
-        # contains [START, END, MASK]
-        self._specialTokens = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(3, d)))
         self._position = PositionalEncoding2D(d, 120, 120, rate)
 
         self._dropout = nn.Dropout(rate, True)

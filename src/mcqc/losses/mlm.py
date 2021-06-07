@@ -45,6 +45,21 @@ class SAGLoss(nn.Module):
         return sum(losses)
 
 
+class MLELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._ceLoss = nn.CrossEntropyLoss()
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor):
+        losses = list()
+        for logit, target in zip(logits, targets):
+            # logit: [n, k,...]
+            # target: [n, ...]
+            loss = self._ceLoss(logit, target)
+            losses.append(loss)
+        return sum(losses)
+
+
 class ContextGANLoss(nn.Module):
     def __init__(self):
         super().__init__()
