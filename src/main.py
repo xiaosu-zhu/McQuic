@@ -119,7 +119,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = models[config.Model.type](config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.numLayers)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):

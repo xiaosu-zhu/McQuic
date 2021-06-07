@@ -14,7 +14,8 @@ class Coef:
 @dataclass
 class ModelSpec:
     type: str
-    k: List[int]
+    k: int = 256
+    m: int = 4
     channel: int = 512
     numLayers: int = 3
 

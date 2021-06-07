@@ -10,8 +10,8 @@ from mcqc.models.quantizer import AttentiveQuantizer
 class EncoderDecoder(nn.Module):
     def __init__(self, d, nHead, nLayers, dFFN, k, rate=0.1):
         super().__init__()
-        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
-        self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
+        self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "relu"), nLayers)
+        self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "relu"), nLayers)
         self._quantizer = AttentiveQuantizer(k, d, False, True)
         self._position = PositionalEncoding2D(d, 120, 120, rate)
 
