@@ -62,7 +62,7 @@ class EncoderDecoder(nn.Module):
 
     def forward(self, latent, code):
         # [n, 8, 16, 16]
-        z = self._encoder(latent)
+        z = self._encoder(latent.detach())
         softZ = z.tanh()
         hardZ = z.sign()
         z = ((hardZ - softZ).detach() + softZ)
