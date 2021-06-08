@@ -35,7 +35,7 @@ def _tuneReg(step):
     elif step < 20000:
         return 2e-2
     else:
-        return 0.9977000638225533 ** (step - WARMUP_STEP)
+        return 2e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
 
 
 class Plain(Algorithm):
@@ -55,7 +55,7 @@ class Plain(Algorithm):
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
-        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
+        self._optimizer: torch.optim.Optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
         # self._scheduler = scheduler(self._optimizer)
         self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
@@ -63,6 +63,7 @@ class Plain(Algorithm):
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
+        self._ckpt = "ckpt/saved.ckpt"
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
@@ -81,9 +82,10 @@ class Plain(Algorithm):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits, = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
+        # self._saver.add_scalar("Loss/LPIPS", pLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
@@ -120,9 +122,11 @@ class Plain(Algorithm):
         annealRange = int(40000 // epochSteps)
         initEpoch = 0
 
+        mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+
         if self._continue:
-            mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
@@ -159,7 +163,7 @@ class Plain(Algorithm):
         ssims = list()
         psnrs = list()
         bs = [list() for _ in range(self._config.Model.m)]
-        latents = list()
+        zs = list()
         qs = list()
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
@@ -167,9 +171,9 @@ class Plain(Algorithm):
             latent = model._encoder(raw)
 
             # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, len(model._k), 1)
+            splits = torch.chunk(latent, self._config.Model.m, 1)
             lHat = list()
-            for i in range(len(model._k)):
+            for i in range(self._config.Model.m):
                 b, _ = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
@@ -177,7 +181,7 @@ class Plain(Algorithm):
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
-            latents.append(latent.detach().cpu())
+            zs.append(latent.detach().cpu())
             qs.append(quantized.detach().cpu())
 
             raw = self._deTrans(raw)
@@ -191,7 +195,7 @@ class Plain(Algorithm):
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         bs = [torch.cat(x, 0) for x in bs]
-        latent = torch.cat(latents, 0)
+        zs = torch.cat(zs, 0)
         qs = torch.cat(qs, 0)
         self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
         self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
@@ -199,10 +203,7 @@ class Plain(Algorithm):
         uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
-        self._saver.add_scalar("Eval/QError", ((qs - latent) ** 2).sum(1).mean(), global_step=step)
-        # np.save("q.npy", qs)
-        # np.save("z.npy", latent)
-        # del bs, zs
+        self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
         encoded, bpp = self._compress(bs)
@@ -214,9 +215,9 @@ class Plain(Algorithm):
         compressed = list()
         cdfs = list()
         # b: Tensor of [N, 32, 32]
-        for b, k in zip(codes, self._config.Model.k):
+        for b in codes:
             # list of 256 probs
-            prob = self._calculateFreq(b, k)
+            prob = self._calculateFreq(b, self._config.Model.k)
             cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
             # M * [cdf]
             cdfs.append(cdf)
@@ -227,7 +228,7 @@ class Plain(Algorithm):
             codePerImage = torch.stack(codePerImage, 0)
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, self._config.Model.k, torch.zeros_like(codePerImage).flatten().int().tolist())
+            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
             compressed.append(binary)
         # binary: 1 byte per word
         # N * [binaries]

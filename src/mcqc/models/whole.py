@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 import storch
+from lpips_pytorch import LPIPS
 
 from mcqc.losses.structural import CompressionLoss, QError
 from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss
@@ -17,12 +18,13 @@ class WholePQ(nn.Module):
         super().__init__()
         self._compressor = PQCompressor(m, k, channel, numLayers)
         self._cLoss = CompressionLoss()
-        self._qLoss = QError()
+        # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
         restored, codes, logits = self._compressor(image, temp, True)
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, None, logits, None)
 
 
