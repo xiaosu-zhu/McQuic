@@ -57,12 +57,13 @@ class Context(Algorithm):
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
         self._optimizer: torch.optim.Optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
         # self._scheduler = scheduler(self._optimizer)
-        self._scheduler: torch.optim.lr_scheduler.LambdaLR = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
+        self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
         dist.barrier()
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
+        self._ckpt = "ckpt/saved.ckpt"
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
@@ -121,9 +122,11 @@ class Context(Algorithm):
         annealRange = int(40000 // epochSteps)
         initEpoch = 0
 
+        mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+
         if self._continue:
-            mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-            loaded = Saver.load(self._savePath, mapLocation, False, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
