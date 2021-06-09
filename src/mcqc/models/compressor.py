@@ -6,7 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from cfmUtils.base import parallelFunction, Module
 import storch
-from mcqc.models.encoderDecoder import EncoderDecoder
+from mcqc.models.encoderDecoder import EncoderDecoder, MLP
 
 from mcqc.models.maskingModel import MaskingModel
 from .encoder import ResidualEncoder, MultiScaleEncoder, TransformerEncoder
@@ -99,7 +99,7 @@ class PQSAGCompressor(nn.Module):
         self._encoder = ResidualEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
-        self._context = EncoderDecoder(channel, m, numLayers, channel, k)
+        self._context = MLP(channel, m, numLayers, channel, k)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
