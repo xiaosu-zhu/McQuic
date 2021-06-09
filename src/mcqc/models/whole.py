@@ -20,9 +20,9 @@ class WholePQ(nn.Module):
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, codes, logits = self._compressor(image, temp, True)
+        restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
         # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, None, logits, None)
 
@@ -52,11 +52,11 @@ class WholePQSAG(nn.Module):
 
     def forward(self, image, temp, **_):
         # maskedImage = self._masking(image)
-        restored, codes, logits, predicts, targets = self._compressor(image, temp, True)
+        restored, (quantized, latent), codes, logits, predicts, targets = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, None)
         mlmLoss = self._mLoss(predicts, targets)
-        return (ssimLoss, l1l2Loss, mlmLoss, reg), (restored, codes, predicts, logits, None)
+        return (ssimLoss, l1l2Loss, mlmLoss, reg), (restored, codes, predicts, logits, latent)
 
 
 class Whole(nn.Module):
