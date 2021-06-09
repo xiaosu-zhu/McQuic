@@ -17,7 +17,7 @@ class _mlp(nn.Module):
         self._ff1 = IncepBlock(d, rate)
         self._hh1 = IncepBlock(hw, rate)
         self._hh2 = LayerGroup(hw, k, rate, nn.ReLU)
-        self._hh3 = IncepBlock(k, k, rate)
+        self._hh3 = IncepBlock(k, rate)
         self._ff2 = nn.Linear(d, d)
         self._position = PositionalEncoding2D(d, 120, 120, rate)
         self._k = k
@@ -47,8 +47,35 @@ class _mlp(nn.Module):
 class MLP(nn.Module):
     def __init__(self, d, nHead, nLayers, dFFN, k, rate=0.1):
         super().__init__()
-        self._encoder = _mlp(d, 1024, 256, rate)
-        self._decoder = _mlp(d, 256, 1024, rate)
+        self._encoder = nn.Sequential(
+            ResidualBlockWithStride(d, d), # 16
+            ResidualBlockWithStride(d, d), # 8
+            ResidualBlockWithStride(d, d), # 4
+            ResidualBlockWithStride(d, d), # 2
+            # ResidualBlockWithStride(d, d), # 1
+            # ResidualBlockUpsample(d, d), # 2
+            ResidualBlockUpsample(d, d), # 4
+            ResidualBlockUpsample(d, d), # 8
+            ResidualBlockUpsample(d, d), # 16
+            conv1x1(d, d)
+        )
+        self._decoder = nn.Sequential(
+            # ResidualBlock(8, d), # 16
+            ResidualBlockWithStride(d, d), # 8
+            ResidualBlockWithStride(d, d), # 4
+            ResidualBlockWithStride(d, d), # 2
+            # ResidualBlockWithStride(d, d), # 1
+            # ResidualBlockUpsample(d, d), # 2
+            ResidualBlockUpsample(d, d), # 4
+            ResidualBlockUpsample(d, d), # 8
+            ResidualBlockUpsample(d, d), # 16
+            ResidualBlockUpsample(d, d), # 32
+            ResidualBlock(d, d),
+            conv1x1(d, k * nHead)
+        )
+        # self._encoder = _mlp(d, 1024, 256, rate)
+        # self._decoder = _mlp(d, 256, 1024, rate)
+
         # self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
         # self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
         self._quantizer = AttentiveQuantizer(k, d, False, True)
@@ -58,37 +85,24 @@ class MLP(nn.Module):
         self._sqrtK = int(sqrt(self._k))
         self._nHead = nHead
 
-        # self._hori1 = nn.Linear(1024, self._k)
-        # self._hori2 = nn.Linear(self._k, 1024)
-
-        self._dropout = nn.Dropout(rate, True)
-        self._ffn = nn.Linear(d, k * nHead)
 
     def forward(self, latent):
         # [n, d, k', k']
-        z = self._encoder(latent.detach())
-        z, _, _ = self._quantizer(z, 1.0)
-        # [n, d, h, w]
+        z = self._encoder(latent)
+        z, _, _, _ = self._quantizer(z, 1.0)
+        # [n, k * m, h, w]
         decoded = self._decoder(z)
-        # [h, w, n, d]
-        decoded = decoded.permute(2, 3, 0, 1)
-        # [h, w, n, k]
-        logit = self._ffn(self._dropout(decoded))
         # M * [n, k, h, w]
-        return torch.chunk(logit.permute(2, 3, 0, 1), self._nHead, 1)
+        return torch.chunk(decoded, self._nHead, 1)
 
     def predict(self, latent, codes):
         # [n, d, k', k']
-        z = self._encoder(latent.detach())
-        z, _, _ = self._quantizer.decode(self._quantizer.encode(z))
-        # [n, d, h, w]
+        z = self._encoder(latent)
+        z = self._quantizer.decode(self._quantizer.encode(z))
+        # [n, k * m, h, w]
         decoded = self._decoder(z)
-        # [h, w, n, d]
-        decoded = decoded.permute(2, 3, 0, 1)
-        # [h, w, n, k]
-        logit = self._ffn(self._dropout(decoded))
 
-        logits = torch.chunk(logit.permute(2, 3, 0, 1), self._nHead, 1)
+        logits = torch.chunk(decoded, self._nHead, 1)
 
         predicts = list()
         for l, c in zip(logits, codes):
