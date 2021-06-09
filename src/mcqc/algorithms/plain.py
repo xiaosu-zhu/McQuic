@@ -174,7 +174,7 @@ class Plain(Algorithm):
             splits = torch.chunk(latent, self._config.Model.m, 1)
             lHat = list()
             for i in range(self._config.Model.m):
-                b, _ = model._quantizer[i].encode(splits[i])
+                b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].append(b.int().detach().cpu())

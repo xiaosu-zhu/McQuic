@@ -3,9 +3,97 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 
+from dreinq.layers.layerGroup import LayerGroup
+from dreinq.layers.incepBlock import IncepBlock
+
 from mcqc.layers.positional import PositionalEncoding2D
 from mcqc.models.quantizer import AttentiveQuantizer
 from mcqc.layers.blocks import ResidualBlockWithStride, ResidualBlockUpsample, ResidualBlock, conv1x1
+
+
+class _mlp(nn.Module):
+    def __init__(self, d, hw, k, rate):
+        super().__init__()
+        self._ff1 = IncepBlock(d, rate)
+        self._hh1 = IncepBlock(hw, rate)
+        self._hh2 = LayerGroup(hw, k, rate, nn.ReLU)
+        self._hh3 = IncepBlock(k, k, rate)
+        self._ff2 = nn.Linear(d, d)
+        self._position = PositionalEncoding2D(d, 120, 120, rate)
+        self._k = k
+        self._sqrtK = int(sqrt(self._k))
+
+    def forward(self, x):
+        n, d, h, w = x.shape
+        x = x.permute(2, 3, 0, 1)
+        x = self._position(x)
+        x = x.reshape(h*w, n, d)
+        # [hw, n, d]
+        x = self._ff1(x) + x
+        # [n, d, hw]
+        x = x.permute(1, 2, 0)
+        x = self._hh1(x) + x
+        # [n, d, k]
+        x = self._hh2(x)
+        # [n, d, k]
+        x = self._hh3(x) + x
+        # [n, k, d]
+        x = x.permute(0, 2, 1)
+        x = self._ff2(x)
+        # [n, d, k', k']
+        return x.permute(0, 2, 1).reshape(n, d, self._sqrtK, self._sqrtK)
+
+
+class MLP(nn.Module):
+    def __init__(self, d, nHead, nLayers, dFFN, k, rate=0.1):
+        super().__init__()
+        self._encoder = _mlp(d, 1024, 256, rate)
+        self._decoder = _mlp(d, 256, 1024, rate)
+        # self._encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
+        # self._decoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
+        self._quantizer = AttentiveQuantizer(k, d, False, True)
+        # self._position = PositionalEncoding2D(d, 120, 120, rate)
+
+        self._k = k
+        self._sqrtK = int(sqrt(self._k))
+        self._nHead = nHead
+
+        # self._hori1 = nn.Linear(1024, self._k)
+        # self._hori2 = nn.Linear(self._k, 1024)
+
+        self._dropout = nn.Dropout(rate, True)
+        self._ffn = nn.Linear(d, k * nHead)
+
+    def forward(self, latent):
+        # [n, d, k', k']
+        z = self._encoder(latent.detach())
+        z, _, _ = self._quantizer(z, 1.0)
+        # [n, d, h, w]
+        decoded = self._decoder(z)
+        # [h, w, n, d]
+        decoded = decoded.permute(2, 3, 0, 1)
+        # [h, w, n, k]
+        logit = self._ffn(self._dropout(decoded))
+        # M * [n, k, h, w]
+        return torch.chunk(logit.permute(2, 3, 0, 1), self._nHead, 1)
+
+    def predict(self, latent, codes):
+        # [n, d, k', k']
+        z = self._encoder(latent.detach())
+        z, _, _ = self._quantizer.decode(self._quantizer.encode(z))
+        # [n, d, h, w]
+        decoded = self._decoder(z)
+        # [h, w, n, d]
+        decoded = decoded.permute(2, 3, 0, 1)
+        # [h, w, n, k]
+        logit = self._ffn(self._dropout(decoded))
+
+        logits = torch.chunk(logit.permute(2, 3, 0, 1), self._nHead, 1)
+
+        predicts = list()
+        for l, c in zip(logits, codes):
+            predicts.append(l.argmax(1) == c)
+        return predicts
 
 
 class EncoderDecoder(nn.Module):

@@ -153,14 +153,10 @@ class Context(Algorithm):
                     with torch.no_grad():
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, mlmLoss=mlmLoss, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
-    def _predictByAutoRegressive(self, latents: List[torch.Tensor], bs: List[torch.Tensor], contextModel: nn.ModuleList):
-        corrects = list()
-        # [N, 32, 32]
-        for latent, b, context in zip(latents, bs, contextModel):
-            # [N, 32, 32]
-            correctness = context.predict(latent.to(self._rank), b.to(self._rank))
-            corrects.append(correctness)
-        return corrects
+    def _predictByAutoRegressive(self, latents: torch.Tensor, bs: torch.Tensor, contextModel: nn.Module):
+        # M * [N, 32, 32]
+        correctness = contextModel.predict(latents.to(self._rank), bs.to(self._rank))
+        return correctness
 
     # pylint: disable=protected-access
     @torch.no_grad()
@@ -184,7 +180,7 @@ class Context(Algorithm):
             splits = torch.chunk(latent, self._config.Model.m, 1)
             lHat = list()
             for i in range(self._config.Model.m):
-                b, _ = model._quantizer[i].encode(splits[i])
+                b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].append(b.int().detach().cpu())
@@ -205,10 +201,10 @@ class Context(Algorithm):
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
-        # list of M * [N, 32, 32] codes
-        bs = [torch.cat(x, 0) for x in bs]
-        latents = [torch.cat(x, 0) for x in latents]
-
+        # list of [M, N, 32, 32] codes
+        bs = torch.stack([torch.cat(x, 0) for x in bs], 0)
+        # [N, D, 32, 32]
+        latents = torch.cat([torch.cat(x, 0) for x in latents], 1)
         corrects = self._predictByAutoRegressive(latents, bs, model._context)
         # [M, N, 32, 32] bool Tensor
         corrects = torch.stack(corrects, 0)
@@ -223,6 +219,8 @@ class Context(Algorithm):
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
+        np.save("q.npy", qs.detach().cpu().numpy())
+        np.save("z.npy", zs.detach().cpu().numpy())
         self._model.train()
 
         encoded, bpp = self._compress(bs)
