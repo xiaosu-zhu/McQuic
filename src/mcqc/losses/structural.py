@@ -39,79 +39,22 @@ class CompressionLoss(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, size_average=False)
 
-    def forward(self, images, restored, latents, logits, xs):
+    def forward(self, images, restored, quantized, logits, latent):
         l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
         regs = list()
 
-        # xs, transformedCodewords = xs
-
-        # for x in xs:
-        #     # [N, ]
-        #     mu = x.mean(axis=-1)
-        #     sigma = x.std(axis=-1)
-        #     posterior = torch.distributions.Normal(mu, sigma)
-        #     prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
-        #     reg = torch.distributions.kl_divergence(posterior, prior).mean()
-        #     regs.append(reg)
-
-            # mu = x.mean(1)
-            # sigma = x.std(1)
-            # posterior = torch.distributions.Normal(mu, sigma)
-            # prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
-            # reg = torch.distributions.kl_divergence(posterior, prior).mean(-1)
-            # regs.append(1e-4 * reg)
-
-        # for t in transformedCodewords:
-        #     # [1, ]
-        #     mu = t.mean(axis=-1)
-        #     sigma = t.std(axis=-1)
-        #     posterior = torch.distributions.Normal(mu, sigma)
-        #     prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
-        #     reg = torch.distributions.kl_divergence(posterior, prior).mean()
-        #     regs.append(reg)
-        # [,]
-        # regs = sum(regs)
-
         for logit in logits:
             # N, H, W, K -> N, HW, K
-            # batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
-            # sumLogit = batchWiseLogit.sum(1)
-
-            # mu = batchWiseLogit.mean(axis=1)
-            # sigma = batchWiseLogit.std(axis=1)
-
-            # posterior = torch.distributions.Normal(mu, sigma)
             posterior = Categorical(logits=logit)
             # prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
             prior = Categorical(logits=torch.zeros_like(logit))
             reg = torch.distributions.kl_divergence(posterior, prior).mean() # + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
             regs.append(reg)
         regs = sum(regs) / len(logits)
-
-
-        # if logits is not None:
-        #     for logit in logits:
-        #         # N, H, W, K -> N, HW, K
-        #         batchWiseLogit = logit.reshape(len(logit), -1, logit.shape[-1])
-        #         # sumLogit = batchWiseLogit.sum(1)
-
-        #         mu = batchWiseLogit.mean(axis=1)
-        #         sigma = batchWiseLogit.std(axis=1)
-
-        #         posterior = torch.distributions.Normal(mu, sigma)
-
-        #         # posterior = Categorical(logits=sumLogit)
-        #         prior = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(sigma))
-        #         # prior = Categorical(logits=torch.zeros_like(sumLogit))
-        #         reg = torch.distributions.kl_divergence(posterior, prior).mean(-1) # + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
-        #         # diversity = batchWiseLogit.std(-1).sigmoid().mean(-1)
-        #         # reg = compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
-        #         # reg = reg / diversity
-        #         regs.append(reg)
-        #     regs = sum(regs)
-        return ssimLoss, l1Loss + l2Loss, regs
+        qError = F.mse_loss(quantized, latent)
+        return ssimLoss, l1Loss + l2Loss, regs + qError
 
 
 
