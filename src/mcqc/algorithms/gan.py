@@ -196,7 +196,7 @@ class Gan(Algorithm):
             splits = torch.chunk(latent, len(model._k), 1)
             lHat = list()
             for i in range(len(model._k)):
-                b, _ = model._quantizer[i].encode(splits[i])
+                b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].append(b.int().detach().cpu())

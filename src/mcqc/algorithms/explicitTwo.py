@@ -158,7 +158,7 @@ class ExpTwoStage(Algorithm):
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
             latent = model._encoder(raw)
-            b, _ = model._quantizer.encode(latent)
+            b = model._quantizer.encode(latent)
 
             latents.append(latent[0].detach().cpu())
             bs.append(b[0].detach().cpu())

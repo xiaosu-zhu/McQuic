@@ -3,7 +3,6 @@ from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 import storch
-from lpips_pytorch import LPIPS
 
 from mcqc.losses.structural import CompressionLoss, QError
 from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss

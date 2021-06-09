@@ -336,7 +336,7 @@ class AttentiveQuantizer(nn.Module):
         # [n, h, w, k]
         logit = q @ k.permute(1, 0) / self._scale
         # sample = F.gumbel_softmax(logit, 1.0, True)
-        return logit.argmax(-1), None
+        return logit.argmax(-1)
 
     def _softStraightThrough(self, logit, value):
         k, c = value.shape

@@ -99,7 +99,7 @@ class PQSAGCompressor(nn.Module):
         self._encoder = ResidualEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
-        self._context = nn.ModuleList(EncoderDecoder(channel // m, 1, numLayers, channel // m, k) for _ in range(m))
+        self._context = EncoderDecoder(channel, m, numLayers, channel, k)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
@@ -108,19 +108,15 @@ class PQSAGCompressor(nn.Module):
         qs = list()
         codes = list()
         logits = list()
-        predicts = list()
-        targets = list()
-        for quantizer, context, split in zip(self._quantizer, self._context, splits):
+        for quantizer, split in zip(self._quantizer, splits):
             q, c, l, wv = quantizer(split, temp, True)
-            predict, target = context(q, c)
-            predicts.append(predict)
-            targets.append(target)
             qs.append(q)
             codes.append(c)
             logits.append(l)
         quantized = torch.cat(qs, 1)
+        predicts = self._context(quantized)
         restored = torch.tanh(self._decoder(quantized))
-        return restored, codes, logits, predicts, targets
+        return restored, codes, logits, predicts, codes
 
 
 class MultiScaleCompressorSplitted(nn.Module):
