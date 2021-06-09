@@ -123,7 +123,7 @@ class Plain(Algorithm):
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
