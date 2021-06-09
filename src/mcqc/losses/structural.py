@@ -53,8 +53,7 @@ class CompressionLoss(nn.Module):
             reg = torch.distributions.kl_divergence(posterior, prior).mean() # + compute_penalties(batchWiseLogit, allowed_entropy=0.1, individual_entropy_coeff=1.0, allowed_js=4.0, js_coeff=1.0, cv_coeff=1.0, eps=Consts.Eps)
             regs.append(reg)
         regs = sum(regs) / len(logits)
-        qError = F.mse_loss(quantized, latent)
-        return ssimLoss, l1Loss + l2Loss, regs + qError
+        return ssimLoss, l1Loss + l2Loss, regs
 
 
 
