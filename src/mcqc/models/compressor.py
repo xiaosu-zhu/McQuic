@@ -56,7 +56,7 @@ class PQCompressor(nn.Module):
             logits.append(l)
         quantized = torch.cat(qs, 1)
         restored = torch.tanh(self._decoder(quantized))
-        return restored, codes, logits
+        return restored, (quantized, latent), codes, logits
 
 
 class PQContextCompressor(nn.Module):
@@ -116,7 +116,7 @@ class PQSAGCompressor(nn.Module):
         quantized = torch.cat(qs, 1)
         predicts = self._context(quantized)
         restored = torch.tanh(self._decoder(quantized))
-        return restored, codes, logits, predicts, codes
+        return restored, (quantized, latent), codes, logits, predicts, codes
 
 
 class MultiScaleCompressorSplitted(nn.Module):
