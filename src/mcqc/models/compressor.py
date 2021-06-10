@@ -99,7 +99,7 @@ class PQSAGCompressor(nn.Module):
         self._encoder = ResidualEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
-        self._context = MLP(channel, m, numLayers, channel, k)
+        self._context = MaskingModel(channel, m, numLayers, channel, k)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
@@ -114,7 +114,7 @@ class PQSAGCompressor(nn.Module):
             codes.append(c)
             logits.append(l)
         quantized = torch.cat(qs, 1)
-        predicts = self._context(quantized)
+        predicts, codes = self._context(quantized, codes)
         restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), codes, logits, predicts, codes
 

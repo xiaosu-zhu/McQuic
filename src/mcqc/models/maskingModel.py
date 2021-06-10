@@ -12,8 +12,10 @@ class MaskingModel(nn.Module):
         self._transformer = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
         self._position = PositionalEncoding2D(d, 120, 120, rate)
 
+        self._nHead = nHead
+
         self._dropout = nn.Dropout(rate, True)
-        self._ffn = nn.Linear(d, k)
+        self._ffn = nn.Linear(d, k * nHead)
 
     def _createInputandMask(self, latent: torch.Tensor):
         n, d, h, w = latent.shape
@@ -23,34 +25,38 @@ class MaskingModel(nn.Module):
         # mask should not all True in a row, otherwise output will be nan
         return latent, torch.triu(torch.ones(h*w, h*w, dtype=bool, device=latent.device), diagonal=1)
 
-    def forward(self, latent, code):
+    def forward(self, latent, codes):
         # [hw, n, d], [hw, hw]
         # at i-th row, predict code at (i+1)-th position while x>=(i+1) are masked
         latent, mask = self._createInputandMask(latent.detach())
         hw, n, d = latent.shape
         # [hw, n, d]
         encoded = self._transformer(latent, mask)
-        # [hw, n, k]
+        # [hw, n, k*m]
         # predict logit
         logit = self._ffn(self._dropout(encoded))
         # ignore last row
         # i-th row to predict (i+1)-th code
-        # [n, k, hw - 1], [n, hw - 1]
-        return logit.permute(1, 2, 0)[:, :, :-1], code.reshape(n, -1)[:, 1:]
+        # m * [n, k, hw - 1], [n, hw - 1]
+        return torch.chunk(logit.permute(1, 2, 0)[:, :, :-1], self._nHead, 1), [code.reshape(n, -1)[:, 1:] for code in codes]
 
-    def predict(self, latent, code):
+    def predict(self, latent, codes):
         # [hw, n, d], [hw, hw]
         # predict code at i-th position while x>=i are masked
         latent, mask = self._createInputandMask(latent)
-        n, h, w = code.shape
+        n, h, w = codes[0].shape
         # [hw, n, d]
         encoded = self._transformer(latent, mask)
-        # [hw, n, k]
+        # [hw, n, k*m]
         # predict logit
         logit = self._ffn(self._dropout(encoded))
-        # [hw, n]
-        predict = logit.argmax(-1)
-        # [n, hw - 1]
-        predict = predict.permute(1, 0)[:, :-1]
-        code = code.reshape(n, -1)[:, 1:]
-        return predict == code
+        logits = torch.chunk(logit, self._nHead, -1)
+        predicts = list()
+        for l, c in zip(logits, codes):
+            # [hw, n]
+            l = l.argmax(-1)
+            # [n, hw - 1]
+            l = l.permute(1, 0)[:, :-1]
+            c = c.reshape(n, -1)[:, 1:]
+            predicts.append(l == c)
+        return predicts

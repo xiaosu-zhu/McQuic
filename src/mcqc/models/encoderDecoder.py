@@ -86,14 +86,14 @@ class MLP(nn.Module):
         self._nHead = nHead
 
 
-    def forward(self, latent):
+    def forward(self, latent, codes):
         # [n, d, k', k']
         z = self._encoder(latent)
         z, _, _, _ = self._quantizer(z, 1.0)
         # [n, k * m, h, w]
         decoded = self._decoder(z)
         # M * [n, k, h, w]
-        return torch.chunk(decoded, self._nHead, 1)
+        return torch.chunk(decoded, self._nHead, 1), codes
 
     def predict(self, latent, codes):
         # [n, d, k', k']
