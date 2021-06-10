@@ -355,7 +355,6 @@ class AttentiveQuantizer(nn.Module):
             v = self._wv(self.xCodebook)
         else:
             v = self.xCodebook
-        v = F.normalize(v, p=2, dim=1)
         # [n, h, w, c] -> [n, c, h, w]
         quantized = (sample @ v).permute(0, 3, 1, 2)
 
@@ -368,7 +367,6 @@ class AttentiveQuantizer(nn.Module):
             # [k, c]
             k = self._wk(k)
             v = self._wv(v)
-        v = F.normalize(v, p=2, dim=1)
 
         # [n, h, w, k]
         logit = (q @ k.permute(1, 0)) / self._scale
