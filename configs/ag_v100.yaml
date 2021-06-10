@@ -4,7 +4,7 @@ vRam: -1
 wantsMore: false
 dataset: clic/train
 valDataset: clic/valid
-batchSize: 7
+batchSize: 4
 lr: 5.e-5
 coef:
     ssim: 1.0
@@ -17,5 +17,5 @@ model:
     channel: 256
     k: 256
     m: 32
-    numLayers: 1
+    numLayers: 6
 method: AutoRegressive
