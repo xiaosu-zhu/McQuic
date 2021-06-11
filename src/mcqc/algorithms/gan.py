@@ -49,15 +49,15 @@ class Gan(Algorithm):
             raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False, find_unused_parameters=True)
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
 
         if self._rank == 0:
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
-        compressor = self._model.module._compressor
+        model = self._model.module
 
-        self._optimizerD = optimizer(config.LearningRate, compressor._context.parameters(), 1e-5)
-        self._optimizerG = optimizer(config.LearningRate, list(compressor._encoder.parameters()) + list(compressor._decoder.parameters()) + list(compressor._quantizer.parameters()), 1e-5)
+        self._optimizerD = optimizer(config.LearningRate, model._discriminator.parameters(), 1e-5)
+        self._optimizerG = optimizer(config.LearningRate, model._compressor.parameters(), 1e-5)
         self._schedulerD = torch.optim.lr_scheduler.LambdaLR(self._optimizerD, _transformerLR)
         self._schedulerG = torch.optim.lr_scheduler.LambdaLR(self._optimizerG, _transformerLR)
 
@@ -158,9 +158,9 @@ class Gan(Algorithm):
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, ganLoss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
                 if step % 2 == 0:
-                    (self._config.Coef.gen * ganLoss).backward()
+                    ((0.0 * ssimLoss +0.0 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + 0.0 * reg).backward()
                 else:
-                    ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
+                    ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.dis * ganLoss + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()
@@ -169,7 +169,7 @@ class Gan(Algorithm):
                     self._optimizerG.step()
                     self._schedulerG.step()
                 step += 1
-                self._config.Coef.reg = _tuneReg(step, step > 14000)
+                self._config.Coef.reg = _tuneReg(step)
                 if self._loggingHook is not None:
                     with torch.no_grad():
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, ganLoss=ganLoss, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, logits=logits)
@@ -184,7 +184,7 @@ class Gan(Algorithm):
         model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        bs = [list() for _ in self._config.Model.k]
+        bs = [list() for _ in range(self._config.Model.m)]
         latents = list()
         qs = list()
         for raw in dataLoader:
@@ -193,9 +193,9 @@ class Gan(Algorithm):
             latent = model._encoder(raw)
 
             # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, len(model._k), 1)
+            splits = torch.chunk(latent, self._config.Model.m, 1)
             lHat = list()
-            for i in range(len(model._k)):
+            for i in range(self._config.Model.m):
                 b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
@@ -240,9 +240,9 @@ class Gan(Algorithm):
         compressed = list()
         cdfs = list()
         # b: Tensor of [N, 32, 32]
-        for b, k in zip(codes, self._config.Model.k):
+        for b in codes:
             # list of 256 probs
-            prob = self._calculateFreq(b, k)
+            prob = self._calculateFreq(b, self._config.Model.k)
             cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
             # M * [cdf]
             cdfs.append(cdf)
@@ -253,7 +253,7 @@ class Gan(Algorithm):
             codePerImage = torch.stack(codePerImage, 0)
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, self._config.Model.k, torch.zeros_like(codePerImage).flatten().int().tolist())
+            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
             compressed.append(binary)
         # binary: 1 byte per word
         # N * [binaries]

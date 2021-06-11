@@ -9,9 +9,9 @@ import storch
 from mcqc.models.encoderDecoder import EncoderDecoder, MLP
 
 from mcqc.models.maskingModel import MaskingModel
-from .encoder import ResidualEncoder, MultiScaleEncoder, TransformerEncoder
+from .encoder import ResidualEncoder, MultiScaleEncoder, TransformerEncoder, ResidualGlobalEncoder
 from .maskedLanguageModel import MaskedLangugeModel
-from .decoder import ResidualDecoder, MultiScaleDecoder, TransformerDecoder
+from .decoder import ResidualDecoder, MultiScaleDecoder, TransformerDecoder, ResidualGlobalDecoder
 from .stackedAutoRegressive import StackedAutoRegressive
 from .contextModel import ContextModel
 from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
@@ -41,6 +41,32 @@ class PQCompressor(nn.Module):
         self._encoder = ResidualEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latent = self._encoder(x)
+        # M * [n, c // M, h, w]
+        splits = torch.chunk(latent, self._m, 1)
+        qs = list()
+        codes = list()
+        logits = list()
+        for quantizer, split in zip(self._quantizer, splits):
+            q, c, l, wv = quantizer(split, temp, True)
+            qs.append(q)
+            codes.append(c)
+            logits.append(l)
+        quantized = torch.cat(qs, 1)
+        restored = torch.tanh(self._decoder(quantized))
+        return restored, (quantized, latent), codes, logits
+
+
+class PQGlobalCompressor(nn.Module):
+    def __init__(self, m, k, channel, numLayers):
+        super().__init__()
+        self._k = k
+        self._m = m
+        self._encoder = ResidualGlobalEncoder(channel)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
+        self._decoder = ResidualGlobalDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)

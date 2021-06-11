@@ -1,9 +1,11 @@
+from math import sqrt
 from typing import Union, Tuple
 
 import torch
 from torch import nn
 
 from mcqc import Consts
+from mcqc.layers.positional import NPositionalEncoding2D
 
 from .gdn import GenDivNorm
 from .convs import conv1x1, conv3x3, subPixelConv3x3
@@ -155,6 +157,87 @@ class AttentionBlock(nn.Module):
         a = self.conv_a(x)
         b = self.conv_b(x)
         out = a * torch.sigmoid(b)
+        out += identity
+        return out
+
+
+class GlobalAttentionBlock(nn.Module):
+    """Self attention block.
+    Simplified variant from `"Learned Image Compression with
+    Discretized Gaussian Mixture Likelihoods and Attention Modules"
+    <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
+    Takeuchi, Jiro Katto.
+    Args:
+        N (int): Number of channels)
+    """
+
+    def __init__(self, N):
+        super().__init__()
+
+        class NonLocalBlock(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self._c = N // 2
+                self._q = conv1x1(N, N // 2)
+                self._k = conv1x1(N, N // 2)
+                self._v = conv1x1(N, N // 2)
+                self._z = conv1x1(N // 2, N)
+                self._position = NPositionalEncoding2D(N, 120, 120)
+
+            def forward(self, x: torch.Tensor):
+                n, c, h, w = x.shape
+                x = self._position(x)
+                hw = h*w
+                scale = sqrt(hw)
+                # [n, c/2, h, w]
+                q = self._q(x).reshape(n, self._c, hw)
+                k = self._k(x).reshape(n, self._c, hw)
+                # [n, c/2, h, w] -> [n, hw, c/2]
+                v = self._v(x).reshape(n, self._c, hw).permute(0, 2, 1)
+                # [n, hw, hw]
+                qkLogits = torch.matmul(q.transpose(-1, -2), k) / scale
+                weights = torch.softmax(qkLogits, -1)
+                # [n, hw, c/2] -> [n, c/2, h, w]
+                z = torch.matmul(weights, v).permute(0, 2, 1).reshape(n, self._c, h, w)
+                z = self._z(z)
+                return x + z
+
+        class ResidualUnit(nn.Module):
+            """Simple residual unit."""
+
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Sequential(
+                    conv1x1(N, N // 2),
+                    nn.ReLU(inplace=True),
+                    conv3x3(N // 2, N // 2),
+                    nn.ReLU(inplace=True),
+                    conv1x1(N // 2, N),
+                )
+                self.relu = nn.ReLU(inplace=True)
+
+            def forward(self, x):
+                identity = x
+                out = self.conv(x)
+                out += identity
+                out = self.relu(out)
+                return out
+
+        # self.conv_a = nn.Sequential(ResidualUnit(), ResidualUnit(), ResidualUnit())
+
+        self.conv_b = nn.Sequential(
+            NonLocalBlock(),
+            ResidualUnit(),
+            ResidualUnit(),
+            ResidualUnit(),
+            conv1x1(N, N),
+        )
+
+    def forward(self, x):
+        identity = x
+        # a = self.conv_a(x)
+        out = self.conv_b(x)
+        # out = a * torch.sigmoid(b)
         out += identity
         return out
 

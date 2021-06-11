@@ -8,7 +8,8 @@ class Coef:
     l1l2: float = 2.0
     reg: float = 0.2
     gen: float = 0.1
-    lpips: float = 1.0
+    dis: float = 0.1
+    # lpips: float = 1.0
 
 
 @dataclass
