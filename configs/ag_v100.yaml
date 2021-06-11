@@ -10,7 +10,7 @@ coef:
     ssim: 1.0
     l1l2: 1.0
     reg: 0.0
-    gen: 0.16
+    gen: 1000.0
     lpips: 0.0
 model:
     type: AutoRegressive

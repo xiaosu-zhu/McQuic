@@ -75,14 +75,14 @@ class NPositionalEncoding2D(nn.Module):
             pe[1:d_model:2, :, :] = torch.cos(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
             pe[d_model::2, :, :] = torch.sin(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
             pe[d_model + 1::2, :, :] = torch.cos(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
-            # [1, h, w, d]
-            pe = pe.permute(1, 2, 0).unsqueeze(0)
+            # [1, d, h, w]
+            pe = pe.unsqueeze(0)
 
             self.register_buffer('pe', pe)
 
     def forward(self, x, randomPosition: bool = False):
-        _, h, w, _ = x.shape
-        x = x + self.pe[:, :h, :w, :]
+        _, _, h, w = x.shape
+        x = x + self.pe[..., :h, :w]
         return self.dropout(x)
 
 

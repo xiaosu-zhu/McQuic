@@ -3,7 +3,7 @@ from torch import nn
 
 from mcqc.layers.convs import conv3x3, deconv5x5
 from mcqc.layers.gdn import GenDivNorm
-from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock, UpSample
+from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock, UpSample, GlobalAttentionBlock
 from mcqc.layers.positional import PositionalEncoding2D
 
 
@@ -26,6 +26,27 @@ class Decoder(nn.Module):
 
 
 class ResidualDecoder(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            ResidualBlock(channel, channel),
+            subPixelConv3x3(channel, 3, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
+class ResidualGlobalDecoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(

@@ -2,6 +2,7 @@ from math import log
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
 
 
@@ -83,3 +84,21 @@ class ContextGANLoss(nn.Module):
                 loss = -torch.minimum(self._ceLoss(logit, target), -torch.log(torch.ones_like(target, dtype=torch.float32) / k)).mean()
             losses.append(loss)
         return sum(losses) / len(losses)
+
+
+def hinge_d_loss(logits_real, logits_fake):
+    loss_real = torch.mean(F.relu(1. - logits_real))
+    loss_fake = torch.mean(F.relu(1. + logits_fake))
+    d_loss = 0.5 * (loss_real + loss_fake)
+    return d_loss
+
+
+class InfoMaxLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logitsCondition: torch.Tensor, logitsJoint: torch.Tensor, step: int):
+        dLoss = hinge_d_loss(logitsCondition, logitsJoint)
+        if step % 2 == 0:
+            return dLoss
+        return -dLoss

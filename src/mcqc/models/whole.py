@@ -1,3 +1,4 @@
+from logging import info
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -5,10 +6,11 @@ from torch.distributions import Categorical
 import storch
 
 from mcqc.losses.structural import CompressionLoss, QError
-from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss
-from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted, PQCompressor, PQSAGCompressor, PQContextCompressor
+from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss, InfoMaxLoss
+from mcqc.models.compressor import MultiScaleCompressor, MultiScaleVQCompressor, MultiScaleCompressorRein, MultiScaleCompressorStorch, MultiScaleCompressorExp, MultiScaleCompressorSplitted, PQCompressor, PQSAGCompressor, PQContextCompressor, PQGlobalCompressor
 from mcqc.models.critic import SimpleCritic
 from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
+from mcqc.models.infoMax import InfoMax
 from mcqc.utils.vision import Masking
 
 
@@ -41,6 +43,23 @@ class WholePQContext(nn.Module):
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
         contextLoss = self._mLoss(predicts, targets, step)
         return (ssimLoss, l1l2Loss, contextLoss, reg), (restored, codes, predicts, logits, None)
+
+
+class WholePQInfoMax(nn.Module):
+    def __init__(self, m, k, channel, numLayers):
+        super().__init__()
+        self._compressor = PQGlobalCompressor(m, k, channel, numLayers)
+        self._discriminator = InfoMax(channel)
+        self._cLoss = CompressionLoss()
+        self._mLoss = InfoMaxLoss()
+
+    def forward(self, image, temp, step, **_):
+        restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
+        logitsCondition, logitsJoint = self._discriminator(image, quantized)
+
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        infoLoss = self._mLoss(logitsCondition, logitsJoint, step)
+        return (ssimLoss, l1l2Loss, infoLoss, reg), (restored, codes, None, logits, None)
 
 
 class WholePQSAG(nn.Module):

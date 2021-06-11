@@ -22,7 +22,7 @@ from mcqc import Consts, Config
 from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain, Gan
-from mcqc.models.whole import Whole, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG, WholePQ, WholePQContext
+from mcqc.models.whole import Whole, WholePQInfoMax, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG, WholePQ, WholePQContext
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -100,7 +100,8 @@ def _generalConfig(rank: int, worldSize: int):
 models = {
     "Base": WholePQ,
     "Context": WholePQContext,
-    "AutoRegressive": WholePQSAG
+    "AutoRegressive": WholePQSAG,
+    "Info": WholePQInfoMax
 }
 
 methods = {
