@@ -59,8 +59,11 @@ class ResidualGlobalEncoder(nn.Module):
             ResidualBlock(channel, channel),
             ResidualBlockWithStride(channel, channel, stride=2),
             ResidualBlock(channel, channel),
-            conv3x3(channel, channel, stride=2),
-            AttentionBlock(channel),
+            ResidualBlockWithStride(channel, channel, stride=2),
+            GlobalAttentionBlock(channel),
+            GlobalAttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            conv3x3(channel, channel, stride=1)
         )
 
     def forward(self, x: torch.Tensor):
