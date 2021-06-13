@@ -66,12 +66,13 @@ class Gan(Algorithm):
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
         self._saver = saver
+        self._ckpt = "ckpt/global.ckpt"
         self._savePath = savePath
         self._logger = logger
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({101: self._superHook, 100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
 
@@ -91,14 +92,13 @@ class Gan(Algorithm):
             self._saver.add_scalar("Loss/D", ganLoss.mean(), global_step=step)
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, temp, logits, ganLoss = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["temperature"], kwArgs["logits"], kwArgs["ganLoss"]
+        ssimLoss, l1l2Loss, reg, step, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._schedulerG.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
-        self._saver.add_scalar("Loss/G", ganLoss.mean(), global_step=step)
         # for p, t in zip(predicts, targets):
         #     success = p.argmax(-1) == t
         #     ratio = torch.mean(success.float())
@@ -134,6 +134,9 @@ class Gan(Algorithm):
         finalTemp = 1.0
         annealRange = int(40000 // epochSteps)
         initEpoch = 0
+
+        mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}

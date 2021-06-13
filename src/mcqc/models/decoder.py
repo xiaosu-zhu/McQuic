@@ -50,7 +50,9 @@ class ResidualGlobalDecoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(
-            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            GlobalAttentionBlock(channel),
+            GlobalAttentionBlock(channel),
             ResidualBlock(channel, channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),

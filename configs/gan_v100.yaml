@@ -10,8 +10,8 @@ coef:
     ssim: 1.0
     l1l2: 1.0
     reg: 0.0
-    gen: 1.0
-    dis: 0.5
+    gen: 0.1
+    dis: 0.05
 model:
     type: Info
     channel: 256
