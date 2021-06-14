@@ -28,14 +28,14 @@ def _transformerLR(step):
 
 def _tuneReg(step):
     step = step + 1
-    if step < 20000:
-        return 2e-4
-    elif step < 30000:
-        return 2e-3
-    elif step < 40000:
-        return 2e-2
+    if step < 10000:
+        return 1e-4
+    elif step < 15000:
+        return 1e-3
+    elif step < 20000:
+        return 1e-2
     else:
-        return 0.9977000638225533 ** (step - WARMUP_STEP)
+        return 1e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
 
 
 class Gan(Algorithm):
@@ -92,11 +92,12 @@ class Gan(Algorithm):
             self._saver.add_scalar("Loss/D", ganLoss.mean(), global_step=step)
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._schedulerG.get_last_lr()[0], global_step=step)
+        self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
         # for p, t in zip(predicts, targets):
@@ -135,8 +136,8 @@ class Gan(Algorithm):
         annealRange = int(40000 // epochSteps)
         initEpoch = 0
 
-        mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        # mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+        # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             mapLocation = {"cuda:0": f"cuda:{self._rank}"}
@@ -161,9 +162,9 @@ class Gan(Algorithm):
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, ganLoss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
                 if step % 2 == 0:
-                    ((0.0 * ssimLoss +0.0 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + 0.0 * reg).backward()
+                    ((0.0 * ssimLoss +0.0 * l1l2Loss).mean() + self._config.Coef.dis * ganLoss + 0.0 * reg).backward()
                 else:
-                    ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.dis * ganLoss + self._config.Coef.reg * reg).backward()
+                    ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()
@@ -175,7 +176,7 @@ class Gan(Algorithm):
                 self._config.Coef.reg = _tuneReg(step)
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, ganLoss=ganLoss, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, logits=logits)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, ganLoss=ganLoss, now=step, images=images, predicts=predicts, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
 
     # pylint: disable=protected-access

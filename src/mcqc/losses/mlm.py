@@ -96,9 +96,10 @@ def hinge_d_loss(logits_real, logits_fake):
 class InfoMaxLoss(nn.Module):
     def __init__(self):
         super().__init__()
+        self._loss = nn.BCEWithLogitsLoss()
 
     def forward(self, logitsCondition: torch.Tensor, logitsJoint: torch.Tensor, step: int):
-        dLoss = hinge_d_loss(logitsCondition, logitsJoint)
+        dLoss = self._loss(logitsCondition, torch.ones_like(logitsCondition)) + self._loss(logitsJoint, torch.zeros_like(logitsJoint))
         if step % 2 == 0:
             return dLoss
         return -dLoss

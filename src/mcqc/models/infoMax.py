@@ -15,14 +15,35 @@ class Squeeze(nn.Module):
         return x[:, 0, 0, 0]
 
 
+class ResidualBNEncoder(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            ResidualBNBlockWithStride(3, channel, stride=2),
+            ResidualBNBlock(channel, channel),
+            ResidualBNBlockWithStride(channel, channel, stride=2),
+            AttentionBlock(channel),
+            ResidualBNBlock(channel, channel),
+            ResidualBNBlockWithStride(channel, channel, stride=2),
+            ResidualBNBlock(channel, channel),
+            conv3x3(channel, channel, stride=2),
+            AttentionBlock(channel),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
+
 class InfoMax(nn.Module):
     def __init__(self, channel):
         super().__init__()
-        self._encoder = ResidualEncoder(channel)
+        self._encoder = ResidualBNEncoder(channel)
         self._net = nn.Sequential(
-            ResidualBlockWithStride(2 * channel, 2 * channel), # 16
-            ResidualBlockWithStride(2 * channel, 2 * channel), # 8
-            ResidualBlockWithStride(2 * channel, 2 * channel), # 4
+            ResidualBNBlockWithStride(2 * channel, 2 * channel), # 16
+            ResidualBNBlockWithStride(2 * channel, 2 * channel), # 8
+            ResidualBNBlockWithStride(2 * channel, 2 * channel), # 4
             conv1x1(2 * channel, 1, stride=1), # [n, 1, 4, 4]
             nn.AdaptiveAvgPool2d((1, 1)), # [n, 1, 1, 1]
             Squeeze()
