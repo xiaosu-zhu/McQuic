@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from mcqc.layers.convs import conv3x3, conv1x1
-from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample
+from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample, ConvBlock
 from mcqc.models.discriminator import ResidualBNBlock, ResidualBNBlockWithStride
 from mcqc.models.encoder import ResidualEncoder
 
@@ -19,21 +19,20 @@ class ResidualBNEncoder(nn.Module):
     def __init__(self, channel):
         super().__init__()
         self._net = nn.Sequential(
-            ResidualBNBlockWithStride(3, channel, stride=2),
-            ResidualBNBlock(channel, channel),
-            ResidualBNBlockWithStride(channel, channel, stride=2),
-            AttentionBlock(channel),
-            ResidualBNBlock(channel, channel),
-            ResidualBNBlockWithStride(channel, channel, stride=2),
-            ResidualBNBlock(channel, channel),
+            ConvBlock(3, channel),
+            ConvBlock(channel, channel),
+            ConvBlock(channel, channel),
+            ConvBlock(channel, channel),
+            ConvBlock(channel, channel),
+            ConvBlock(channel, channel),
             conv3x3(channel, channel, stride=2),
-            AttentionBlock(channel),
         )
 
     def forward(self, x: torch.Tensor):
         # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
-        return self._net(x)
-
+        z = self._net(x)
+        print(z.shape)
+        exit()
 
 
 class InfoMax(nn.Module):
@@ -41,9 +40,9 @@ class InfoMax(nn.Module):
         super().__init__()
         self._encoder = ResidualBNEncoder(channel)
         self._net = nn.Sequential(
-            ResidualBNBlockWithStride(2 * channel, 2 * channel), # 16
-            ResidualBNBlockWithStride(2 * channel, 2 * channel), # 8
-            ResidualBNBlockWithStride(2 * channel, 2 * channel), # 4
+            ConvBlock(2 * channel, 2 * channel), # 16
+            ConvBlock(2 * channel, 2 * channel), # 8
+            ConvBlock(2 * channel, 2 * channel), # 4
             conv1x1(2 * channel, 1, stride=1), # [n, 1, 4, 4]
             nn.AdaptiveAvgPool2d((1, 1)), # [n, 1, 1, 1]
             Squeeze()
