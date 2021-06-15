@@ -161,7 +161,6 @@ class AttentionBlock(nn.Module):
         return out
 
 
-
 class NonLocalBlock(nn.Module):
     def __init__(self, N):
         super().__init__()
@@ -189,6 +188,7 @@ class NonLocalBlock(nn.Module):
         z = torch.matmul(weights, v).permute(0, 2, 1).reshape(n, self._c, h, w)
         z = self._z(z)
         return x + z
+
 
 class GlobalAttentionBlock(nn.Module):
     """Residual block with a stride on the first convolution.
