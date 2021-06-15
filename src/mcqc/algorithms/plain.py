@@ -20,7 +20,7 @@ from mcqc.models.whole import Whole
 from mcqc import Config
 
 
-WARMUP_STEP = 20000
+WARMUP_STEP = 40000
 def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99999 ** (step - WARMUP_STEP))
@@ -28,11 +28,11 @@ def _transformerLR(step):
 
 def _tuneReg(step):
     step = step + 1
-    if step < 10000:
+    if step < 20000:
         return 2e-4
-    elif step < 15000:
+    elif step < 30000:
         return 2e-3
-    elif step < 20000:
+    elif step < 40000:
         return 2e-2
     else:
         return 2e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
@@ -63,7 +63,7 @@ class Plain(Algorithm):
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
-        self._ckpt = "ckpt/saved.ckpt"
+        self._ckpt = "ckpt/global.ckpt"
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
@@ -123,7 +123,7 @@ class Plain(Algorithm):
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
