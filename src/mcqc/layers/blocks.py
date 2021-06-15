@@ -8,13 +8,26 @@ from mcqc import Consts
 from mcqc.layers.positional import NPositionalEncoding2D
 
 from .gdn import GenDivNorm
-from .convs import conv1x1, conv3x3, subPixelConv3x3
+from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3
 
 
 class L2Normalize(nn.Module):
     def forward(self, x: torch.Tensor, dim: Union[int, Tuple[int]] = -1):
         norm = (x ** 2).sum(axis=dim, keepdim=True).sqrt()
         return x / norm
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+        self._net = nn.Sequential(
+            conv5x5(in_ch, out_ch, bias=False),
+            nn.BatchNorm2d(out_ch),
+            nn.LeakyReLU(inplace=True)
+            )
+
+    def forward(self, x):
+        return self._net(x)
 
 
 class ResidualBlockWithStride(nn.Module):
@@ -161,7 +174,6 @@ class AttentionBlock(nn.Module):
         return out
 
 
-
 class NonLocalBlock(nn.Module):
     def __init__(self, N):
         super().__init__()
@@ -190,6 +202,7 @@ class NonLocalBlock(nn.Module):
         z = self._z(z)
         return x + z
 
+
 class GlobalAttentionBlock(nn.Module):
     """Residual block with a stride on the first convolution.
     Args:
@@ -214,59 +227,6 @@ class GlobalAttentionBlock(nn.Module):
 
         out += identity
         return out
-
-# class GlobalAttentionBlock(nn.Module):
-#     """Self attention block.
-#     Simplified variant from `"Learned Image Compression with
-#     Discretized Gaussian Mixture Likelihoods and Attention Modules"
-#     <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
-#     Takeuchi, Jiro Katto.
-#     Args:
-#         N (int): Number of channels)
-#     """
-
-#     def __init__(self, N):
-#         super().__init__()
-
-
-#         class ResidualUnit(nn.Module):
-#             """Simple residual unit."""
-
-#             def __init__(self):
-#                 super().__init__()
-#                 self.conv = nn.Sequential(
-#                     conv1x1(N, N // 2),
-#                     nn.ReLU(inplace=True),
-#                     conv3x3(N // 2, N // 2),
-#                     nn.ReLU(inplace=True),
-#                     conv1x1(N // 2, N),
-#                 )
-#                 self.relu = nn.ReLU(inplace=True)
-
-#             def forward(self, x):
-#                 identity = x
-#                 out = self.conv(x)
-#                 out += identity
-#                 out = self.relu(out)
-#                 return out
-
-#         # self.conv_a = nn.Sequential(ResidualUnit(), ResidualUnit(), ResidualUnit())
-
-#         self.conv_b = nn.Sequential(
-#             NonLocalBlock(),
-#             ResidualUnit(),
-#             ResidualUnit(),
-#             ResidualUnit(),
-#             conv1x1(N, N),
-#         )
-
-#     def forward(self, x):
-#         identity = x
-#         # a = self.conv_a(x)
-#         out = self.conv_b(x)
-#         # out = a * torch.sigmoid(b)
-#         out += identity
-#         return out
 
 
 class DownSample(nn.Module):
