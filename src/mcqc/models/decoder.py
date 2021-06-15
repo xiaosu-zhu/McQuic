@@ -53,6 +53,7 @@ class ResidualGlobalDecoder(nn.Module):
             ResidualBlock(channel, channel),
             GlobalAttentionBlock(channel),
             GlobalAttentionBlock(channel),
+            GlobalAttentionBlock(channel),
             ResidualBlock(channel, channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
@@ -61,7 +62,7 @@ class ResidualGlobalDecoder(nn.Module):
             ResidualBlock(channel, channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
-            subPixelConv3x3(channel, 3, 2),
+            subPixelConv3x3(channel, 3, 2)
         )
 
     def forward(self, x: torch.Tensor):

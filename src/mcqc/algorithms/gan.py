@@ -29,13 +29,13 @@ def _transformerLR(step):
 def _tuneReg(step):
     step = step + 1
     if step < 40000:
-        return 1e-4
+        return 2e-4
     elif step < 60000:
-        return 1e-3
+        return 2e-3
     elif step < 80000:
-        return 1e-2
+        return 2e-2
     else:
-        return 1e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
+        return 2e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
 
 
 class Gan(Algorithm):

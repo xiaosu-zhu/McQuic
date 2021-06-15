@@ -62,6 +62,7 @@ class ResidualGlobalEncoder(nn.Module):
             ResidualBlockWithStride(channel, channel, stride=2),
             GlobalAttentionBlock(channel),
             GlobalAttentionBlock(channel),
+            GlobalAttentionBlock(channel),
             ResidualBlock(channel, channel),
             conv3x3(channel, channel, stride=1)
         )
