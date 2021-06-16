@@ -35,11 +35,11 @@ class QError(nn.Module):
 class CompressionLoss(nn.Module):
     def __init__(self):
         super().__init__()
-        self._msssim = MsSSIM(data_range=2.0, size_average=False)
+        self._msssim = MsSSIM(data_range=2.0, size_average=True)
 
     def forward(self, images, restored, quantized, logits, latent):
-        l2Loss = F.mse_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
-        l1Loss = F.l1_loss(restored, images, reduction='none').mean(axis=(1, 2, 3))
+        l2Loss = F.mse_loss(restored, images)
+        l1Loss = F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
         regs = list()
 

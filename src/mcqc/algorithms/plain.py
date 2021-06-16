@@ -82,10 +82,10 @@ class Plain(Algorithm):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, infoMax, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["infoMax"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
-        # self._saver.add_scalar("Loss/LPIPS", pLoss.mean(), global_step=step)
+        self._saver.add_scalar("Loss/InfoMax", infoMax.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
@@ -142,8 +142,8 @@ class Plain(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, _, logits, targets) = self._model(images, temperature)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
+                (ssimLoss, l1l2Loss, infoMax, reg), (restored, codes, _, logits, targets) = self._model(images, temperature, step)
+                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg + self._config.Coef.gen * infoMax).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
@@ -151,7 +151,7 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, infoMax=infoMax, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
     # pylint: disable=protected-access
     @torch.no_grad()
