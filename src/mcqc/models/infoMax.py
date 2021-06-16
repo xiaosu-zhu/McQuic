@@ -48,8 +48,8 @@ class ResidualBNEncoder(nn.Module):
 class InfoMax(nn.Module):
     def __init__(self, channel):
         super().__init__()
-        self._estimatorOverX = ResidualBNEncoder(channel)
-        self._estimatorOverY = nn.Sequential(
+        self._estimatorOverY = ResidualBNEncoder(channel)
+        self._estimatorOverT = nn.Sequential(
             ConvBlock(channel, channel), # 16
             ResidualBNBlock(channel, channel),
             ConvBlock(channel, channel), # 8
@@ -68,17 +68,17 @@ class InfoMax(nn.Module):
             nn.Linear(channel, 1)
         )
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
+    def forward(self, y: torch.Tensor, t: torch.Tensor):
         # [n, c]
-        zx = self._estimatorOverX(x)
         zy = self._estimatorOverY(y)
-        n = x.shape[0]
+        zt = self._estimatorOverT(t)
+        n = y.shape[0]
         # [n, 2c]
         # p(y|x)p(x)
-        condition = torch.cat((zx, zy), 1)
+        condition = torch.cat((zy, zt), 1)
         # [n, 2c]
         # shuffle y to get p(y)p(x)
-        joint = torch.cat((zx[torch.randperm(n)], zy[torch.randperm(n)]), 1)
+        joint = torch.cat((zy[torch.randperm(n)], zt[torch.randperm(n)]), 1)
         # [2n, 2c]
         catted = torch.cat((condition, joint), 0)
         # [2n]
