@@ -7,6 +7,7 @@ import storch
 from storch.method import *
 import torch
 from torch import nn
+from torch._C import device
 import torch.nn.functional as F
 from torch.distributions import Bernoulli, Categorical, OneHotCategorical, bernoulli
 from cfmUtils.base import Module
@@ -402,7 +403,10 @@ class AttentiveQuantizer(nn.Module):
     #     return x.permute(0, 3, 1, 2)
 
     def forward(self, latent, temperature, *_):
+        n, _, h, w = latent.shape
+        k = self._codebook.shape[0]
+        randomMask = torch.rand((n, h, w, k), device=latent.device) < 0.1
         # latent = self._randomErase(latent)
-        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, 1.0)
+        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, randomMask, 1.0)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
         return self._dropout(quantized.permute(0, 3, 1, 2)), sample.argmax(-1), logit, wv
