@@ -65,10 +65,11 @@ def _generalConfig(rank: int, worldSize: int):
     torch.backends.cudnn.benchmark = True
     torch.manual_seed(rank)
     random.seed(rank)
+    torch.cuda.set_device(rank)
     np.random.seed(rank)
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
-    dist.barrier()
+    dist.barrier(device_ids=[rank])
 
 # def Test(config: Config, saveDir: str, logger: Logger = None) -> None:
 #     _ = queryGPU(needGPUs=1, wantsMore=False, needVRamEachGPU=18000)

@@ -136,7 +136,7 @@ class Gan(Algorithm):
         annealRange = int(40000 // epochSteps)
         initEpoch = 0
 
-        # mapLocation = {"cuda:0": f"cuda:{self._rank}"}
+        mapLocation = {"cuda:0": f"cuda:{self._rank}"}
         # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
@@ -164,7 +164,7 @@ class Gan(Algorithm):
                 if step % 2 == 0:
                     (0.0 * ssimLoss +0.0 * l1l2Loss + self._config.Coef.dis * ganLoss + 0.0 * reg).backward()
                 else:
-                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
+                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss - self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()

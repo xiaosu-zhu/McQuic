@@ -59,7 +59,7 @@ class Plain(Algorithm):
         # self._scheduler = scheduler(self._optimizer)
         self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
-        dist.barrier()
+        dist.barrier(device_ids=[self._rank])
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
