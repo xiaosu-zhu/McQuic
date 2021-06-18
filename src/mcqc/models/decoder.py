@@ -5,6 +5,7 @@ from mcqc.layers.convs import conv3x3, deconv5x5
 from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock, UpSample, GlobalAttentionBlock
 from mcqc.layers.positional import PositionalEncoding2D
+from mcqc.models.discriminator import ResidualBNBlock
 
 
 class Decoder(nn.Module):
@@ -51,15 +52,15 @@ class ResidualGlobalDecoder(nn.Module):
         super().__init__()
         self._net = nn.Sequential(
             ResidualBlock(channel, channel),
-            GlobalAttentionBlock(channel),
-            GlobalAttentionBlock(channel),
-            GlobalAttentionBlock(channel),
             ResidualBlock(channel, channel),
+            GlobalAttentionBlock(channel),
+            GlobalAttentionBlock(channel),
+            GlobalAttentionBlock(channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
             ResidualBlockUpsample(channel, channel, 2),
+            ResidualBlock(channel, channel),
             AttentionBlock(channel),
-            ResidualBlock(channel, channel),
             ResidualBlockUpsample(channel, channel, 2),
             ResidualBlock(channel, channel),
             subPixelConv3x3(channel, 3, 2)

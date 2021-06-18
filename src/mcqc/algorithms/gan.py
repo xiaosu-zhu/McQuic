@@ -35,7 +35,7 @@ def _tuneReg(step):
     elif step < 80000:
         return 2e-2
     else:
-        return 2e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
+        return 2e-2 * 0.9988493699365052 ** (step - WARMUP_STEP)
 
 
 class Gan(Algorithm):
@@ -72,7 +72,7 @@ class Gan(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({101: self._superHook, 100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({21: self._superHook, 100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
 
@@ -162,9 +162,9 @@ class Gan(Algorithm):
                 images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, ganLoss, reg), (restored, codes, predicts, logits, targets) = self._model(images, temperature, step)
                 if step % 2 == 0:
-                    ((0.0 * ssimLoss +0.0 * l1l2Loss).mean() + self._config.Coef.dis * ganLoss + 0.0 * reg).backward()
+                    (0.0 * ssimLoss +0.0 * l1l2Loss + self._config.Coef.dis * ganLoss + 0.0 * reg).backward()
                 else:
-                    ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
+                    (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.gen * ganLoss + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 if step % 2 == 0:
                     self._optimizerD.step()

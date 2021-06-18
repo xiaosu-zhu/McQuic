@@ -1,9 +1,13 @@
 from math import log
+from typing import Tuple
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical, kl_divergence
+from torch.tensor import Tensor
+
+from mcqc import Consts
 
 
 class MLMLoss(nn.Module):
@@ -93,13 +97,30 @@ def hinge_d_loss(logits_real, logits_fake):
     return d_loss
 
 
+class EMALoss(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x: torch.Tensor, movingMean: torch.Tensor):
+        ctx.save_for_backward(x, movingMean)
+        return x.exp().mean().log()
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        x, movingMean = ctx.saved_tensors
+        grad = grad_output * x.exp() / (movingMean + Consts.Eps) / x.shape[0]
+        return grad, None
+
+
 class InfoMaxLoss(nn.Module):
-    def __init__(self):
+    """ Mutual Information Neural Estimation (MINE) and minimization by two-player MiniMax game """
+    def __init__(self, momentum=0.99):
         super().__init__()
-        self._loss = nn.BCEWithLogitsLoss()
+        self.register_buffer("_ema", torch.zeros([]))
+        self._alpha = 1 - momentum
+        # self._loss = nn.BCEWithLogitsLoss()
 
     def forward(self, logitsCondition: torch.Tensor, logitsJoint: torch.Tensor, step: int):
-        dLoss = self._loss(logitsCondition, torch.ones_like(logitsCondition)) + self._loss(logitsJoint, torch.zeros_like(logitsJoint))
-        if step % 2 == 0:
-            return dLoss
-        return -dLoss
+        expMean = (logitsJoint.detach().logsumexp(0) - log(len(logitsJoint)))
+        self._ema -= self._alpha * (self._ema - expMean)
+        loss = EMALoss.apply(logitsJoint, self._ema)
+        # dLoss = self._loss(logitsCondition, torch.ones_like(logitsCondition)) + self._loss(logitsJoint, torch.zeros_like(logitsJoint))
+        return (-logitsCondition.mean()) + loss

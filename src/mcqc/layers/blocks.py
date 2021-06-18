@@ -22,7 +22,7 @@ class ConvBlock(nn.Module):
         super().__init__()
         self._net = nn.Sequential(
             conv5x5(in_ch, out_ch, bias=False),
-            nn.BatchNorm2d(out_ch),
+            nn.GroupNorm(32, out_ch),
             nn.LeakyReLU(inplace=True)
             )
 
