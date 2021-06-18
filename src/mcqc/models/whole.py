@@ -54,11 +54,14 @@ class WholePQInfoMax(nn.Module):
         self._mLoss = InfoMaxLoss()
 
     def forward(self, image, temp, step, **_):
+        # Y, T <- D(E(X))
         restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
-        logitsCondition, logitsJoint = self._discriminator(image, quantized)
-
+        # minimize distortion
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
+        # maximize I(Y; T)
+        logitsCondition, logitsJoint = self._discriminator(restored, quantized)
         infoLoss = self._mLoss(logitsCondition, logitsJoint, step)
+
         return (ssimLoss, l1l2Loss, infoLoss, reg), (restored, codes, None, logits, None)
 
 
