@@ -4,7 +4,7 @@ from torch import nn
 from mcqc.layers.convs import conv3x3, deconv5x5
 from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock, UpSample, GlobalAttentionBlock
-from mcqc.layers.positional import PositionalEncoding2D
+from mcqc.layers.positional import NPositionalEncoding2D, PositionalEncoding2D
 from mcqc.models.discriminator import ResidualBNBlock
 
 
@@ -53,6 +53,7 @@ class ResidualGlobalDecoder(nn.Module):
         self._net = nn.Sequential(
             ResidualBlock(channel, channel),
             ResidualBlock(channel, channel),
+            NPositionalEncoding2D(channel, 120, 120),
             GlobalAttentionBlock(channel),
             GlobalAttentionBlock(channel),
             GlobalAttentionBlock(channel),

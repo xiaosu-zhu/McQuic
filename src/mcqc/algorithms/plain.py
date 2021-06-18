@@ -83,10 +83,9 @@ class Plain(Algorithm):
 
     @torch.no_grad()
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, infoMax, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["infoMax"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
-        self._saver.add_scalar("Loss/InfoMax", infoMax.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
@@ -128,7 +127,7 @@ class Plain(Algorithm):
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)

@@ -7,7 +7,7 @@ from torch import nn
 from mcqc.layers.convs import conv3x3, conv5x5
 from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample, L2Normalize, GlobalAttentionBlock
-from mcqc.layers.positional import PositionalEncoding2D
+from mcqc.layers.positional import NPositionalEncoding2D, PositionalEncoding2D
 
 
 class Encoder(nn.Module):
@@ -60,6 +60,7 @@ class ResidualGlobalEncoder(nn.Module):
             ResidualBlockWithStride(channel, channel, stride=2),
             ResidualBlock(channel, channel),
             ResidualBlockWithStride(channel, channel, stride=2),
+            NPositionalEncoding2D(channel, 120, 120),
             GlobalAttentionBlock(channel),
             GlobalAttentionBlock(channel),
             GlobalAttentionBlock(channel),
