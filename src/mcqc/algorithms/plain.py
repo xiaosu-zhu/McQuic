@@ -70,7 +70,7 @@ class Plain(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook})
         else:
             self._loggingHook = None
 
@@ -81,6 +81,7 @@ class Plain(Algorithm):
     def _deTrans(image):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
+    @torch.no_grad()
     def _fastHook(self, **kwArgs):
         ssimLoss, l1l2Loss, infoMax, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["infoMax"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
@@ -92,20 +93,24 @@ class Plain(Algorithm):
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
 
+    @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, testLoader, step, i, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["temperature"]
+        images, restored, testLoader, step, i, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["quantized"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
+        self._visualizeIntermediate(quantized, step)
         uniqueCodes, ratio = self._eval(testLoader, step)
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
         return uniqueCodes, ratio
 
-    def _slowHook(self, **kwArgs):
-        step = kwArgs["now"]
-        if 100000 <= step <= 130000:
-            self._scheduler.step()
+    @torch.no_grad()
+    def _visualizeIntermediate(self, latent, step):
+        img = latent[0][:, None, ...]
+        fMin, fMax = img.min(), img.max()
+        img = (img - fMin) / (fMax - fMin)
+        self._saver.add_images(f"Train/Feature", img, step)
 
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
@@ -142,8 +147,8 @@ class Plain(Algorithm):
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 images = images.to(self._rank, non_blocking=True)
-                (ssimLoss, l1l2Loss, infoMax, reg), (restored, codes, _, logits, targets) = self._model(images, temperature, step)
-                (self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss + self._config.Coef.reg * reg + self._config.Coef.gen * infoMax).backward()
+                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 self._scheduler.step()
@@ -151,7 +156,7 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, infoMax=infoMax, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
+                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
 
     # pylint: disable=protected-access
     @torch.no_grad()
