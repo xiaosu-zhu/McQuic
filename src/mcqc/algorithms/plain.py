@@ -59,7 +59,7 @@ class Plain(Algorithm):
         # self._scheduler = scheduler(self._optimizer)
         self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
-        dist.barrier()
+        dist.barrier(device_ids=[self._rank])
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
@@ -123,7 +123,7 @@ class Plain(Algorithm):
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
