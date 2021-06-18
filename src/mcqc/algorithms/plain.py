@@ -5,6 +5,7 @@ import math
 import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.utils.tensorboard.summary import image
@@ -109,6 +110,7 @@ class Plain(Algorithm):
         img = latent[0][:, None, ...]
         fMin, fMax = img.min(), img.max()
         img = (img - fMin) / (fMax - fMin)
+        img = F.interpolate(img, scale_factor=4, mode="nearest")
         self._saver.add_images(f"Train/Feature", img, step)
 
     # pylint: disable=too-many-locals,arguments-differ
