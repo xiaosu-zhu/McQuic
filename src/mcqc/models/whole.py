@@ -58,7 +58,10 @@ class WholePQInfoMax(nn.Module):
         restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
         # minimize distortion
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
-        # maximize I(Y; T)
+        # if ssimLoss > 0.1:
+            # maximize I(Y; T)
+            # logitsCondition, logitsJoint = self._discriminator(restored.detach(), quantized.detach())
+        # else:
         logitsCondition, logitsJoint = self._discriminator(restored, quantized)
         infoLoss = self._mLoss(logitsCondition, logitsJoint, step)
 
