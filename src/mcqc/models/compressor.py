@@ -6,6 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from cfmUtils.base import parallelFunction, Module
 import storch
+from mcqc.layers.dropout import ChannelWiseDropout
 from mcqc.models.encoderDecoder import EncoderDecoder, MLP
 
 from mcqc.models.maskingModel import MaskingModel
@@ -66,6 +67,7 @@ class PQGlobalCompressor(nn.Module):
         self._m = m
         self._encoder = ResidualGlobalEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
+        self._dropout = ChannelWiseDropout(0.1)
         self._decoder = ResidualGlobalDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
@@ -80,7 +82,7 @@ class PQGlobalCompressor(nn.Module):
             qs.append(q)
             codes.append(c)
             logits.append(l)
-        quantized = torch.cat(qs, 1)
+        quantized = self._dropout(torch.cat(qs, 1))
         restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), codes, logits
 

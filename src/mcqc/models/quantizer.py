@@ -12,6 +12,7 @@ from torch.distributions import Bernoulli, Categorical, OneHotCategorical, berno
 from cfmUtils.base import Module
 
 from mcqc.layers.gumbelSoftmax import GumbelSoftmax
+from mcqc.layers.dropout import PointwiseDropout
 from mcqc.layers.layerGroup import LayerGroup
 from mcqc.layers.blocks import ResidualBlock, L2Normalize
 from mcqc.models.transformer import Encoder, Decoder, Transformer, GumbelAttention
@@ -310,7 +311,7 @@ class AttentiveQuantizer(nn.Module):
     def __init__(self, k: int, cin: int, deterministic: bool = False, additionWeight: bool = True):
         super().__init__()
 
-        self.xCodebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin)))
+        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin)))
 
         if additionWeight:
             self._wq = nn.Linear(cin, cin, bias=False)
@@ -319,13 +320,14 @@ class AttentiveQuantizer(nn.Module):
         self._scale = math.sqrt(cin)
         self._additionWeight = additionWeight
         self._deterministic = deterministic
+        self._dropout = PointwiseDropout(0.1)
 
 
     def encode(self, latent):
         # [n, h, w, c]
         q = latent.permute(0, 2, 3, 1)
         # [k, c]
-        k = self.xCodebook
+        k = self._codebook
 
         if self._additionWeight:
             # [n, h, w, c]
@@ -348,13 +350,13 @@ class AttentiveQuantizer(nn.Module):
         return (hard - soft).detach() + soft, sample
 
     def decode(self, code):
-        k, c = self.xCodebook.shape
+        k, c = self._codebook.shape
         # [n, h, w, k]
         sample = F.one_hot(code, k).float()
         if self._additionWeight:
-            v = self._wv(self.xCodebook)
+            v = self._wv(self._codebook)
         else:
-            v = self.xCodebook
+            v = self._codebook
         # [n, h, w, c] -> [n, c, h, w]
         quantized = (sample @ v).permute(0, 3, 1, 2)
 
@@ -401,6 +403,6 @@ class AttentiveQuantizer(nn.Module):
 
     def forward(self, latent, temperature, *_):
         # latent = self._randomErase(latent)
-        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self.xCodebook, self.xCodebook, None, 1.0)
+        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, 1.0)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
-        return quantized.permute(0, 3, 1, 2), sample.argmax(-1), logit, wv
+        return self._dropout(quantized.permute(0, 3, 1, 2)), sample.argmax(-1), logit, wv

@@ -182,11 +182,11 @@ class NonLocalBlock(nn.Module):
         self._k = conv1x1(N, N // 2)
         self._v = conv1x1(N, N // 2)
         self._z = conv1x1(N // 2, N)
-        self._position = NPositionalEncoding2D(N, 120, 120)
+        # self._position = NPositionalEncoding2D(N, 120, 120)
 
     def forward(self, x: torch.Tensor):
         n, c, h, w = x.shape
-        x = self._position(x)
+        # x = self._position(x)
         hw = h*w
         scale = sqrt(hw)
         # [n, c/2, h, w]
@@ -196,6 +196,7 @@ class NonLocalBlock(nn.Module):
         v = self._v(x).reshape(n, self._c, hw).permute(0, 2, 1)
         # [n, hw, hw]
         qkLogits = torch.matmul(q.transpose(-1, -2), k) / scale
+        qkLogits = qkLogits.masked_fill(torch.eye(hw, hw, dtype=torch.bool, device=qkLogits.device), float("-inf"))
         weights = torch.softmax(qkLogits, -1)
         # [n, hw, c/2] -> [n, c/2, h, w]
         z = torch.matmul(weights, v).permute(0, 2, 1).reshape(n, self._c, h, w)
