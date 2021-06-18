@@ -26,7 +26,7 @@ class WholePQ(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, codes, None, logits, None)
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
 
 
 class WholePQContext(nn.Module):
