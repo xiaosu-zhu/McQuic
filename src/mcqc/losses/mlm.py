@@ -4,8 +4,6 @@ from typing import Tuple
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.distributions import Categorical, kl_divergence
-from torch.tensor import Tensor
 
 from mcqc import Consts
 
