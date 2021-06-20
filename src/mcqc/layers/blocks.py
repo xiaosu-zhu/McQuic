@@ -196,7 +196,8 @@ class NonLocalBlock(nn.Module):
         v = self._v(x).reshape(n, self._c, hw).permute(0, 2, 1)
         # [n, hw, hw]
         qkLogits = torch.matmul(q.transpose(-1, -2), k) / scale
-        qkLogits = qkLogits.masked_fill(torch.eye(hw, hw, dtype=torch.bool, device=qkLogits.device), float("-inf"))
+        randomMask = torch.rand((n, hw, hw), device=qkLogits.device) < 0.1
+        qkLogits = qkLogits.masked_fill(randomMask, -1e9)
         weights = torch.softmax(qkLogits, -1)
         # [n, hw, c/2] -> [n, c/2, h, w]
         z = torch.matmul(weights, v).permute(0, 2, 1).reshape(n, self._c, h, w)

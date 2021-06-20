@@ -21,8 +21,8 @@ from cfmUtils.vision.utils import verifyTruncated
 from mcqc import Consts, Config
 from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic
-from mcqc.algorithms import Plain, Gan
-from mcqc.models.whole import Whole, WholePQInfoMax, WholeVQ, WholeRein, WholeTwoStage, WholeTwoStageWithGan, WholePQSAG, WholePQ, WholePQContext
+from mcqc.algorithms import Plain, Gan, FineTune
+from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -108,7 +108,8 @@ models = {
 methods = {
     "Plain": Plain,
     "MiniMax": Gan,
-    "AutoRegressive": Context
+    "AutoRegressive": Context,
+    "FineTune": FineTune
 }
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
