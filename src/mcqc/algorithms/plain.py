@@ -17,14 +17,14 @@ from cfmUtils.base import FrequecyHook
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.losses.ssim import MsSSIM
-from mcqc.models.whole import Whole
+from mcqc.models.whole import WholePQ
 from mcqc import Config
 
 
 WARMUP_STEP = 40000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 0.99999 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 0.99997 ** (step - WARMUP_STEP))
 
 
 def _tuneReg(step):
@@ -40,7 +40,7 @@ def _tuneReg(step):
 
 
 class Plain(Algorithm):
-    def __init__(self, config: Config, model: Whole, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: WholePQ, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
@@ -129,11 +129,13 @@ class Plain(Algorithm):
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        # Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
 
         if self._continue:
             loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
+
+
             temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
             if self._rank == 0:

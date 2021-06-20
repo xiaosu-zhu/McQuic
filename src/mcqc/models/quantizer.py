@@ -1,27 +1,19 @@
 import math
-from random import sample
-from typing import Callable, List, Optional
+from typing import List
 from math import sqrt
 
-import storch
-from storch.method import *
+from storch.method import RELAX
 import torch
 from torch import nn
-from torch._C import device
 import torch.nn.functional as F
-from torch.distributions import Bernoulli, Categorical, OneHotCategorical, bernoulli
-from cfmUtils.base import Module
+from torch.distributions import Bernoulli, OneHotCategorical
 
-from mcqc.layers.gumbelSoftmax import GumbelSoftmax
 from mcqc.layers.dropout import PointwiseDropout
-from mcqc.layers.layerGroup import LayerGroup
-from mcqc.layers.blocks import ResidualBlock, L2Normalize
-from mcqc.models.transformer import Encoder, Decoder, Transformer, GumbelAttention
-from mcqc.layers.positional import PositionalEncoding2D, PositionalEncoding1D, DePositionalEncoding2D, LearnablePositionalEncoding2D, NPositionalEncoding2D
-from mcqc import Consts
+from mcqc.models.transformer import Encoder, Transformer
+from mcqc.layers.positional import NPositionalEncoding2D
 
 
-def conv(in_channels, out_channels, kernel_size=5, stride=2):
+def conv(in_channels: int, out_channels: int, kernel_size: int = 5, stride: int = 2):
     return nn.Conv2d(
         in_channels,
         out_channels,
@@ -29,7 +21,7 @@ def conv(in_channels, out_channels, kernel_size=5, stride=2):
         stride=stride,
         padding=kernel_size // 2,
     )
-def deconv(in_channels, out_channels, kernel_size=5, stride=2):
+def deconv(in_channels: int, out_channels: int, kernel_size: int = 5, stride: int = 2):
     return nn.ConvTranspose2d(
         in_channels,
         out_channels,
@@ -51,11 +43,11 @@ class TransformerQuantizerStorch(nn.Module):
             setattr(self, f"codebook{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cSplitted))))
             # setattr(self, f"tCodebook{i}", nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(numCodewords, cin))))
             # setattr(self, f"palette{i}", nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(numCodewords, cin))))
-        self._codebookAsKey = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for numCodewords in k])
+        self._codebookAsKey = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for _ in k])
         # self._tCodebookAsKey = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        self._codebookAsValue = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for numCodewords in k])
+        self._codebookAsValue = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for _ in k])
         # self._tCodebookAsValue = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
-        self._xAsQuery = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for numCodewords in k])
+        self._xAsQuery = nn.ModuleList([nn.Linear(cSplitted, cSplitted) for _ in k])
         # self._tXAsQuery = nn.ModuleList([nn.Linear(cin, cin) for numCodewords in k])
         self._k = k
         self._scaling = [sqrt(kk) for kk in k]
@@ -63,9 +55,9 @@ class TransformerQuantizerStorch(nn.Module):
         self._c = cin
         # self._position = NPositionalEncoding2D(cin, 120, 120)
 
-    def _attention(self, x, temp, hard):
+    def _attention(self, x: torch.Tensor, temp: float, hard: bool):
         xs = torch.chunk(x, len(self._k), -1)
-        samples = list()
+        samples: List[torch.Tensor] = list()
         quantizeds = list()
         logits = list()
         for i, k in enumerate(self._k):
@@ -354,10 +346,9 @@ class AttentiveQuantizer(nn.Module):
         k, c = self._codebook.shape
         # [n, h, w, k]
         sample = F.one_hot(code, k).float()
+        v = self._codebook
         if self._additionWeight:
             v = self._wv(self._codebook)
-        else:
-            v = self._codebook
         # [n, h, w, c] -> [n, c, h, w]
         quantized = (sample @ v).permute(0, 3, 1, 2)
 

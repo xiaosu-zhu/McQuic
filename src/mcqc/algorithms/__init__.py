@@ -7,3 +7,4 @@ Exports:
 """
 from .plain import Plain
 from .gan import Gan
+from .fineTune import FineTune
