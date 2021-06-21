@@ -65,7 +65,7 @@ class PQCompressor(nn.Module):
         self._m = m
         self._encoder = ResidualEncoder(channel)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
-        self._dropout = ChannelWiseDropout(0.1)
+        self._dropout = ChannelWiseDropout(0.05)
         self._decoder = ResidualDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):

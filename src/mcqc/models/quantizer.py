@@ -313,8 +313,8 @@ class AttentiveQuantizer(nn.Module):
         self._scale = math.sqrt(cin)
         self._additionWeight = additionWeight
         self._deterministic = deterministic
-        self._dropout = PointwiseDropout(0.1)
-
+        self._dropout = PointwiseDropout(0.05)
+        self._randomMask = torch.distributions.Bernoulli(probs=0.95)
 
     def encode(self, latent):
         # [n, h, w, c]
@@ -396,8 +396,7 @@ class AttentiveQuantizer(nn.Module):
     def forward(self, latent, temperature, *_):
         n, _, h, w = latent.shape
         k = self._codebook.shape[0]
-        randomMask = torch.rand((n, h, w, k), device=latent.device) < 0.1
-        # latent = self._randomErase(latent)
-        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, randomMask, 1.0)
+        # randomMask = self._randomMask.sample((n, h, w, k)).bool().to(latent.device)
+        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, 1.0)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
         return self._dropout(quantized.permute(0, 3, 1, 2)), sample.argmax(-1), logit, wv
