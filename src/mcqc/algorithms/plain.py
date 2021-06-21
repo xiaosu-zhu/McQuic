@@ -5,6 +5,7 @@ import math
 import numpy as np
 import torch
 from torch import nn
+from torch.utils.data import DataLoader, DistributedSampler
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
@@ -21,7 +22,7 @@ from mcqc.models.whole import WholePQ
 from mcqc import Config
 
 
-WARMUP_STEP = 40000
+WARMUP_STEP = 20000
 def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99997 ** (step - WARMUP_STEP))
@@ -29,18 +30,16 @@ def _transformerLR(step):
 
 def _tuneReg(step):
     step = step + 1
-    if step < 20000:
+    if step < 10000:
         return 2e-4
-    elif step < 30000:
+    elif step < 15000:
         return 2e-3
-    elif step < 40000:
-        return 2e-2
     else:
-        return 2e-2 * 0.9977000638225533 ** (step - WARMUP_STEP)
+        return 2e-3 * 0.9999000638225533 ** (step - WARMUP_STEP)
 
 
 class Plain(Algorithm):
-    def __init__(self, config: Config, model: WholePQ, optimizer: Callable[[Iterator[nn.Parameter]], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: WholePQ, optimizer: Callable[[float, Iterator[nn.Parameter], float], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
@@ -56,7 +55,7 @@ class Plain(Algorithm):
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
         # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
-        self._optimizer: torch.optim.Optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
+        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
         # self._scheduler = scheduler(self._optimizer)
         self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
 
@@ -114,29 +113,22 @@ class Plain(Algorithm):
         self._saver.add_images(f"Train/Feature", img, step)
 
     # pylint: disable=too-many-locals,arguments-differ
-    def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
+    def run(self, trainLoader: DataLoader, sampler: DistributedSampler, testLoader: DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         # uniqueCodes = 2048
         images = None
 
-        epochSteps = len(trainLoader.dataset) // (self._worldSize * trainLoader.batch_size)
-
-        temperature = 10.0
-        initTemp = 10.0
-        finalTemp = 0.1
-        annealRange = int(40000 // epochSteps)
+        temperature = 1.0
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model)
+        loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=initEpoch)
+        initEpoch = loaded["epoch"]
 
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch)
             step = loaded["step"]
-
-
-            temperature = loaded["temperature"]
             initEpoch = loaded["epoch"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
@@ -145,7 +137,6 @@ class Plain(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
-            temperature = max(finalTemp, initTemp * (finalTemp / initTemp) ** (i / annealRange))
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
@@ -163,7 +154,7 @@ class Plain(Algorithm):
 
     # pylint: disable=protected-access
     @torch.no_grad()
-    def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
+    def _eval(self, dataLoader: DataLoader, step: int):
         if self._logger is None:
             return
         self._model.eval()
@@ -205,8 +196,12 @@ class Plain(Algorithm):
         bs = [torch.cat(x, 0) for x in bs]
         zs = torch.cat(zs, 0)
         qs = torch.cat(qs, 0)
-        self._logger.info("MS-SSIM: %2.2fdB", ssims.mean())
-        self._logger.info("   PSNR: %2.2fdB", psnrs.mean())
+        ssimScore = ssims.mean()
+        psnrScore = psnrs.mean()
+        self._logger.info("MS-SSIM: %2.2fdB", ssimScore)
+        self._logger.info("   PSNR: %2.2fdB", psnrScore)
+        self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
+        self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
         uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)

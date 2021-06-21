@@ -8,6 +8,7 @@ import torch
 import torchvision
 import torch.multiprocessing as mp
 import torch.distributed as dist
+from torch.utils.data import DataLoader, DistributedSampler
 import numpy as np
 
 from absl import app
@@ -132,11 +133,11 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     method = methods[config.Method](config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
-    trainSampler = torch.utils.data.DistributedSampler(trainDataset, worldSize, rank)
+    trainSampler = DistributedSampler(trainDataset, worldSize, rank)
     valDataset = Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform())
 
-    trainLoader = torch.utils.data.DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)
-    valLoader = torch.utils.data.DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=worldSize * 4, pin_memory=True, drop_last=False)
+    trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)
+    valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=worldSize * 4, pin_memory=True, drop_last=False)
     method.run(trainLoader, trainSampler, valLoader if rank == 0 else None)
 
 
