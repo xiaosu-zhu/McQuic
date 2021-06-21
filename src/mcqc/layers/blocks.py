@@ -169,7 +169,8 @@ class AttentionBlock(nn.Module):
         identity = x
         a = self.conv_a(x)
         b = self.conv_b(x)
-        out = a * torch.sigmoid(b)
+        mask = torch.sigmoid(b)
+        out = a * mask
         out += identity
         return out
 

@@ -301,7 +301,7 @@ class TransformerQuantizer(nn.Module):
 
 
 class AttentiveQuantizer(nn.Module):
-    def __init__(self, k: int, cin: int, deterministic: bool = False, additionWeight: bool = True):
+    def __init__(self, k: int, cin: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True):
         super().__init__()
 
         self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cin)))
@@ -313,7 +313,10 @@ class AttentiveQuantizer(nn.Module):
         self._scale = math.sqrt(cin)
         self._additionWeight = additionWeight
         self._deterministic = deterministic
-        self._dropout = PointwiseDropout(0.05)
+        if dropout:
+            self._dropout = PointwiseDropout(0.05)
+        else:
+            self._dropout = None
         self._randomMask = torch.distributions.Bernoulli(probs=0.95)
 
     def encode(self, latent):
@@ -397,6 +400,9 @@ class AttentiveQuantizer(nn.Module):
         n, _, h, w = latent.shape
         k = self._codebook.shape[0]
         # randomMask = self._randomMask.sample((n, h, w, k)).bool().to(latent.device)
-        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, 1.0)
+        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, temperature)
+        quantized = quantized.permute(0, 3, 1, 2)
+        if self._dropout is not None:
+            quantized = self._dropout(quantized)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
-        return self._dropout(quantized.permute(0, 3, 1, 2)), sample.argmax(-1), logit, wv
+        return quantized, sample.argmax(-1), logit, wv

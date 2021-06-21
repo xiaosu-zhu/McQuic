@@ -26,10 +26,10 @@ class PQCompressorFineTune(nn.Module):
         self._k = k
         self._m = m
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, False, True) for _ in range(m))
         self._decoder = ResidualDecoder(channel)
 
-    def _firstHalf(self, x, temp, firstHalf):
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
         # M * [n, c // M, h, w]
         splits = torch.chunk(latent, self._m, 1)
@@ -42,19 +42,7 @@ class PQCompressorFineTune(nn.Module):
             codes.append(c)
             logits.append(l)
         quantized = torch.cat(qs, 1)
-        return quantized, latent, codes, logits
-
-    def forward(self, x: torch.Tensor, temp: float, firstHalf: bool):
-        if not firstHalf:
-            with torch.no_grad():
-                quantized, latent, codes, logits = self._firstHalf(x, temp, firstHalf)
-        else:
-            quantized, latent, codes, logits = self._firstHalf(x, temp, firstHalf)
-        if firstHalf:
-            with torch.no_grad():
-                restored = torch.tanh(self._decoder(quantized))
-        else:
-            restored = torch.tanh(self._decoder(quantized))
+        restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), codes, logits
 
 
@@ -64,7 +52,7 @@ class PQCompressor(nn.Module):
         self._k = k
         self._m = m
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, True, False, True) for _ in range(m))
         self._dropout = ChannelWiseDropout(0.05)
         self._decoder = ResidualDecoder(channel)
 

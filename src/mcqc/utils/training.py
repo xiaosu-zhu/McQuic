@@ -1,3 +1,4 @@
+from cfmUtils.saver import Saver
 import torch
 import math
 
@@ -14,3 +15,7 @@ def SetNewLr(newBatchSize: int, oldBatchSize: int, *optimizers: torch.optim.Opti
     for optim in optimizers:
         for g in optim.param_groups:
             g["lr"] = g["lr"] * scale
+
+
+class Environment:
+    saver: Saver = None
