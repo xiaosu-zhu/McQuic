@@ -1,10 +1,11 @@
-from typing import Callable, Iterator, List
+from typing import Callable, Iterator, List, Tuple
 from logging import Logger
 import math
 
 import numpy as np
 import torch
 from torch import nn
+from torch.types import Number
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
@@ -75,6 +76,7 @@ class Plain(Algorithm):
             self._loggingHook = None
 
         self._imgSize = 512 * 512
+        self._best = -1
         # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
@@ -99,10 +101,11 @@ class Plain(Algorithm):
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
         self._visualizeIntermediate(quantized, step)
-        uniqueCodes, ratio = self._eval(testLoader, step)
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
+        ssim, psnr = self._eval(testLoader, step)
+        if ssim + psnr > self._best:
+            self._best = ssim + psnr
+            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
-        return uniqueCodes, ratio
 
     @torch.no_grad()
     def _visualizeIntermediate(self, latent, step):
@@ -133,7 +136,8 @@ class Plain(Algorithm):
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         if self._rank == 0:
-            self._eval(testLoader, step)
+            ssim, psnr = self._eval(testLoader, step)
+            self._best = ssim + psnr
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -150,13 +154,11 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
 
     # pylint: disable=protected-access
     @torch.no_grad()
-    def _eval(self, dataLoader: DataLoader, step: int):
-        if self._logger is None:
-            return
+    def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
         self._model.eval()
         model = self._model.module._compressor
         ssims = list()
@@ -196,8 +198,8 @@ class Plain(Algorithm):
         bs = [torch.cat(x, 0) for x in bs]
         zs = torch.cat(zs, 0)
         qs = torch.cat(qs, 0)
-        ssimScore = ssims.mean()
-        psnrScore = psnrs.mean()
+        ssimScore = ssims.mean().item()
+        psnrScore = psnrs.mean().item()
         self._logger.info("MS-SSIM: %2.2fdB", ssimScore)
         self._logger.info("   PSNR: %2.2fdB", psnrScore)
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
@@ -212,7 +214,7 @@ class Plain(Algorithm):
         encoded, bpp = self._compress(bs)
         self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
-        return uniqueCodes.detach().cuda(), (counts / b.numel()).detach().cuda()
+        return ssimScore, psnrScore
 
     def _compress(self, codes: List[torch.Tensor]):
         compressed = list()

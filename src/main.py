@@ -23,7 +23,7 @@ from mcqc import Consts, Config
 from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic
 from mcqc.algorithms import Plain, Gan, FineTune
-from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext
+from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext, WholePQFineTune
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform
 
@@ -103,7 +103,8 @@ models = {
     "Base": WholePQ,
     "Context": WholePQContext,
     "AutoRegressive": WholePQSAG,
-    "Info": WholePQInfoMax
+    "Info": WholePQInfoMax,
+    "FineTune": WholePQFineTune
 }
 
 methods = {
