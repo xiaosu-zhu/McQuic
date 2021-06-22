@@ -7,7 +7,7 @@ import storch
 
 from mcqc.losses.structural import CompressionLoss, QError
 from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss, InfoMaxLoss
-from mcqc.models.compressor import MultiScaleVQCompressor, PQCompressor, PQSAGCompressor, PQContextCompressor
+from mcqc.models.compressor import MultiScaleVQCompressor, PQCompressor, PQSAGCompressor, PQContextCompressor, PQCompressorFineTune
 from mcqc.models.critic import SimpleCritic
 from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
 from mcqc.models.infoMax import InfoMax
@@ -17,12 +17,12 @@ from mcqc.utils.vision import Masking
 class WholePQFineTune(nn.Module):
     def __init__(self, m, k, channel, numLayers):
         super().__init__()
-        self._compressor = PQCompressor(m, k, channel, numLayers)
+        self._compressor = PQCompressorFineTune(m, k, channel, numLayers)
         self._cLoss = CompressionLoss()
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
-    def forward(self, image, temp, firstHalf, **_):
-        restored, (quantized, latent), codes, logits = self._compressor(image, temp, firstHalf)
+    def forward(self, image, temp, **_):
+        restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
         # pLoss = self._pLoss(image, restored)
