@@ -1,3 +1,4 @@
+import os
 from typing import Callable, Iterator, List, Tuple
 from logging import Logger
 import math
@@ -96,7 +97,6 @@ class Plain(Algorithm):
     def _slowHook(self, **kwArgs):
         testLoader, step = kwArgs["testLoader"], kwArgs["now"]
         ssim, psnr = self._evalFull(testLoader, step)
-        exit()
 
     @torch.no_grad()
     def _mediumHook(self, **kwArgs):
@@ -110,7 +110,11 @@ class Plain(Algorithm):
         ssim, _ = self._eval(evalLoader, step)
         if ssim > self._best:
             self._best = ssim
-            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
+            path = self._saver._savePath
+            self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
+            self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
+            self._saver._savePath = path
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
