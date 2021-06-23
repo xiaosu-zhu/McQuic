@@ -23,7 +23,7 @@ from mcqc.models.whole import WholePQ
 from mcqc import Config
 
 
-WARMUP_STEP = 20000
+WARMUP_STEP = 25000
 def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99997 ** (step - WARMUP_STEP))
@@ -96,7 +96,7 @@ class Plain(Algorithm):
 
     @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, testLoader, step, i, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["quantized"], kwArgs["temperature"]
+        images, restored, testLoader, step, epoch, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
@@ -104,7 +104,7 @@ class Plain(Algorithm):
         ssim, psnr = self._eval(testLoader, step)
         if ssim + psnr > self._best:
             self._best = ssim + psnr
-            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
+            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
@@ -115,7 +115,6 @@ class Plain(Algorithm):
         img = F.interpolate(img, scale_factor=4, mode="nearest")
         self._saver.add_images(f"Train/Feature", img, step)
 
-    # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: DataLoader, sampler: DistributedSampler, testLoader: DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
@@ -154,11 +153,10 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
 
-    # pylint: disable=protected-access
     @torch.no_grad()
-    def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
+    def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
         self._model.eval()
         model = self._model.module._compressor
         ssims = list()

@@ -229,9 +229,9 @@ class MsSSIM(torch.nn.Module):
         self.size_average = size_average
         self.data_range = data_range
         if weights is None:
-            weights = torch.tensor(_WEIGHTS) # pylint: disable=not-callable
+            weights = torch.tensor(_WEIGHTS)
         else:
-            weights = torch.tensor(weights) # pylint: disable=not-callable
+            weights = torch.tensor(weights)
         self.register_buffer("weights", weights)
         self.K = K
 

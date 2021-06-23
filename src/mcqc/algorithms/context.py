@@ -107,7 +107,6 @@ class Context(Algorithm):
         if 100000 <= step <= 130000:
             self._scheduler.step()
 
-    # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
@@ -153,8 +152,6 @@ class Context(Algorithm):
                     with torch.no_grad():
                         results = self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, mlmLoss=mlmLoss, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits)
 
-
-    # pylint: disable=protected-access
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
         if self._logger is None:
