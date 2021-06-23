@@ -75,10 +75,7 @@ class Plain(Algorithm):
             self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
-
-        self._imgSize = 512 * 512
         self._best = -1
-        # self._accumulatedBatches = 32 //  config.BatchSize
 
     @staticmethod
     def _deTrans(image):
@@ -145,7 +142,7 @@ class Plain(Algorithm):
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         if self._rank == 0:
-            ssim, _ = self._evalFull(testLoader, step)
+            ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
 
         for i in range(initEpoch, self._config.Epoch):
@@ -177,8 +174,8 @@ class Plain(Algorithm):
         totalPixels = 0
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
-            _, _, h, w = raw.shape
-            totalPixels += h * w
+            n, _, h, w = raw.shape
+            totalPixels += n * h * w
 
             latent = model._encoder(raw)
             # M * [n, c // M, h, w]
@@ -188,7 +185,7 @@ class Plain(Algorithm):
                 b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
-                bs[i].append(b.int().detach().cpu())
+                bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
@@ -216,13 +213,13 @@ class Plain(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
-        uniqueCodes, _ = torch.unique(bs[0], return_counts=True)
+        uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
-        encoded, bpp = self._compress(bs)
+        encoded, bpp = self._compress(bs, totalPixels)
         self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
         return ssimScore, psnrScore
@@ -238,8 +235,8 @@ class Plain(Algorithm):
         totalPixels = 0
         for k, raw in enumerate(dataLoader):
             raw = raw.to(self._rank, non_blocking=True)
-            _, _, h, w = raw.shape
-            totalPixels += h * w
+            n, _, h, w = raw.shape
+            totalPixels += n * h * w
 
             latent = model._encoder(raw)
             # M * [n, c // M, h, w]
@@ -249,7 +246,6 @@ class Plain(Algorithm):
                 b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
-                bs[i].append(b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
