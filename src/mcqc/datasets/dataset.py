@@ -2,8 +2,10 @@ from typing import Callable, Any, Optional, Tuple, Callable, List, Dict, cast
 import os
 
 import torch
-from torchvision.datasets import VisionDataset, ImageFolder
+from torchvision.io import read_image
+from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
+from torchvision.io.image import ImageReadMode
 
 
 def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bool:
@@ -19,7 +21,7 @@ def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bo
     return filename.lower().endswith(extensions)
 
 
-def make_dataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, is_valid_file: Optional[Callable[[str], bool]] = None,) -> List[Tuple[str, int]]:
+def make_dataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, is_valid_file: Optional[Callable[[str], bool]] = None,) -> List[str]:
     instances = []
     directory = os.path.expanduser(directory)
     both_none = extensions is None and is_valid_file is None
@@ -64,7 +66,7 @@ class Basic(VisionDataset):
             tuple: (sample, target) where target is class_index of the target class.
         """
         path = self.samples[index]
-        sample = self.loader(path)
+        sample = read_image(path, ImageReadMode.RGB)
         if self.transform is not None:
             sample = self.transform(sample)
 
