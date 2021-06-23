@@ -7,13 +7,13 @@ valDataset: clic/valid
 batchSize: 8
 lr: 5.e-5
 coef:
-    ssim: 1.0
-    l1l2: 1.0
+    ssim: 2.0
+    l1l2: 0.0
     reg: 0.0
     gen: 0.0
     dis: 0.0
 model:
-    type: FineTune
+    type: Base
     channel: 256
     k: 256
     m: 32
