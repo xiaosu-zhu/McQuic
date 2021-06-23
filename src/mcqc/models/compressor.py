@@ -10,9 +10,9 @@ from mcqc.layers.dropout import ChannelWiseDropout
 from mcqc.models.encoderDecoder import EncoderDecoder, MLP
 
 from mcqc.models.maskingModel import MaskingModel
-from .encoder import ResidualEncoder, MultiScaleEncoder, TransformerEncoder
+from .encoder import ResidualEncoder, MultiScaleEncoder
 from .maskedLanguageModel import MaskedLangugeModel
-from .decoder import ResidualDecoder, MultiScaleDecoder, TransformerDecoder
+from .decoder import ResidualDecoder, MultiScaleDecoder
 from .stackedAutoRegressive import StackedAutoRegressive
 from .contextModel import ContextModel
 from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
