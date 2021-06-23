@@ -94,7 +94,6 @@ class ExpTwoStage(Algorithm):
         if 100000 <= step <= 130000:
             self._scheduler.step()
 
-    # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: torch.utils.data.DataLoader, sampler: torch.utils.data.DistributedSampler, testLoader: torch.utils.data.DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
@@ -143,7 +142,6 @@ class ExpTwoStage(Algorithm):
                         if uniqueCodes is not None:
                             regScale = math.sqrt(self._config.Model.k[0] / uniqueCodes)
 
-    # pylint: disable=protected-access
     @torch.no_grad()
     def _eval(self, dataLoader: torch.utils.data.DataLoader, step: int):
         if self._logger is None:

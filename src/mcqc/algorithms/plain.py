@@ -103,17 +103,17 @@ class Plain(Algorithm):
 
     @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, evalLoader, step, i, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["i"], kwArgs["quantized"], kwArgs["temperature"]
+        images, restored, evalLoader, step, epoch, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
         self._visualizeIntermediate(quantized, step)
-        if step % 5000 == 0:
+        if step % 10000 == 0:
             return
-        ssim, _ = self._eval(testLoader, step)
+        ssim, _ = self._eval(evalLoader, step)
         if ssim > self._best:
             self._best = ssim
-            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
+            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
@@ -163,11 +163,10 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
 
-    # pylint: disable=protected-access
     @torch.no_grad()
-    def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
+    def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
         self._model.eval()
         model = self._model.module._compressor
         ssims = list()
