@@ -10,20 +10,20 @@ def getTrainingTransform():
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
         T.RandomCrop(512, pad_if_needed=True, padding_mode="reflect"),
-        T.ToTensor(),
+        T.ConvertImageDtype(torch.float32),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
     ])
 
 def getEvalTransform():
     return T.Compose([
         T.CenterCrop(512),
-        T.ToTensor(),
+        T.ConvertImageDtype(torch.float32),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
     ])
 
 def getTestTransform():
     return T.Compose([
-        T.ToTensor(),
+        T.ConvertImageDtype(torch.float32),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
     ])
 
