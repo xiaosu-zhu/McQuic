@@ -160,6 +160,6 @@ def evalSSIM(img1, img2, dB = False):
     return res
 
 
-def psnr(img1: np.ndarray, img2: np.ndarray):
-    mse = ((img1.float() - img2.float()) ** 2).mean(axis=(1, 2, 3))
+def psnr(img1: torch.Tensor, img2: torch.Tensor):
+    mse = ((img1.float() - img2.float()) ** 2).mean(dim=(1, 2, 3))
     return 10 * (65025.0 / mse).log10()

@@ -15,6 +15,7 @@ from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 from cfmUtils.saver import Saver
 from cfmUtils.base import FrequecyHook
+import torchvision
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.helpers import evalSSIM, psnr
@@ -23,7 +24,7 @@ from mcqc.models.whole import WholePQ
 from mcqc import Config
 
 
-WARMUP_STEP = 20000
+WARMUP_STEP = 25000
 def _transformerLR(step):
     step = step + 1
     return min(step / WARMUP_STEP, 0.99997 ** (step - WARMUP_STEP))
@@ -71,7 +72,7 @@ class Plain(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
         else:
             self._loggingHook = None
 
@@ -95,15 +96,23 @@ class Plain(Algorithm):
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
 
     @torch.no_grad()
+    def _slowHook(self, **kwArgs):
+        testLoader, step = kwArgs["testLoader"], kwArgs["now"]
+        ssim, psnr = self._evalFull(testLoader, step)
+        exit()
+
+    @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, testLoader, step, i, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["testLoader"], kwArgs["now"], kwArgs["i"], kwArgs["quantized"], kwArgs["temperature"]
+        images, restored, evalLoader, step, i, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["i"], kwArgs["quantized"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
         self._visualizeIntermediate(quantized, step)
-        ssim, psnr = self._eval(testLoader, step)
-        if ssim + psnr > self._best:
-            self._best = ssim + psnr
+        if step % 5000 == 0:
+            return
+        ssim, _ = self._eval(testLoader, step)
+        if ssim > self._best:
+            self._best = ssim
             self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=i, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
@@ -116,7 +125,7 @@ class Plain(Algorithm):
         self._saver.add_images(f"Train/Feature", img, step)
 
     # pylint: disable=too-many-locals,arguments-differ
-    def run(self, trainLoader: DataLoader, sampler: DistributedSampler, testLoader: DataLoader):
+    def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         # uniqueCodes = 2048
@@ -136,8 +145,8 @@ class Plain(Algorithm):
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         if self._rank == 0:
-            ssim, psnr = self._eval(testLoader, step)
-            self._best = ssim + psnr
+            ssim, _ = self._evalFull(testLoader, step)
+            self._best = ssim
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -154,7 +163,7 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, i=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
 
     # pylint: disable=protected-access
     @torch.no_grad()
@@ -166,11 +175,13 @@ class Plain(Algorithm):
         bs = [list() for _ in range(self._config.Model.m)]
         zs = list()
         qs = list()
+        totalPixels = 0
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
+            _, _, h, w = raw.shape
+            totalPixels += h * w
 
             latent = model._encoder(raw)
-
             # M * [n, c // M, h, w]
             splits = torch.chunk(latent, self._config.Model.m, 1)
             lHat = list()
@@ -181,6 +192,8 @@ class Plain(Algorithm):
                 bs[i].append(b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
+
+            # restored = restored[:, :, :h, :w]
 
             zs.append(latent.detach().cpu())
             qs.append(quantized.detach().cpu())
@@ -195,7 +208,6 @@ class Plain(Algorithm):
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
-        bs = [torch.cat(x, 0) for x in bs]
         zs = torch.cat(zs, 0)
         qs = torch.cat(qs, 0)
         ssimScore = ssims.mean().item()
@@ -205,7 +217,7 @@ class Plain(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
-        uniqueCodes, counts = torch.unique(bs[0], return_counts=True)
+        uniqueCodes, _ = torch.unique(bs[0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
@@ -216,21 +228,73 @@ class Plain(Algorithm):
 
         return ssimScore, psnrScore
 
-    def _compress(self, codes: List[torch.Tensor]):
+    # pylint: disable=protected-access
+    @torch.no_grad()
+    def _evalFull(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
+        self._model.eval()
+        model = self._model.module._compressor
+        ssims = list()
+        psnrs = list()
+        bs = [list() for _ in range(self._config.Model.m)]
+        totalPixels = 0
+        for k, raw in enumerate(dataLoader):
+            raw = raw.to(self._rank, non_blocking=True)
+            _, _, h, w = raw.shape
+            totalPixels += h * w
+
+            latent = model._encoder(raw)
+            # M * [n, c // M, h, w]
+            splits = torch.chunk(latent, self._config.Model.m, 1)
+            lHat = list()
+            for i in range(self._config.Model.m):
+                b = model._quantizer[i].encode(splits[i])
+                q = model._quantizer[i].decode(b)
+                lHat.append(q)
+                bs[i].append(b.int().detach().cpu())
+            quantized = torch.cat(lHat, 1)
+            restored = torch.tanh(model._decoder(quantized))
+
+            restored = restored[:, :, :h, :w]
+
+            raw = self._deTrans(raw)
+            restored = self._deTrans(restored)
+
+            ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
+
+            ssims.append(-10 * (1.0 - ssim).log10())
+            if k < 10:
+                self._saver.add_image(f"Test/{k}", restored[0], step)
+            psnrs.append(psnr(restored.detach(), raw.detach()))
+
+        ssims = torch.cat(ssims, 0)
+        psnrs = torch.cat(psnrs, 0)
+        ssimScore = ssims.mean().item()
+        psnrScore = psnrs.mean().item()
+        self._logger.info("Test: MS-SSIM: %2.2fdB", ssimScore)
+        self._logger.info("         PSNR: %2.2fdB", psnrScore)
+        self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
+        self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
+        self._model.train()
+        encoded, bpp = self._compress(bs, totalPixels)
+        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        return ssimScore, psnrScore
+
+    def _compress(self, codes: List[List[torch.Tensor]], totalPixels):
         compressed = list()
         cdfs = list()
         # b: Tensor of [N, 32, 32]
         for b in codes:
+            b = [x.flatten() for x in b]
             # list of 256 probs
-            prob = self._calculateFreq(b, self._config.Model.k)
+            prob = self._calculateFreq(torch.cat(b), self._config.Model.k)
             cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
             # M * [cdf]
             cdfs.append(cdf)
         encoder = ans.RansEncoder()
-        # codePerImage: M * [Tensor of [32 * 32]]
+        # codePerImage: M * [Tensor of [h * w]]
         for codePerImage in zip(*codes):
-            # [M, 32, 32]
-            codePerImage = torch.stack(codePerImage, 0)
+            # [M, h, w]
+            codePerImage = torch.cat(codePerImage, 0)
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
             binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
@@ -238,11 +302,10 @@ class Plain(Algorithm):
         # binary: 1 byte per word
         # N * [binaries]
         total = 8 * sum(len(binary) for binary in compressed)
-        totalPixel = len(codes[0]) * self._imgSize
-        bpp = float(total) / totalPixel
+        bpp = float(total) / totalPixels
         self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, len(codes[0]), bpp)
         return compressed, bpp
 
     def _calculateFreq(self, code: torch.Tensor, k):
-        count = torch.bincount(code.flatten(), minlength=k)
+        count = torch.bincount(code, minlength=k)
         return count / code.numel()

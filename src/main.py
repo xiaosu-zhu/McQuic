@@ -25,7 +25,7 @@ from mcqc.datasets import Basic
 from mcqc.algorithms import Plain, Gan, FineTune
 from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext, WholePQFineTune
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
-from mcqc.utils import getTrainingTransform, getEvalTransform
+from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 
 FLAGS = flags.FLAGS
 
@@ -136,10 +136,15 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
     valDataset = Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform())
+    testDataset = Basic(os.path.join("data", config.ValDataset), transform=getTestTransform())
 
     trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)
-    valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=worldSize * 4, pin_memory=True, drop_last=False)
-    method.run(trainLoader, trainSampler, valLoader if rank == 0 else None)
+    valLoader = None
+    testLoader = None
+    if rank == 0:
+        valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+        testLoader = DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    method.run(trainLoader, trainSampler, valLoader, testLoader)
 
 
 if __name__ == "__main__":

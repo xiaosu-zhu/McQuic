@@ -7,22 +7,24 @@ from torch.distributions import Categorical
 
 def getTrainingTransform():
     return T.Compose([
-        # T.Resize(602, interpolation=Image.LANCZOS),
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
         T.RandomCrop(512, pad_if_needed=True, padding_mode="reflect"),
         T.ToTensor(),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        # T.Lambda(lambda x : x + torch.randn_like(x)),
     ])
 
 def getEvalTransform():
     return T.Compose([
-        # T.Resize(602, interpolation=Image.LANCZOS),
         T.CenterCrop(512),
         T.ToTensor(),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        # T.Lambda(lambda x : x + torch.randn_like(x)),
+    ])
+
+def getTestTransform():
+    return T.Compose([
+        T.ToTensor(),
+        T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
     ])
 
 
