@@ -29,7 +29,7 @@ from mcqc import Config
 WARMUP_STEP = 25000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 0.99997 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 0.9999306876841536 ** (step - WARMUP_STEP))
 
 
 def _tuneReg(step):
@@ -39,7 +39,8 @@ def _tuneReg(step):
     elif step < 15000:
         return 2e-3
     else:
-        return 1e-3 * 0.9995000638225533 ** (step - WARMUP_STEP)
+        # scale to 1/5 every 5000 step
+        return 5e-3 * 0.999678164217763 ** (step - 15000)
 
 
 class Plain(Algorithm):
