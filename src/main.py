@@ -22,10 +22,12 @@ from cfmUtils.vision.utils import verifyTruncated
 from mcqc import Consts, Config
 from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic
+from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, Gan, FineTune
 from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext, WholePQFineTune
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
+from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
 
@@ -133,18 +135,19 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
     method = methods[config.Method](config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
-    trainDataset = Basic(os.path.join("data", config.Dataset), transform=getTrainingTransform())
+    trainDataset = Basic(os.path.join("data", config.Dataset), duplicate=100, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
-    valDataset = Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform())
-    testDataset = Basic(os.path.join("data", config.ValDataset), transform=getTestTransform())
 
     trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)
+    prefetcher = Prefetcher(trainLoader, rank, getTrainingTransform())
     valLoader = None
     testLoader = None
     if rank == 0:
+        valDataset = Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform())
+        testDataset = Basic(os.path.join("data", config.ValDataset), transform=getTestTransform())
         valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
         testLoader = DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-    method.run(trainLoader, trainSampler, valLoader, testLoader)
+    method.run(prefetcher, trainSampler, valLoader, testLoader)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 from typing import Callable, Any, Optional, Tuple, Callable, List, Dict, cast
 import os
 
+# import numpy as np
+# import pyvips
 import torch
 from torchvision.io import read_image
 from torchvision.datasets import VisionDataset
@@ -19,6 +21,23 @@ def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bo
         bool: True if the filename ends with one of given extensions
     """
     return filename.lower().endswith(extensions)
+
+# _FORMAT_MAP = {
+#     'uchar': np.uint8,
+#     'char': np.int8,
+#     'ushort': np.uint16,
+#     'short': np.int16,
+#     'uint': np.uint32,
+#     'int': np.int32,
+#     'float': np.float32,
+#     'double': np.float64,
+#     'complex': np.complex64,
+#     'dpcomplex': np.complex128,
+# }
+
+# def readImage(path: str):
+#     img = pyvips.Image.new_from_file(path, access='sequential')
+#     return torch.from_numpy(np.ndarray(buffer=img.write_to_memory(), dtype=_FORMAT_MAP[img.format], shape=[img.height, img.width, img.bands]))
 
 
 def make_dataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, is_valid_file: Optional[Callable[[str], bool]] = None,) -> List[str]:
@@ -43,19 +62,16 @@ def make_dataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, i
 
 
 class Basic(VisionDataset):
-    def __init__(self, root: str, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    def __init__(self, root: str, duplicate: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
         super().__init__(root, transform=transform)
-
         samples = make_dataset(self.root, IMG_EXTENSIONS if is_valid_file is None else None, is_valid_file)
         if len(samples) == 0:
             msg = "Found 0 files in subfolders of: {}\n".format(self.root)
             msg += "Supported extensions are: {}".format(",".join(IMG_EXTENSIONS))
             raise RuntimeError(msg)
-
         self.loader = default_loader
         self.extensions = IMG_EXTENSIONS
-
-        self.samples = samples
+        self.samples = samples * duplicate
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
@@ -66,10 +82,11 @@ class Basic(VisionDataset):
             tuple: (sample, target) where target is class_index of the target class.
         """
         path = self.samples[index]
+        # sample = readImage(path)
+        # sample = self.loader(path)
         sample = read_image(path, ImageReadMode.RGB)
         if self.transform is not None:
             sample = self.transform(sample)
-
         return sample
 
     def __len__(self) -> int:
