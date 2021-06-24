@@ -19,6 +19,7 @@ from cfmUtils.base import FrequecyHook
 import torchvision
 
 from mcqc.algorithms.algorithm import Algorithm
+from mcqc.datasets import prefetcher
 from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.losses.ssim import MsSSIM
 from mcqc.models.whole import WholePQ
@@ -66,7 +67,7 @@ class Plain(Algorithm):
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
-        self._ckpt = "ckpt/global.ckpt"
+        self._ckpt = "ckpt/woAttention.ckpt"
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
@@ -154,7 +155,6 @@ class Plain(Algorithm):
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                images = images.to(self._rank, non_blocking=True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
