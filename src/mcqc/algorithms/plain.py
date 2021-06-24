@@ -38,7 +38,7 @@ def _tuneReg(step):
     elif step < 15000:
         return 2e-3
     else:
-        return 2e-3 * 0.9999000638225533 ** (step - WARMUP_STEP)
+        return 1e-3 * 0.9995000638225533 ** (step - WARMUP_STEP)
 
 
 class Plain(Algorithm):
@@ -228,7 +228,6 @@ class Plain(Algorithm):
 
         return ssimScore, psnrScore
 
-    # pylint: disable=protected-access
     @torch.no_grad()
     def _evalFull(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
         self._model.eval()
@@ -250,6 +249,7 @@ class Plain(Algorithm):
                 b = model._quantizer[i].encode(splits[i])
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
+                bs[i].append(b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             restored = torch.tanh(model._decoder(quantized))
 
