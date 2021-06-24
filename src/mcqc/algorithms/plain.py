@@ -19,7 +19,6 @@ from cfmUtils.base import FrequecyHook
 import torchvision
 
 from mcqc.algorithms.algorithm import Algorithm
-from mcqc.datasets import prefetcher
 from mcqc.evaluation.helpers import evalSSIM, psnr
 from mcqc.losses.ssim import MsSSIM
 from mcqc.models.whole import WholePQ
@@ -29,7 +28,7 @@ from mcqc import Config
 WARMUP_STEP = 25000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 0.9999306876841536 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 1e-5 + (1 - 1e-5) * 0.99985 ** (step - WARMUP_STEP))
 
 
 def _tuneReg(step):
@@ -40,7 +39,7 @@ def _tuneReg(step):
         return 2e-3
     else:
         # scale to 1/5 every 5000 step
-        return 5e-3 * 0.999678164217763 ** (step - 15000)
+        return (1e-2 - 1e-4) * 0.9997 ** (step - 15000) + 1e-4
 
 
 class Plain(Algorithm):
