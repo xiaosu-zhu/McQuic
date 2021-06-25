@@ -137,8 +137,6 @@ class Plain(Algorithm):
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-        loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=initEpoch)
-        initEpoch = loaded["epoch"]
 
         if self._continue:
             loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch)
@@ -146,6 +144,9 @@ class Plain(Algorithm):
             initEpoch = loaded["epoch"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
+        else:
+            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=initEpoch)
+            initEpoch = loaded["epoch"]
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
