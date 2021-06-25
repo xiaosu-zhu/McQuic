@@ -28,7 +28,7 @@ from mcqc import Config
 WARMUP_STEP = 25000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 1e-5 + (1 - 1e-5) * 0.99985 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 1e-5 + (1 - 1e-5) * 0.9999 ** (step - WARMUP_STEP))
 
 
 def _tuneReg(step):
@@ -39,7 +39,7 @@ def _tuneReg(step):
         return 2e-3
     else:
         # scale to 1/5 every 5000 step
-        return (1e-2 - 1e-4) * 0.9997 ** (step - 15000) + 1e-4
+        return (1e-2 - 1e-8) * 0.9996 ** (step - 15000) + 1e-8
 
 
 class Plain(Algorithm):
@@ -67,7 +67,7 @@ class Plain(Algorithm):
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
-        self._ckpt = "ckpt/woAttention.ckpt"
+        self._ckpt = "ckpt/global.ckpt"
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
