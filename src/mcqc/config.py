@@ -25,15 +25,25 @@ class ModelSpec:
 class Config:
     lr: float = 5e-6
     coef: Coef = Coef()
-    model: ModelSpec = ModelSpec(type="Plain", k=[256])
-    batchSize: int = 32
+    model: ModelSpec = ModelSpec(type="Base", m=8, k=256)
+    batchSize: int = 4
     epoch: int = 10
     gpus: int = 1
-    vRam: int = 8000
+    vRam: int = -1
     wantsMore: bool = False
     dataset: str = "clic/train"
     valDataset: str = "clic/valid"
     method: str = "Plain"
+    evalStep: int = 1000
+    testStep: int = 10000
+
+    @property
+    def EvalStep(self) -> int:
+        return self.evalStep
+
+    @property
+    def TestStep(self) -> int:
+        return self.testStep
 
     @property
     def LearningRate(self) -> float:
