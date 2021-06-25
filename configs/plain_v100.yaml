@@ -13,7 +13,7 @@ coef:
     gen: 0.0
     dis: 0.0
 model:
-    type: Base
+    type: FineTune
     channel: 256
     k: 256
     m: 32
