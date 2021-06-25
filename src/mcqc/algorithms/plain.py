@@ -28,7 +28,7 @@ from mcqc import Config
 WARMUP_STEP = 25000
 def _transformerLR(step):
     step = step + 1
-    return min(step / WARMUP_STEP, 1e-5 + (1 - 1e-5) * 0.9999 ** (step - WARMUP_STEP))
+    return min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
 
 def _tuneReg(step):
@@ -74,7 +74,7 @@ class Plain(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, 1000: self._mediumHook, 10000: self._slowHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -106,7 +106,7 @@ class Plain(Algorithm):
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
         self._visualizeIntermediate(quantized, step)
-        if step % 10000 == 0:
+        if step % self._config.TestStep == 0:
             return
         ssim, _ = self._eval(evalLoader, step)
         if ssim > self._best:

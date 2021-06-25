@@ -1,0 +1,23 @@
+epoch: 10000000000
+gpus: 2
+vRam: -1
+wantsMore: false
+dataset: clic/train
+valDataset: clic/valid
+batchSize: 2
+lr: 5.e-5
+evalStep: 5000
+testStep: 50000
+coef:
+    ssim: 2.0
+    l1l2: 0.0
+    reg: 0.0
+    gen: 0.0
+    dis: 0.0
+model:
+    type: FineTune
+    channel: 256
+    k: 256
+    m: 32
+    numLayers: 1
+method: Plain
