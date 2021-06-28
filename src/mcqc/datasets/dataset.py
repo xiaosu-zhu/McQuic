@@ -3,11 +3,12 @@ import os
 
 # import numpy as np
 # import pyvips
+import lmdb
 import torch
 from torchvision.io import read_image
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
-from torchvision.io.image import ImageReadMode
+from torchvision.io.image import ImageReadMode, decode_image
 
 
 def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bool:
@@ -91,3 +92,35 @@ class Basic(VisionDataset):
 
     def __len__(self) -> int:
         return len(self.samples)
+
+
+class BasicLMDB(VisionDataset):
+    def __init__(self, root: str, maxTxns: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+        super().__init__(root, transform=transform)
+        self._env = lmdb.open(self.root, map_size=1024*1024*1024*8, subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=maxTxns, lock=False)
+        self._txn = self._env.begin(write=False, buffers=True)
+        self._length = int.from_bytes(self._txn.get("length"), byteorder='big')
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._txn.__exit__(exc_type, exc_val, exc_tb)
+        self._env.close()
+
+    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        sample = torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, "big"))))
+        sample = decode_image(sample, ImageReadMode.RGB)
+        if self.transform is not None:
+            sample = self.transform(sample)
+        return sample
+
+    def __len__(self) -> int:
+        return self._length

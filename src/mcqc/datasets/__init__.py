@@ -2,4 +2,4 @@
 
 Exports:
 """
-from .dataset import Basic
+from .dataset import Basic, BasicLMDB
