@@ -47,6 +47,27 @@ class ResidualDecoder(nn.Module):
         return self._net(x)
 
 
+class ResidualAttDecoder(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            ResidualBlockUpsample(channel, channel, 2),
+            ResidualBlock(channel, channel),
+            subPixelConv3x3(channel, 3, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
 # class ResidualGlobalDecoder(nn.Module):
 #     def __init__(self, channel):
 #         super().__init__()

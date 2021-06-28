@@ -18,7 +18,8 @@ class ModelSpec:
     k: int = 256
     m: int = 4
     channel: int = 512
-    numLayers: int = 3
+    withAtt: bool = True
+    withDropout: bool = True
 
 
 @dataclass
@@ -36,6 +37,11 @@ class Config:
     method: str = "Plain"
     evalStep: int = 1000
     testStep: int = 10000
+    warmStart: str = "ckpt/global.ckpt"
+
+    @property
+    def WarmStart(self) -> str:
+        return self.warmStart
 
     @property
     def EvalStep(self) -> int:

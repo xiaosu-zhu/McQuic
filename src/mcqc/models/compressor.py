@@ -10,9 +10,9 @@ from mcqc.layers.dropout import ChannelWiseDropout, PointwiseDropout
 from mcqc.models.encoderDecoder import EncoderDecoder, MLP
 
 from mcqc.models.maskingModel import MaskingModel
-from .encoder import ResidualEncoder, MultiScaleEncoder
+from .encoder import ResidualEncoder, MultiScaleEncoder, ResidualAttEncoder
 from .maskedLanguageModel import MaskedLangugeModel
-from .decoder import ResidualDecoder, MultiScaleDecoder
+from .decoder import ResidualDecoder, MultiScaleDecoder, ResidualAttDecoder
 from .stackedAutoRegressive import StackedAutoRegressive
 from .contextModel import ContextModel
 from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
@@ -20,14 +20,14 @@ from mcqc.losses.structural import CompressionLoss
 from mcqc.layers.blocks import L2Normalize
 
 
-class PQCompressorFineTune(nn.Module):
-    def __init__(self, m, k, channel, numLayers):
+class PQCompressor(nn.Module):
+    def __init__(self, m, k, channel, withAtt, withDropout):
         super().__init__()
         self._k = k
         self._m = m
-        self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, False, True) for _ in range(m))
-        self._decoder = ResidualDecoder(channel)
+        self._encoder = ResidualAttEncoder(channel) if withAtt else ResidualEncoder(channel)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, withDropout, False, True) for _ in range(m))
+        self._decoder = ResidualAttDecoder(channel) if withAtt else ResidualDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
@@ -39,36 +39,9 @@ class PQCompressorFineTune(nn.Module):
         for quantizer, split in zip(self._quantizer, splits):
             q, c, l, wv = quantizer(split, temp, True)
             qs.append(q)
-            codes.append(c)
+            codes.append(c.byte())
             logits.append(l)
         quantized = torch.cat(qs, 1)
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, (quantized, latent), codes, logits
-
-
-class PQCompressor(nn.Module):
-    def __init__(self, m, k, channel, numLayers):
-        super().__init__()
-        self._k = k
-        self._m = m
-        self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, False, True) for _ in range(m))
-        self._dropout = PointwiseDropout(0.1)
-        self._decoder = ResidualDecoder(channel)
-
-    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
-        latent = self._encoder(x)
-        # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, self._m, 1)
-        qs = list()
-        codes = list()
-        logits = list()
-        for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, wv = quantizer(split, temp, True)
-            qs.append(q)
-            codes.append(c)
-            logits.append(l)
-        quantized = self._dropout(torch.cat(qs, 1))
         restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), codes, logits
 

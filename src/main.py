@@ -24,7 +24,7 @@ from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, Gan, FineTune
-from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext, WholePQFineTune
+from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.vision import getTrainingPreprocess
@@ -106,7 +106,6 @@ models = {
     "Context": WholePQContext,
     "AutoRegressive": WholePQSAG,
     "Info": WholePQInfoMax,
-    "FineTune": WholePQFineTune
 }
 
 methods = {
@@ -126,7 +125,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.numLayers)
+    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.withAtt, config.Model.withDropout)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     def optimWrapper(lr, params, weight_decay):
