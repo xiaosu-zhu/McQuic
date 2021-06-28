@@ -129,6 +129,7 @@ class Plain(Algorithm):
         self._saver.add_images("Train/Feature", img, step)
 
         code = code[0][:, None, ...]
+        code = F.interpolate(code, scale_factor=4, mode="nearest")
         self._saver.add_images("Train/Code", code, step)
 
     # pylint: disable=too-many-locals,arguments-differ
