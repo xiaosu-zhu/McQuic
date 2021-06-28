@@ -37,9 +37,11 @@ def _tuneReg(step):
         return 2e-4
     elif step < 15000:
         return 2e-3
+    elif step < 17000:
+        return 2e-2
     else:
         # scale to 1/5 every 5000 step
-        return (1e-2 - 1e-8) * 0.9996 ** (step - 15000) + 1e-8
+        return 2e-2 * 0.999 ** (step - 16000)
 
 
 class Plain(Algorithm):
