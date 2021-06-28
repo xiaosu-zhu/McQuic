@@ -1,3 +1,4 @@
+import json
 from posix import listdir
 import lmdb
 import os
@@ -62,6 +63,14 @@ def main(targetDir):
         txn.put(b"imageNetLength", j.to_bytes(32, "big"))
         txn.put(b"clicLength", (i - j).to_bytes(32, "big"))
     env.close()
+
+    # Create metadata needed for dataset
+    with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
+        json.dump({
+            "length": i,
+            "imageNetLength": j,
+            "clicLength": i - j
+        }, fp)
 
 
 if __name__ == "__main__":
