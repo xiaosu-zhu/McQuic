@@ -69,7 +69,7 @@ class Plain(Algorithm):
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
-        self._ckpt = "ckpt/woAttention.ckpt"
+        self._ckpt = "ckpt/global.ckpt"
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
