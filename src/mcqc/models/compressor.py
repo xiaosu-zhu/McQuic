@@ -74,6 +74,8 @@ class PQContextCompressor(nn.Module):
             codes.append(c)
             logits.append(l)
         quantized = torch.cat(qs, 1)
+        # [n, m, h, w]
+        codes = torch.stack(codes, 1)
         restored = torch.tanh(self._decoder(quantized))
         return restored, codes, logits, predicts, targets
 

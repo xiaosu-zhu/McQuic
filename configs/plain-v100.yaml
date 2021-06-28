@@ -1,13 +1,13 @@
 epoch: 10000000000
-evalStep: 1000
-testStep: 10000
+evalStep: 5000
+testStep: 50000
 gpus: 4
 vRam: -1
 wantsMore: false
 dataset: compression1
 valDataset: clic/valid
 batchSize: 8
-lr: 1.e-5
+lr: 2.e-5
 coef:
     ssim: 2.0
     l1l2: 0.0
