@@ -377,7 +377,7 @@ class AttentiveQuantizer(nn.Module):
             sample = F.gumbel_softmax(logit, temperature, True)
             result = sample @ v
 
-        return result, sample, logit, v
+        return result, sample.argmax(-1).byte(), logit, v
 
     # def _randomErase(self, x: torch.Tensor):
     #     n, c, h, w = x.shape

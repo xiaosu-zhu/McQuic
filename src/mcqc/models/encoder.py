@@ -48,6 +48,26 @@ class ResidualEncoder(nn.Module):
         return self._net(x)
 
 
+class ResidualAttEncoder(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self._net = nn.Sequential(
+            ResidualBlockWithStride(3, channel, stride=2),
+            ResidualBlock(channel, channel),
+            ResidualBlockWithStride(channel, channel, stride=2),
+            AttentionBlock(channel),
+            ResidualBlock(channel, channel),
+            ResidualBlockWithStride(channel, channel, stride=2),
+            ResidualBlock(channel, channel),
+            conv3x3(channel, channel, stride=2),
+            AttentionBlock(channel),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
 # class ResidualGlobalEncoder(nn.Module):
 #     def __init__(self, channel):
 #         super().__init__()

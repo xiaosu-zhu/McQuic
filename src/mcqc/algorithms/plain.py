@@ -69,7 +69,7 @@ class Plain(Algorithm):
 
         # self._optimizerD = optimizer(1e-5, self._model.module._discriminator.parameters(), 0)
         # self._schedulerD = scheduler(self._optimizerD)
-        self._ckpt = "ckpt/global.ckpt"
+        self._ckpt = config.WarmStart
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
@@ -103,11 +103,11 @@ class Plain(Algorithm):
 
     @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, evalLoader, step, epoch, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["temperature"]
+        images, restored, evalLoader, step, epoch, quantized, codes, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["codes"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        self._visualizeIntermediate(quantized, step)
+        self._visualizeIntermediate(quantized, codes, step)
         if step % self._config.TestStep == 0:
             return
         ssim, _ = self._eval(evalLoader, step)
@@ -121,12 +121,15 @@ class Plain(Algorithm):
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
-    def _visualizeIntermediate(self, latent, step):
+    def _visualizeIntermediate(self, latent, code, step):
         img = latent[0][:, None, ...]
         fMin, fMax = img.min(), img.max()
         img = (img - fMin) / (fMax - fMin)
         img = F.interpolate(img, scale_factor=4, mode="nearest")
-        self._saver.add_images(f"Train/Feature", img, step)
+        self._saver.add_images("Train/Feature", img, step)
+
+        code = code[0][:, None, ...]
+        self._saver.add_images("Train/Code", code, step)
 
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
@@ -146,7 +149,7 @@ class Plain(Algorithm):
             initEpoch = loaded["epoch"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
-        else:
+        elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
             loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=initEpoch)
             initEpoch = loaded["epoch"]
         if self._rank == 0:
@@ -167,7 +170,7 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
 
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
