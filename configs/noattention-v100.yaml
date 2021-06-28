@@ -1,12 +1,12 @@
 epoch: 10000000000
-evalStep: 1000
-testStep: 10000
+evalStep: 5000
+testStep: 50000
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: compression1
+dataset: compression
 valDataset: clic/valid
-batchSize: 8
+batchSize: 10
 lr: 5.e-5
 coef:
     ssim: 2.0
@@ -19,7 +19,6 @@ model:
     channel: 256
     k: 256
     m: 32
-    withAtt: true
+    withAtt: false
     withDropout: false
-warmStart: ckpt/global.ckpt
 method: Plain

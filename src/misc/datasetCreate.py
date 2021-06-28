@@ -1,10 +1,10 @@
 import json
-from posix import listdir
-import lmdb
 import os
-import tqdm
 import shutil
 
+import tqdm
+import lmdb
+from PIL import Image
 
 def write(txn, i: bytes, path: str):
     # fileName = os.path.basename(path)
@@ -24,52 +24,46 @@ def findAllWithSize(dirPath, ext):
             files.append((f, os.path.getsize(f)))
     return files
 
-
 def sortBiggest(files, k):
     return sorted(files, key=lambda x: x[1], reverse=True)[:k]
 
+def getMethodA(root, amount):
+    files = findAllWithSize(root, _EXT)
+    newFile = list()
+    for f in tqdm.tqdm(files):
+        a = Image.open(f[0])
+        h, w = a.size
+        if h < 512 or w < 512:
+            continue
+        newFile.append(f)
+    # files = sortBiggest(files, amount)
+    return [x[0] for x in newFile]
 
-def getImageNet(imageNetRoot):
-    valSet = os.path.join(imageNetRoot, "val")
-    files = findAllWithSize(valSet, _EXT)
-    files = sortBiggest(files, 8000)
-    return [x[0] for x in files]
-
-def getCLIC(clicRoot):
-    return [x[0] for x in findAllWithSize(os.path.join(clicRoot, "train"), _EXT)]
-
+def getMethodB(root):
+    return [x[0] for x in findAllWithSize(root, _EXT)]
 
 def main(targetDir):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
     env = lmdb.Environment(targetDir, subdir=True, map_size=1073741824 * 20)
-    imgFiles = getImageNet("data/ImageNet")
-    clicFiles = getCLIC("data/clic")
-    print("Find %d largest files in ImageNet" % len(imgFiles))
-    print("Find %d train files in CLIC" % len(clicFiles))
+    listA = ["data/ImageNet/test", "data/coco/train2014"]
+    amountA = [1250, 1250]
+    listB = ["data/clic/train", "data/DIV2K/train", "data/manga109", "data/urban100"]
+    allFiles = list()
+    for path, amount in zip(listA, amountA):
+        allFiles.extend(getMethodA(path, amount))
+    for path in listB:
+        allFiles.extend(getMethodB(path))
     os.makedirs(targetDir, exist_ok=True)
     with env.begin(write=True) as txn:
-        i = 0
-        for f in tqdm.tqdm(imgFiles):
-
+        for i, f in enumerate(tqdm.tqdm(allFiles)):
             write(txn, i.to_bytes(32, "big"), f)
-            i += 1
-        j = i
-        for f in tqdm.tqdm(clicFiles):
-            write(txn, i.to_bytes(32, "big"), f)
-            i += 1
-
-        txn.put(b"length", i.to_bytes(32, "big"))
-        txn.put(b"imageNetLength", j.to_bytes(32, "big"))
-        txn.put(b"clicLength", (i - j).to_bytes(32, "big"))
     env.close()
 
     # Create metadata needed for dataset
     with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
         json.dump({
             "length": i,
-            "imageNetLength": j,
-            "clicLength": i - j
         }, fp)
 
 
