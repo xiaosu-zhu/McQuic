@@ -4,7 +4,7 @@ testStep: 50000
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: clic/train
+dataset: compression
 valDataset: clic/valid
 batchSize: 10
 lr: 5.e-5

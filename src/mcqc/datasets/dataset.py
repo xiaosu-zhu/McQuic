@@ -1,5 +1,6 @@
 from typing import Callable, Any, Optional, Tuple, Callable, List, Dict, cast
 import os
+import json
 
 # import numpy as np
 # import pyvips
@@ -97,16 +98,28 @@ class Basic(VisionDataset):
 class BasicLMDB(VisionDataset):
     def __init__(self, root: str, maxTxns: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
         super().__init__(root, transform=transform)
-        self._env = lmdb.open(self.root, map_size=1024*1024*1024*8, subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=maxTxns, lock=False)
-        self._txn = self._env.begin(write=False, buffers=True)
-        self._length = int.from_bytes(self._txn.get("length"), byteorder='big')
+        self._maxTxns = maxTxns
+        # env and txn is delay-loaded in ddp. They can't pickle
+        self._env = None
+        self._txn = None
+        # Length is needed for DistributedSampler, but we can't use env to get it, env can't pickle.
+        # So we decide to read from metadata placed in the same folder --- see src/misc/datasetCreate.py
+        with open(os.path.join(root, "metadata.json"), "r") as fp:
+            metadata = json.load(fp)
+        self._length = metadata["length"]
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._txn.__exit__(exc_type, exc_val, exc_tb)
-        self._env.close()
+        if self._txn is not None:
+            self._txn.__exit__(exc_type, exc_val, exc_tb)
+        if self._env is not None:
+            self._env.close()
+
+    def _initEnv(self):
+        self._env = lmdb.open(self.root, map_size=1024*1024*1024*8, subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=self._maxTxns, lock=False)
+        self._txn = self._env.begin(write=False, buffers=True)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         """
@@ -116,8 +129,14 @@ class BasicLMDB(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-        sample = torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, "big"))))
-        sample = decode_image(sample, ImageReadMode.RGB)
+        if self._env is None:
+            self._initEnv()
+        sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, "big")))))
+        sample = decode_image(sample, ImageReadMode.UNCHANGED)
+        if sample.shape[0] == 1:
+            sample = sample.repeat((3, 1, 1))
+        elif sample.shape[0] == 4:
+            sample = sample[:3]
         if self.transform is not None:
             sample = self.transform(sample)
         return sample
