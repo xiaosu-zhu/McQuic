@@ -135,7 +135,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
     method = methods[config.Method](config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
 
-    trainDataset = Basic(os.path.join("data", config.Dataset), duplicate=100, transform=getTrainingPreprocess())
+    trainDataset = Basic(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
 
     trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)

@@ -6,7 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from cfmUtils.base import parallelFunction, Module
 import storch
-from mcqc.layers.dropout import ChannelWiseDropout
+from mcqc.layers.dropout import ChannelWiseDropout, PointwiseDropout
 from mcqc.models.encoderDecoder import EncoderDecoder, MLP
 
 from mcqc.models.maskingModel import MaskingModel
@@ -52,8 +52,8 @@ class PQCompressor(nn.Module):
         self._k = k
         self._m = m
         self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, True, False, True) for _ in range(m))
-        self._dropout = ChannelWiseDropout(0.05)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, False, True) for _ in range(m))
+        self._dropout = PointwiseDropout(0.1)
         self._decoder = ResidualDecoder(channel)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
