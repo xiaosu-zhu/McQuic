@@ -35,12 +35,12 @@ class ResidualEncoder(nn.Module):
             ResidualBlockWithStride(3, channel, stride=2),
             ResidualBlock(channel, channel),
             ResidualBlockWithStride(channel, channel, stride=2),
-            # AttentionBlock(channel),
+            AttentionBlock(channel),
             ResidualBlock(channel, channel),
             ResidualBlockWithStride(channel, channel, stride=2),
             ResidualBlock(channel, channel),
             conv3x3(channel, channel, stride=2),
-            # AttentionBlock(channel),
+            AttentionBlock(channel),
         )
 
     def forward(self, x: torch.Tensor):
