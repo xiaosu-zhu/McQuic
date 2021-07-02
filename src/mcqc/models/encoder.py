@@ -6,7 +6,7 @@ from torch import nn
 
 from mcqc.layers.convs import conv3x3, conv5x5
 from mcqc.layers.gdn import GenDivNorm
-from mcqc.layers.blocks import ResidualBlock, ResidualBlockWithStride, AttentionBlock, DownSample, L2Normalize, GlobalAttentionBlock
+from mcqc.layers.blocks import ResidualBlock, ResidualBlockDownSample, ResidualBlockWithStride, AttentionBlock, DownSample, L2Normalize, GlobalAttentionBlock
 from mcqc.layers.positional import NPositionalEncoding2D, PositionalEncoding2D
 
 
@@ -29,19 +29,28 @@ class Encoder(nn.Module):
 
 
 class ResidualEncoder(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, alias=False):
         super().__init__()
-        self._net = nn.Sequential(
-            ResidualBlockWithStride(3, channel, stride=2),
-            ResidualBlock(channel, channel),
-            ResidualBlockWithStride(channel, channel, stride=2),
-            AttentionBlock(channel),
-            ResidualBlock(channel, channel),
-            ResidualBlockWithStride(channel, channel, stride=2),
-            ResidualBlock(channel, channel),
-            conv3x3(channel, channel, stride=2),
-            AttentionBlock(channel),
-        )
+        if alias:
+            self._net = nn.Sequential(
+                ResidualBlockDownSample(3, channel, stride=2),
+                ResidualBlock(channel, channel),
+                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlock(channel, channel),
+                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlock(channel, channel),
+                conv3x3(channel, channel, stride=2),
+            )
+        else:
+            self._net = nn.Sequential(
+                ResidualBlockWithStride(3, channel, stride=2),
+                ResidualBlock(channel, channel),
+                ResidualBlockWithStride(channel, channel, stride=2),
+                ResidualBlock(channel, channel),
+                ResidualBlockWithStride(channel, channel, stride=2),
+                ResidualBlock(channel, channel),
+                conv3x3(channel, channel, stride=2),
+            )
 
     def forward(self, x: torch.Tensor):
         # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
@@ -49,19 +58,32 @@ class ResidualEncoder(nn.Module):
 
 
 class ResidualAttEncoder(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, alias=False):
         super().__init__()
-        self._net = nn.Sequential(
-            ResidualBlockWithStride(3, channel, stride=2),
-            ResidualBlock(channel, channel),
-            ResidualBlockWithStride(channel, channel, stride=2),
-            AttentionBlock(channel),
-            ResidualBlock(channel, channel),
-            ResidualBlockWithStride(channel, channel, stride=2),
-            ResidualBlock(channel, channel),
-            conv3x3(channel, channel, stride=2),
-            AttentionBlock(channel),
-        )
+        if alias:
+            self._net = nn.Sequential(
+                ResidualBlockDownSample(3, channel, stride=2),
+                ResidualBlock(channel, channel),
+                ResidualBlockDownSample(channel, channel, stride=2),
+                AttentionBlock(channel),
+                ResidualBlock(channel, channel),
+                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlock(channel, channel),
+                conv3x3(channel, channel, stride=2),
+                AttentionBlock(channel),
+            )
+        else:
+            self._net = nn.Sequential(
+                ResidualBlockWithStride(3, channel, stride=2),
+                ResidualBlock(channel, channel),
+                ResidualBlockWithStride(channel, channel, stride=2),
+                AttentionBlock(channel),
+                ResidualBlock(channel, channel),
+                ResidualBlockWithStride(channel, channel, stride=2),
+                ResidualBlock(channel, channel),
+                conv3x3(channel, channel, stride=2),
+                AttentionBlock(channel),
+            )
 
     def forward(self, x: torch.Tensor):
         # [N, channel, H // 16, W // 16] <- [N, 3, H, W]

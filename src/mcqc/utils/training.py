@@ -1,21 +1,26 @@
-from cfmUtils.saver import Saver
-import torch
+from typing import Any
 import math
 
-def SearchNewBatchSize(baseBatchSize: int, totalAmount: int):
-    for i in range(baseBatchSize, 0, -1):
-        if totalAmount % i == 0:
-            return i
-    raise RuntimeError("Can't find appropriate batch size, use a larger batch and retry")
+import torch
+from torch import nn
+from cfmUtils.saver import Saver
 
 
-def SetNewLr(newBatchSize: int, oldBatchSize: int, *optimizers: torch.optim.Optimizer):
-    # Follow the sqrt() lr adjusting strategy
-    scale = math.sqrt(newBatchSize / oldBatchSize)
-    for optim in optimizers:
-        for g in optim.param_groups:
-            g["lr"] = g["lr"] * scale
+class MovingMean:
+    def __init__(self, momentum=0.9):
+        super().__init__()
+        self._slots = dict()
+        self._alpha = 1 - momentum
 
+    def step(self, key, value: torch.Tensor):
+        if key in self._slots:
+            mean = self._slots[key]
+            mean -= self._alpha * (mean - value.item())
+            self._slots[key] = mean
+        else:
+            mean = value.item()
+            self._slots[key] = mean
+        return mean
 
-class Environment:
-    saver: Saver = None
+    def __getitem__(self, key: Any) -> float:
+        return self._slots[key]

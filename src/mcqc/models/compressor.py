@@ -21,11 +21,11 @@ from mcqc.layers.blocks import L2Normalize
 
 
 class PQCompressor(nn.Module):
-    def __init__(self, m, k, channel, withAtt, withDropout):
+    def __init__(self, m, k, channel, withAtt, withDropout, alias):
         super().__init__()
         self._k = k
         self._m = m
-        self._encoder = ResidualAttEncoder(channel) if withAtt else ResidualEncoder(channel)
+        self._encoder = ResidualAttEncoder(channel, alias) if withAtt else ResidualEncoder(channel, alias)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, withDropout, False, True) for _ in range(m))
         self._decoder = ResidualAttDecoder(channel) if withAtt else ResidualDecoder(channel)
 

@@ -1,5 +1,6 @@
 from typing import List, Union
 from dataclasses import dataclass
+import typing
 
 
 @dataclass
@@ -20,13 +21,27 @@ class ModelSpec:
     channel: int = 512
     withAtt: bool = True
     withDropout: bool = True
+    alias: bool = True
+
+
+@dataclass
+class OptimSpec:
+    type: str
+    params: dict
+
+
+@dataclass
+class SchdrSpec:
+    type: str
+    params: dict
 
 
 @dataclass
 class Config:
-    lr: float = 5e-6
     coef: Coef = Coef()
     model: ModelSpec = ModelSpec(type="Base", m=8, k=256)
+    optim: OptimSpec = OptimSpec(type="Adam", params={})
+    schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
     batchSize: int = 4
     epoch: int = 10
     gpus: int = 1
@@ -40,6 +55,14 @@ class Config:
     warmStart: str = "ckpt/global.ckpt"
 
     @property
+    def Optim(self) -> OptimSpec:
+        return self.optim
+
+    @property
+    def Schdr(self) -> SchdrSpec:
+        return self.schdr
+
+    @property
     def WarmStart(self) -> str:
         return self.warmStart
 
@@ -50,10 +73,6 @@ class Config:
     @property
     def TestStep(self) -> int:
         return self.testStep
-
-    @property
-    def LearningRate(self) -> float:
-        return self.lr
 
     @property
     def Model(self) -> ModelSpec:

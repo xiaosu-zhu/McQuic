@@ -8,7 +8,7 @@ from mcqc import Consts
 from mcqc.layers.positional import NPositionalEncoding2D
 
 from .gdn import GenDivNorm
-from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3
+from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3, superPixelConv3x3
 
 
 class L2Normalize(nn.Module):
@@ -59,6 +59,33 @@ class ResidualBlockWithStride(nn.Module):
         if self.skip is not None:
             identity = self.skip(x)
 
+        out += identity
+        return out
+
+
+class ResidualBlockDownSample(nn.Module):
+    """Residual block with a stride on the first convolution.
+    Args:
+        in_ch (int): number of input channels
+        out_ch (int): number of output channels
+        stride (int): stride value (default: 2)
+    """
+
+    def __init__(self, in_ch, out_ch, downsample=2):
+        super().__init__()
+        self.down1 = superPixelConv3x3(in_ch, out_ch, downsample)
+        self.leaky_relu = nn.LeakyReLU(inplace=True)
+        self.conv = conv3x3(out_ch, out_ch)
+        self.gdn = GenDivNorm(out_ch, beta_min=Consts.Eps)
+        self.down2 = superPixelConv3x3(in_ch, out_ch, downsample)
+
+    def forward(self, x):
+        identity = x
+        out = self.down1(x)
+        out = self.leaky_relu(out)
+        out = self.conv(out)
+        out = self.gdn(out)
+        identity = self.down2(x)
         out += identity
         return out
 

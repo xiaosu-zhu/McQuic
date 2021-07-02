@@ -15,9 +15,9 @@ from mcqc.utils.vision import Masking
 
 
 class WholePQ(nn.Module):
-    def __init__(self, m, k, channel, withAtt, withDropout):
+    def __init__(self, m, k, channel, withAtt, withDropout, alias):
         super().__init__()
-        self._compressor = PQCompressor(m, k, channel, withAtt, withDropout)
+        self._compressor = PQCompressor(m, k, channel, withAtt, withDropout, alias)
         self._cLoss = CompressionLoss()
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 

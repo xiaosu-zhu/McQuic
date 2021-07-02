@@ -59,7 +59,8 @@ def main(_):
 
 def _changeConfig(config: Config, worldSize: int):
     batchSize = config.BatchSize * worldSize
-    config.lr *= math.sqrt(batchSize)
+    if "lr" in config.Optim.params:
+        config.Optim.params["lr"] *= math.sqrt(batchSize)
 
 def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_ADDR"] = "localhost"
@@ -105,7 +106,7 @@ models = {
     "Base": WholePQ,
     "Context": WholePQContext,
     "AutoRegressive": WholePQSAG,
-    "Info": WholePQInfoMax,
+    "Info": WholePQInfoMax
 }
 
 methods = {
@@ -113,6 +114,18 @@ methods = {
     "MiniMax": Gan,
     "AutoRegressive": Context,
     "FineTune": FineTune
+}
+
+optims = {
+    "Adam": torch.optim.Adam,
+    "SGD": torch.optim.SGD
+}
+
+schdrs = {
+    "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
+    "Exponential": torch.optim.lr_scheduler.ExponentialLR,
+    "MultiStep": torch.optim.lr_scheduler.MultiStepLR,
+    "Cyclic": torch.optim.lr_scheduler.CyclicLR
 }
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
@@ -125,14 +138,14 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.withAtt, config.Model.withDropout)
+    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.withAtt, config.Model.withDropout, config.Model.alias)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    def optimWrapper(lr, params, weight_decay):
-        return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
-    def schdrWrapper(optim):
-        return torch.optim.lr_scheduler.ExponentialLR(optim, 0.5)
-    method = methods[config.Method](config, model, optimWrapper, schdrWrapper, saver, savePath, continueTrain, logger)
+    # def optimWrapper(lr, params, weight_decay):
+    #     return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
+    # def schdrWrapper(optim):
+    #     return torch.optim.lr_scheduler.ExponentialLR(optim, 0.99)
+    method = methods[config.Method](config, model, optims[config.optim.type], schdrs[config.schdr.type], saver, savePath, continueTrain, logger)
 
     trainDataset = BasicLMDB(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
