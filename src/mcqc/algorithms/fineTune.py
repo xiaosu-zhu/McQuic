@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Iterator, List, Tuple
+from typing import Callable, Iterator, List, Tuple, Type
 from logging import Logger
 import math
 
@@ -33,6 +33,9 @@ def _transformerLR(step):
 
 
 def _tuneReg(step):
+    return 0.0
+    step = step + 1
+    return 1e-5 * (0.9999 ** step)
     return 1e-4
     step = step + 1
     if step < 10000:
@@ -45,7 +48,7 @@ def _tuneReg(step):
 
 
 class FineTune(Algorithm):
-    def __init__(self, config: Config, model: WholePQ, optimizer: Callable[[float, Iterator[nn.Parameter], float], torch.optim.Optimizer], scheduler: Callable[[torch.optim.Optimizer], torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
@@ -55,15 +58,15 @@ class FineTune(Algorithm):
             raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
 
+        # self._movingMean = MovingMean()
+
         self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
 
         if self._rank == 0:
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
-        # self._optimizer = torch.optim.AdamW(optimizer_grouped_parameters, eps=Consts.Eps, amsgrad=True)
-        self._optimizer = optimizer(config.LearningRate, self._model.parameters(), 1e-5)
-        # self._scheduler = scheduler(self._optimizer)
-        self._scheduler = torch.optim.lr_scheduler.LambdaLR(self._optimizer, _transformerLR)
+        self._optimizer = optimizer(self._model.parameters(), **config.optim.params)
+        self._scheduler = scheduler(self._optimizer, **config.schdr.params)
 
         dist.barrier(device_ids=[self._rank])
 
@@ -103,11 +106,11 @@ class FineTune(Algorithm):
 
     @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, evalLoader, step, epoch, quantized, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["temperature"]
+        images, restored, evalLoader, step, epoch, quantized, codes, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["codes"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        self._visualizeIntermediate(quantized, step)
+        self._visualizeIntermediate(quantized, codes, step)
         if step % self._config.TestStep == 0:
             return
         ssim, _ = self._eval(evalLoader, step)
@@ -121,12 +124,16 @@ class FineTune(Algorithm):
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
-    def _visualizeIntermediate(self, latent, step):
+    def _visualizeIntermediate(self, latent, code, step):
         img = latent[0][:, None, ...]
         fMin, fMax = img.min(), img.max()
         img = (img - fMin) / (fMax - fMin)
         img = F.interpolate(img, scale_factor=4, mode="nearest")
         self._saver.add_images(f"Train/Feature", img, step)
+
+        code = code[0][:, None, ...]
+        code = F.interpolate(code, scale_factor=4, mode="nearest")
+        self._saver.add_images("Train/Code", code, step)
 
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
@@ -137,7 +144,7 @@ class FineTune(Algorithm):
 
         temperature = 1.0
         finalTemp = 0.01
-        annealRate = 0.99996
+        annealRate = 0.9995
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
@@ -154,6 +161,7 @@ class FineTune(Algorithm):
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
+        self._config.Coef.reg = self._scheduler.get_last_lr()[0]
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
@@ -164,13 +172,16 @@ class FineTune(Algorithm):
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
-                self._scheduler.step()
-                self._config.Coef.reg = _tuneReg(step)
-                temperature = max(finalTemp, temperature * annealRate)
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized)
+                        # ssimLoss = self._movingMean.step("ssim", ssimLoss)
+                        # l1l2Loss = self._movingMean.step("l1l2", l1l2Loss)
+                        # reg = self._movingMean.step("reg", reg)
+                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
+            temperature = max(finalTemp, temperature * annealRate)
+            self._scheduler.step()
+            self._config.Coef.reg = self._scheduler.get_last_lr()[0]
 
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:

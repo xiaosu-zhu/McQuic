@@ -1,5 +1,6 @@
 import json
 import os
+from random import shuffle
 import shutil
 
 import tqdm
@@ -27,7 +28,7 @@ def findAllWithSize(dirPath, ext):
 def sortBiggest(files, k):
     return sorted(files, key=lambda x: x[1], reverse=True)[:k]
 
-def getMethodA(root, amount):
+def getMethodA(root):
     files = findAllWithSize(root, _EXT)
     newFile = list()
     for f in tqdm.tqdm(files):
@@ -37,6 +38,7 @@ def getMethodA(root, amount):
             continue
         newFile.append(f)
     # files = sortBiggest(files, amount)
+    print(len(newFile))
     return [x[0] for x in newFile]
 
 def getMethodB(root):
@@ -46,15 +48,15 @@ def main(targetDir):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
     env = lmdb.Environment(targetDir, subdir=True, map_size=1073741824 * 20)
-    listA = ["data/ImageNet/test", "data/coco/train2014"]
-    amountA = [1250, 1250]
-    listB = ["data/clic/train", "data/DIV2K/train", "data/manga109", "data/urban100"]
+    listA = [] # ["data/ImageNet/test", "data/ImageNet/val", "data/coco/train2014", "data/nus"]
+    listB = ["data/clic/train", "data/DIV2K/train", "data/urban100", "data/manga109"]
     allFiles = list()
-    for path, amount in zip(listA, amountA):
-        allFiles.extend(getMethodA(path, amount))
+    for path in listA:
+        allFiles.extend(getMethodA(path))
     for path in listB:
         allFiles.extend(getMethodB(path))
     os.makedirs(targetDir, exist_ok=True)
+    shuffle(allFiles)
     with env.begin(write=True) as txn:
         for i, f in enumerate(tqdm.tqdm(allFiles)):
             write(txn, i.to_bytes(32, "big"), f)

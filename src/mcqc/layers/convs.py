@@ -47,6 +47,12 @@ def subPixelConv3x3(in_ch, out_ch, r=1):
         nn.Conv2d(in_ch, out_ch * r ** 2, kernel_size=3, padding=1, padding_mode="reflect"), nn.PixelShuffle(r)
     )
 
+def superPixelConv3x3(in_ch, out_ch, r=1):
+    """3x3 super-pixel convolution for down-sampling."""
+    return nn.Sequential(
+        nn.Conv2d(in_ch, out_ch // (r ** 2), kernel_size=3, padding=1, padding_mode="reflect"), nn.PixelUnshuffle(r)
+    )
+
 def conv1x1(in_ch, out_ch, stride=1, bias=True):
     """1x1 convolution."""
     return nn.Conv2d(in_ch, out_ch, bias=bias, kernel_size=1, stride=stride, padding_mode="reflect")

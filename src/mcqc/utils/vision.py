@@ -1,15 +1,65 @@
 import torch
 from torch import nn
-from torch.utils.tensorboard.summary import image
+from torchvision.transforms import functional as F
 from torchvision import transforms as T
-from PIL import Image
 from torch.distributions import Categorical
-from torchvision.transforms.transforms import ToTensor
+
+
+# https://github.com/pratogab/batch-transforms
+class RandomHorizontalFlip(nn.Module):
+    """Applies the :class:`~torchvision.transforms.RandomHorizontalFlip` transform to a batch of images.
+    Args:
+        p (float): probability of an image being flipped.
+    """
+
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, tensor):
+        """
+        Args:
+            tensor (Tensor): Tensor of size (N, C, H, W) to be flipped.
+        Returns:
+            Tensor: Randomly flipped Tensor.
+        """
+        flipped = torch.rand(tensor.shape[0]) < self.p
+        tensor[flipped] = F.hflip(tensor[flipped])
+        return tensor
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
+
+class RandomVerticalFlip(nn.Module):
+    """Applies the :class:`~torchvision.transforms.RandomVerticalFlip` transform to a batch of images.
+    Args:
+        p (float): probability of an image being flipped.
+    """
+
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, tensor):
+        """
+        Args:
+            tensor (Tensor): Tensor of size (N, C, H, W) to be flipped.
+        Returns:
+            Tensor: Randomly flipped Tensor.
+        """
+        flipped = torch.rand(tensor.shape[0]) < self.p
+        tensor[flipped] = F.vflip(tensor[flipped])
+        return tensor
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
 
 def getTrainingTransform():
     return T.Compose([
-        T.RandomHorizontalFlip(),
-        T.RandomVerticalFlip(),
+        RandomHorizontalFlip(),
+        RandomVerticalFlip(),
         # T.ToTensor(),
         T.ConvertImageDtype(torch.float32),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
