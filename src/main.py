@@ -27,6 +27,7 @@ from mcqc.algorithms import Plain, Gan, FineTune
 from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext
 from mcqc.models.discriminator import Discriminator, FullDiscriminator
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
+from mcqc.utils.training import CyclicLR
 from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
@@ -64,7 +65,7 @@ def _changeConfig(config: Config, worldSize: int):
 
 def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29811"
+    os.environ["MASTER_PORT"] = "12345"
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
     torch.manual_seed(rank)
@@ -125,7 +126,8 @@ schdrs = {
     "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
     "Exponential": torch.optim.lr_scheduler.ExponentialLR,
     "MultiStep": torch.optim.lr_scheduler.MultiStepLR,
-    "Cyclic": torch.optim.lr_scheduler.CyclicLR
+    "Cyclic": CyclicLR,
+    "OneCycle": torch.optim.lr_scheduler.OneCycleLR
 }
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):

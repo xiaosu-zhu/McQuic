@@ -33,11 +33,11 @@ class ResidualEncoder(nn.Module):
         super().__init__()
         if alias:
             self._net = nn.Sequential(
-                ResidualBlockDownSample(3, channel, stride=2),
+                ResidualBlockDownSample(3, channel, 2),
                 ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlockDownSample(channel, channel, 2),
                 ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlockDownSample(channel, channel, 2),
                 ResidualBlock(channel, channel),
                 conv3x3(channel, channel, stride=2),
             )
@@ -62,12 +62,12 @@ class ResidualAttEncoder(nn.Module):
         super().__init__()
         if alias:
             self._net = nn.Sequential(
-                ResidualBlockDownSample(3, channel, stride=2),
+                ResidualBlockDownSample(3, channel),
                 ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlockDownSample(channel, channel),
                 AttentionBlock(channel),
                 ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel, stride=2),
+                ResidualBlockDownSample(channel, channel),
                 ResidualBlock(channel, channel),
                 conv3x3(channel, channel, stride=2),
                 AttentionBlock(channel),

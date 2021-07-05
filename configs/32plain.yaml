@@ -4,7 +4,7 @@ testStep: 50000
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: compression1
+dataset: compression
 valDataset: clic/valid
 batchSize: 8
 coef:
@@ -17,10 +17,10 @@ model:
     type: Base
     channel: 256
     k: 256
-    m: 32
+    m: 4
     withAtt: true
     withDropout: true
-    alias: true
+    alias: false
 optim:
     type: Adam
     params: {}

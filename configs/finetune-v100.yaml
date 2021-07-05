@@ -5,7 +5,7 @@ gpus: 4
 vRam: -1
 wantsMore: false
 dataset: compression1
-valDataset: clic/test
+valDataset: clic/valid
 batchSize: 8
 coef:
     ssim: 1.0
@@ -28,7 +28,7 @@ optim:
 schdr:
     type: MultiStep
     params:
-        milestones: [50, 100, 200]
+        milestones: [500, 1000, 2000]
         gamma: 0.25
 warmStart: ckpt/global.ckpt
 method: FineTune
