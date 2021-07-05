@@ -1,4 +1,5 @@
 # User-defined paths
+ckpt/
 *.ckpt
 *.npy
 log/

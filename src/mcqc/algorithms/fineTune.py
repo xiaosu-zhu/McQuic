@@ -79,7 +79,7 @@ class FineTune(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook})
+            self._loggingHook = FrequecyHook({500: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -181,7 +181,7 @@ class FineTune(Algorithm):
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
             self._scheduler.step()
-            self._config.Coef.reg = self._scheduler.get_last_lr()[0]
+            self._config.Coef.reg = self._scheduler.get_last_lr()[0] / 100
 
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:

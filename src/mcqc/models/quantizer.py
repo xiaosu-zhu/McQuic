@@ -299,7 +299,6 @@ class TransformerQuantizer(nn.Module):
         return quantizeds, codes, logits, (xs, transformedCodewords)
 
 
-
 class AttentiveQuantizer(nn.Module):
     def __init__(self, k: int, cin: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True):
         super().__init__()
@@ -314,10 +313,9 @@ class AttentiveQuantizer(nn.Module):
         self._additionWeight = additionWeight
         self._deterministic = deterministic
         if dropout:
-            self._dropout = PointwiseDropout(0.05)
+            self._dropout = PointwiseDropout(0.1)
         else:
             self._dropout = None
-        self._randomMask = torch.distributions.Bernoulli(probs=0.95)
 
     def encode(self, latent):
         # [n, h, w, c]
@@ -405,3 +403,118 @@ class AttentiveQuantizer(nn.Module):
             quantized = self._dropout(quantized)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
         return quantized, sample.argmax(-1).byte(), logit, wv
+
+
+class Quantizer(nn.Module):
+    def __init__(self, rank: int, m: int, k: int, d: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True):
+        super().__init__()
+        self._m = m
+        d = d // m
+        self._streams = [torch.cuda.Stream(rank, -1) for _ in range(m)]
+        self._defaultStream = torch.cuda.default_stream(rank)
+        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, k, d)))
+
+        if additionWeight:
+            self._wq = nn.ModuleList(nn.Linear(d, d, bias=False) for _ in range(m))
+            self._wk = nn.ModuleList(nn.Linear(d, d, bias=False) for _ in range(m))
+            self._wv = nn.ModuleList(nn.Linear(d, d, bias=False) for _ in range(m))
+        self._scale = math.sqrt(d)
+        self._additionWeight = additionWeight
+        self._deterministic = deterministic
+        if dropout:
+            self._dropout = PointwiseDropout(0.1)
+        else:
+            self._dropout = None
+
+    def encode(self, latent):
+        latents = torch.chunk(latent, self._m, 1)
+        logits = list()
+        for i, (strm, q, wq, wk) in enumerate(zip(self._streams, latents, self._wq, self._wk)):
+            with torch.cuda.stream(strm):
+                q.record_stream(self._defaultStream)
+                # [n, h, w, c]
+                q = q.permute(0, 2, 3, 1)
+                # [k, c]
+                k = self._codebook[i]
+                if self._additionWeight:
+                    # [n, h, w, c]
+                    q = wq(q)
+                    # [k, c]
+                    k = wk(k)
+                logit = (q @ k.permute(1, 0)).argmax(-1)
+                # logit = torch.einsum("nchw,kc->nkhw", q, k).argmax(1)
+                logits.append(logit)
+        for l, strm in zip(logits, self._streams):
+           l.record_stream(strm)
+        return logits
+
+    def _softStraightThrough(self, logit, value):
+        raise NotImplementedError()
+        # k, c = value.shape
+        # soft = logit.softmax(1)
+        # sample = logit.argmax(1)
+        # sample = F.one_hot(sample, k).float()
+        # soft = soft @ value
+        # hard = sample @ value
+        # return (hard - soft).detach() + soft, sample
+
+    def decode(self, codes):
+        quantizeds = list()
+        for i, (strm, code, wv) in enumerate(zip(self._streams, codes, self._wv)):
+            with torch.cuda.stream(strm):
+                v = self._codebook[i]
+                if self._additionWeight:
+                    v = wv(v)
+                code = F.one_hot(code, v.shape[0]).float()
+                quantized = (code @ v).permute(0, 3, 1, 2)
+                # [k, c] indexed by [n, h, w] -> [n, h, w, c] -> [n, c, h, w]
+                # quantized = v[code].permute(0, 3, 1, 2)
+                quantizeds.append(quantized)
+        for q, strm in zip(quantizeds, self._streams):
+            q.record_stream(strm)
+        return torch.cat(quantizeds, 1)
+
+    def _gumbelAttention(self, q, k, v, wq, wk, wv, mask, temperature=1.0):
+        q = q.permute(0, 2, 3, 1)
+        if self._additionWeight:
+            # [n, h, w, c]
+            q = wq(q)
+            # [k, c]
+            k = wk(k)
+            v = wv(v)
+        # [n, h, w, k]
+        logit = (q @ k.permute(1, 0)) / self._scale
+        # logit = torch.einsum("nchw,kc->nkhw", q, k) / self._scale
+        # 将 mask 加入到缩放的张量上。
+        if mask is not None:
+            logit = logit.masked_fill(mask, -1e9)
+        if self._deterministic:
+            result, sample = self._softStraightThrough(logit, v)
+        else:
+            # [n, h, w, k]
+            sample = F.gumbel_softmax(logit, temperature, True)
+            result = (sample @ v).permute(0, 3, 1, 2)
+            # result = torch.einsum("nkhw,kc->nchw", sample, v)
+        return result, sample, logit
+
+    def forward(self, latent, temperature, *_):
+        splits = torch.chunk(latent, self._m, 1)
+        for strm in self._streams:
+            strm.wait_stream(self._defaultStream)
+        quantized = list()
+        codes = list()
+        logits = list()
+        for i, (strm, wq, wk, wv, split) in enumerate(zip(self._streams, self._wq, self._wk, self._wv, splits)):
+            with torch.cuda.stream(strm):
+                codebook = self._codebook[i]
+                q, b, logit = self._gumbelAttention(split, codebook, codebook, wq, wk, wv, None, temperature)
+                quantized.append(q)
+                codes.append(b.argmax(-1).byte())
+                logits.append(logit)
+        for strm, q in zip(self._streams, quantized):
+            q.record_stream(strm)
+        quantized = torch.cat(quantized, 1)
+        if self._dropout is not None:
+            quantized = self._dropout(quantized)
+        # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
+        return quantized, codes, logits

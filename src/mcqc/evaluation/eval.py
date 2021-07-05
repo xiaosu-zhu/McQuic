@@ -14,8 +14,6 @@ from cfmUtils.runtime import Timer
 from mcqc import Consts
 from cfmUtils.datasets import Zip
 
-from .helpers import _EVALSSIM, psnr
-
 
 class Eval:
     def __init__(self, savePath: str, dataset: Dataset, model, device: str = "cuda", logger: Logger = None):

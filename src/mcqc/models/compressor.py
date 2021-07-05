@@ -15,9 +15,25 @@ from .maskedLanguageModel import MaskedLangugeModel
 from .decoder import ResidualDecoder, MultiScaleDecoder, ResidualAttDecoder
 from .stackedAutoRegressive import StackedAutoRegressive
 from .contextModel import ContextModel
-from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer
+from .quantizer import TransformerQuantizer, TransformerQuantizerStorch, AttentiveQuantizer, Quantizer
 from mcqc.losses.structural import CompressionLoss
 from mcqc.layers.blocks import L2Normalize
+
+
+# class PQCompressor(nn.Module):
+#     def __init__(self, m, k, channel, withAtt, withDropout, alias):
+#         super().__init__()
+#         self._k = k
+#         self._m = m
+#         self._encoder = ResidualAttEncoder(channel, alias) if withAtt else ResidualEncoder(channel, alias)
+#         self._quantizer = Quantizer(dist.get_rank(), m, k, channel, withDropout, False, True)
+#         self._decoder = ResidualAttDecoder(channel) if withAtt else ResidualDecoder(channel)
+
+#     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+#         latent = self._encoder(x)
+#         quantized, codes, logits = self._quantizer(latent, temp, True)
+#         restored = torch.tanh(self._decoder(quantized))
+#         return restored, (quantized, latent), codes, logits
 
 
 class PQCompressor(nn.Module):

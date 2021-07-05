@@ -3,11 +3,6 @@ import numpy as np
 from scipy import signal
 from scipy.ndimage.filters import convolve
 
-from mcqc.losses.ssim import MsSSIM
-
-_EVALSSIM = MsSSIM(size_average=False)
-
-
 def _FSpecialGauss(size, sigma):
     """Function to mimic the 'fspecial' gaussian MATLAB function."""
     radius = size // 2
@@ -20,7 +15,6 @@ def _FSpecialGauss(size, sigma):
     assert len(x) == size
     g = np.exp(-((x**2 + y**2)/(2.0 * sigma**2)))
     return g / g.sum()
-
 
 def _SSIMForMultiScale(img1, img2, max_val=255, filter_size=11,
                        filter_sigma=1.5, k1=0.01, k2=0.03):
@@ -93,7 +87,7 @@ def _SSIMForMultiScale(img1, img2, max_val=255, filter_size=11,
     cs = np.mean(v1 / v2)
     return ssim, cs
 
-""" TODO: May not correct """
+""" Deprecated. Use mcqc.losses.ssim instead """
 def _ms_ssim(img1: np.ndarray, img2: np.ndarray, max_val=255, filter_size=11, filter_sigma=1.5,
                    k1=0.01, k2=0.03, weights=None):
     """Return the MS-SSIM score between `img1` and `img2`.

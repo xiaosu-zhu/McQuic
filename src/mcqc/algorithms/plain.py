@@ -85,7 +85,7 @@ class Plain(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({100: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook})
+            self._loggingHook = FrequecyHook({500: self._fastHook, self._config.EvalStep: self._mediumHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -149,14 +149,17 @@ class Plain(Algorithm):
         images = None
 
         temperature = 1.0
+        finalTemp = 0.01
+        annealRate = 0.9995
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
+            temperature = loaded["temperature"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
@@ -175,12 +178,13 @@ class Plain(Algorithm):
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
-                self._config.Coef.reg = _tuneReg(step)
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
             self._scheduler.step()
+            self._config.Coef.reg = max(0, self._scheduler.get_last_lr()[0] * 100 * temperature - 4e-4)
+            temperature = max(finalTemp, temperature * annealRate)
 
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
@@ -207,6 +211,10 @@ class Plain(Algorithm):
                 lHat.append(q)
                 bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
+            # b = model._quantizer.encode(latent)
+            # quantized = model._quantizer.decode(b)
+            # for i, bb in enumerate(bs):
+            #     bb.extend(x[None, ...] for x in b[i].int().detach().cpu())
             restored = torch.tanh(model._decoder(quantized))
 
             # restored = restored[:, :, :h, :w]

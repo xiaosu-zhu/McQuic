@@ -41,6 +41,7 @@ class CompressionLoss(nn.Module):
         l2Loss = F.mse_loss(restored, images)
         l1Loss = F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
+        # ssimLoss = F.binary_cross_entropy(ssimLoss.clamp(0, 1), torch.zeros_like(ssimLoss))
         regs = list()
 
         for logit in logits:
