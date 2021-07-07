@@ -27,18 +27,18 @@ class Decoder(nn.Module):
 
 
 class ResidualDecoder(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, groups):
         super().__init__()
         self._net = nn.Sequential(
-            AttentionBlock(channel),
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            AttentionBlock(channel),
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
             subPixelConv3x3(channel, 3, 2),
         )
 
@@ -48,18 +48,18 @@ class ResidualDecoder(nn.Module):
 
 
 class ResidualAttDecoder(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, groups):
         super().__init__()
         self._net = nn.Sequential(
-            AttentionBlock(channel),
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            AttentionBlock(channel),
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
-            ResidualBlock(channel, channel),
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
             subPixelConv3x3(channel, 3, 2),
         )
 

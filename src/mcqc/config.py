@@ -18,7 +18,8 @@ class ModelSpec:
     type: str
     k: int = 256
     m: int = 4
-    channel: int = 512
+    withGroup: bool = True
+    channel: int = 256
     withAtt: bool = True
     withDropout: bool = True
     alias: bool = True

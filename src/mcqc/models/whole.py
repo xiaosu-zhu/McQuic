@@ -1,23 +1,16 @@
 from logging import info
-import torch
 from torch import nn
-import torch.nn.functional as F
-from torch.distributions import Categorical
-import storch
 
 from mcqc.losses.structural import CompressionLoss, QError
 from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss, InfoMaxLoss
 from mcqc.models.compressor import MultiScaleVQCompressor, PQCompressor, PQSAGCompressor, PQContextCompressor
-from mcqc.models.critic import SimpleCritic
-from mcqc.models.discriminator import FullDiscriminator, LatentsDiscriminator
 from mcqc.models.infoMax import InfoMax
-from mcqc.utils.vision import Masking
 
 
 class WholePQ(nn.Module):
-    def __init__(self, m, k, channel, withAtt, withDropout, alias):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
         super().__init__()
-        self._compressor = PQCompressor(m, k, channel, withAtt, withDropout, alias)
+        self._compressor = PQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias)
         self._cLoss = CompressionLoss()
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 

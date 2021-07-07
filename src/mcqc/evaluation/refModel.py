@@ -1,4 +1,5 @@
-from typing import OrderedDict
+from typing import OrderedDict, Tuple
+import math
 
 import torch
 from torch import nn
@@ -26,7 +27,7 @@ class QuantizerEncoder(nn.Module):
         # [m, k, d], [m, d, d] -> [m, k, d]
         k = torch.einsum("mkd,mde->mke", self._codebook, self._wk)
         # [n, h, w, m]
-        code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1)
+        code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1).byte()
         return code
 
     @torch.jit.unused
@@ -49,7 +50,7 @@ class QuantizerEncoder(nn.Module):
 
 
 class QuantizerDecoder(nn.Module):
-    def __init__(self, m: int, k: int, d: int, additionWeight: bool = True):
+    def __init__(self, m: int, k: int, d: int):
         super().__init__()
         self._m = m
         d = d // m
@@ -60,7 +61,7 @@ class QuantizerDecoder(nn.Module):
         n, h, w, m = codes.shape
         k = self._codebook.shape[1]
         # [n, h, w, m, k]
-        oneHot = F.one_hot(codes, k).float()
+        oneHot = F.one_hot(codes.long(), k).float()
         # [m, k, d], [m, d, d] -> [m, k, d]
         k = torch.einsum("mkd,mde->mke", self._codebook, self._wv)
         # [n, c, h, w]
@@ -82,6 +83,7 @@ class QuantizerDecoder(nn.Module):
         return self.decode(codes)
 
 
+
 class RefEncoder(nn.Module):
     def __init__(self, m, k, channel):
         super().__init__()
@@ -100,15 +102,16 @@ class RefEncoder(nn.Module):
     def keys(self):
         return "_encoder", "_quantizer"
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> Tuple[torch.ByteTensor, torch.IntTensor]:
         x = (x - 0.5) / 0.5
-        n, c, h, w = x.shape
-        if c == 1:
-            x = x.expand(1, 3, 1, 1)
-        hPad = max(0, 32 - h)
-        wPad = max(0, 32 - w)
-        x = F.pad(x, (0, wPad, 0, hPad))
-        return self._quantizer(self._encoder(x)), h, w
+        # shape = x.shape
+        # n, c, h, w = shape
+        # if c == 1:
+        #     x = x.expand(1, 3, 1, 1)
+        # hPad = max(0, 32 - h)
+        # wPad = max(0, 32 - w)
+        # x = F.pad(x, (0, wPad, 0, hPad))
+        return self._quantizer(self._encoder(x)) # , torch.tensor([h, w], dtype=torch.int)
 
 
 class RefDecoder(nn.Module):
@@ -129,5 +132,6 @@ class RefDecoder(nn.Module):
     def keys(self):
         return "_decoder", "_quantizer"
 
-    def forward(self, codes, h, w):
-        return ((self._decoder(self._quantizer(codes))[:, :, :h, :w]).tanh() + 1) / 2
+    def forward(self, codes: torch.ByteTensor, shape: torch.IntTensor) -> torch.Tensor:
+        # h, w = shape[0], shape[1]
+        return ((self._decoder(self._quantizer(codes))).tanh() + 1) / 2

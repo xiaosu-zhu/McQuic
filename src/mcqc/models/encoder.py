@@ -29,27 +29,27 @@ class Encoder(nn.Module):
 
 
 class ResidualEncoder(nn.Module):
-    def __init__(self, channel, alias=False):
+    def __init__(self, channel, groups, alias=False):
         super().__init__()
         if alias:
             self._net = nn.Sequential(
                 ResidualBlockDownSample(3, channel, 2),
-                ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel, 2),
-                ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel, 2),
-                ResidualBlock(channel, channel),
-                conv3x3(channel, channel, stride=2),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockDownSample(channel, channel, 2, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockDownSample(channel, channel, 2, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                conv3x3(channel, channel, stride=2, groups=groups),
             )
         else:
             self._net = nn.Sequential(
                 ResidualBlockWithStride(3, channel, stride=2),
-                ResidualBlock(channel, channel),
-                ResidualBlockWithStride(channel, channel, stride=2),
-                ResidualBlock(channel, channel),
-                ResidualBlockWithStride(channel, channel, stride=2),
-                ResidualBlock(channel, channel),
-                conv3x3(channel, channel, stride=2),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockWithStride(channel, channel, stride=2, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockWithStride(channel, channel, stride=2, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                conv3x3(channel, channel, stride=2, groups=groups),
             )
 
     def forward(self, x: torch.Tensor):
@@ -58,31 +58,31 @@ class ResidualEncoder(nn.Module):
 
 
 class ResidualAttEncoder(nn.Module):
-    def __init__(self, channel, alias=False):
+    def __init__(self, channel, groups, alias=False):
         super().__init__()
         if alias:
             self._net = nn.Sequential(
                 ResidualBlockDownSample(3, channel),
-                ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel),
-                AttentionBlock(channel),
-                ResidualBlock(channel, channel),
-                ResidualBlockDownSample(channel, channel),
-                ResidualBlock(channel, channel),
-                conv3x3(channel, channel, stride=2),
-                AttentionBlock(channel),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockDownSample(channel, channel, groups=groups),
+                AttentionBlock(channel, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockDownSample(channel, channel, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                conv3x3(channel, channel, stride=2, groups=groups),
+                AttentionBlock(channel, groups=groups),
             )
         else:
             self._net = nn.Sequential(
                 ResidualBlockWithStride(3, channel, stride=2),
-                ResidualBlock(channel, channel),
-                ResidualBlockWithStride(channel, channel, stride=2),
-                AttentionBlock(channel),
-                ResidualBlock(channel, channel),
-                ResidualBlockWithStride(channel, channel, stride=2),
-                ResidualBlock(channel, channel),
-                conv3x3(channel, channel, stride=2),
-                AttentionBlock(channel),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockWithStride(channel, channel, stride=2, groups=groups),
+                AttentionBlock(channel, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                ResidualBlockWithStride(channel, channel, stride=2, groups=groups),
+                ResidualBlock(channel, channel, groups=groups),
+                conv3x3(channel, channel, stride=2, groups=groups),
+                AttentionBlock(channel, groups=groups),
             )
 
     def forward(self, x: torch.Tensor):

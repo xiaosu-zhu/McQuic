@@ -140,7 +140,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     else:
         saver = None
         logger = None
-    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.withAtt, config.Model.withDropout, config.Model.alias)
+    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.withGroup, config.Model.withAtt, config.Model.withDropout, config.Model.alias)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     # def optimWrapper(lr, params, weight_decay):
@@ -152,7 +152,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     trainDataset = BasicLMDB(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
 
-    trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False)
+    trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False, persistent_workers=True)
     prefetcher = Prefetcher(trainLoader, rank, getTrainingTransform())
     valLoader = None
     testLoader = None

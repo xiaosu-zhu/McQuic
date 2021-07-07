@@ -1,3 +1,4 @@
+import math
 import os
 from typing import Callable, Iterator, List, Tuple, Type
 from logging import Logger
@@ -137,7 +138,9 @@ class Plain(Algorithm):
         img = F.interpolate(img, scale_factor=4, mode="nearest")
         self._saver.add_images("Train/Feature", img, step)
 
-        code = code[0][:, None, ...]
+        n, m, h, w = code.shape
+
+        code = code.reshape(n * m, 1, h, w)[:32]
         code = F.interpolate(code, scale_factor=4, mode="nearest")
         self._saver.add_images("Train/Code", code, step)
 
@@ -150,7 +153,7 @@ class Plain(Algorithm):
 
         temperature = 1.0
         finalTemp = 0.01
-        annealRate = 0.9995
+        annealRate = 0.9999
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
@@ -171,6 +174,8 @@ class Plain(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
+            self._config.Coef.reg = max(0, self._scheduler.get_last_lr()[0] * 25 * temperature - 1e-5)
+            # self._config.Coef.reg = 1e-2 * (0.5 ** abs((i - 1000) / 200.0))
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
@@ -183,7 +188,6 @@ class Plain(Algorithm):
                     with torch.no_grad():
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
             self._scheduler.step()
-            self._config.Coef.reg = max(0, self._scheduler.get_last_lr()[0] * 100 * temperature - 4e-4)
             temperature = max(finalTemp, temperature * annealRate)
 
     @torch.no_grad()
