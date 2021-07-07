@@ -13,15 +13,15 @@ from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3, superPixelConv3x3
 
 class L2Normalize(nn.Module):
     def forward(self, x: torch.Tensor, dim: Union[int, Tuple[int]] = -1):
-        norm = (x ** 2).sum(axis=dim, keepdim=True).sqrt()
+        norm = (x ** 2).sum(dim, keepdim=True).sqrt()
         return x / norm
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, groups=1):
         super().__init__()
         self._net = nn.Sequential(
-            conv5x5(in_ch, out_ch, bias=False),
+            conv5x5(in_ch, out_ch, bias=False, groups=groups),
             nn.GroupNorm(32, out_ch),
             nn.LeakyReLU(inplace=True)
             )
@@ -38,14 +38,14 @@ class ResidualBlockWithStride(nn.Module):
         stride (int): stride value (default: 2)
     """
 
-    def __init__(self, in_ch, out_ch, stride=2):
+    def __init__(self, in_ch, out_ch, stride=2, groups=1):
         super().__init__()
-        self.conv1 = conv3x3(in_ch, out_ch, stride=stride)
+        self.conv1 = conv3x3(in_ch, out_ch, stride=stride, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(out_ch, out_ch)
+        self.conv2 = conv3x3(out_ch, out_ch, groups=groups)
         self.gdn = GenDivNorm(out_ch, beta_min=Consts.Eps)
         if stride != 1 or in_ch != out_ch:
-            self.skip = conv1x1(in_ch, out_ch, stride=stride)
+            self.skip = conv1x1(in_ch, out_ch, stride=stride, groups=groups)
         else:
             self.skip = None
 
@@ -71,13 +71,13 @@ class ResidualBlockDownSample(nn.Module):
         stride (int): stride value (default: 2)
     """
 
-    def __init__(self, in_ch, out_ch, downsample=2):
+    def __init__(self, in_ch, out_ch, downsample=2, groups=1):
         super().__init__()
-        self.down1 = superPixelConv3x3(in_ch, out_ch, downsample)
+        self.down1 = superPixelConv3x3(in_ch, out_ch, downsample, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv = conv3x3(out_ch, out_ch)
+        self.conv = conv3x3(out_ch, out_ch, groups=groups)
         self.gdn = GenDivNorm(out_ch, beta_min=Consts.Eps)
-        self.down2 = superPixelConv3x3(in_ch, out_ch, downsample)
+        self.down2 = superPixelConv3x3(in_ch, out_ch, downsample, groups=groups)
 
     def forward(self, x):
         identity = x
@@ -98,13 +98,13 @@ class ResidualBlockUpsample(nn.Module):
         upsample (int): upsampling factor (default: 2)
     """
 
-    def __init__(self, in_ch, out_ch, upsample=2):
+    def __init__(self, in_ch, out_ch, upsample=2, groups=1):
         super().__init__()
-        self.subpel_conv = subPixelConv3x3(in_ch, out_ch, upsample)
+        self.subpel_conv = subPixelConv3x3(in_ch, out_ch, upsample, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv = conv3x3(out_ch, out_ch)
+        self.conv = conv3x3(out_ch, out_ch, groups=groups)
         self.igdn = GenDivNorm(out_ch, inverse=True, beta_min=Consts.Eps)
-        self.upsample = subPixelConv3x3(in_ch, out_ch, upsample)
+        self.upsample = subPixelConv3x3(in_ch, out_ch, upsample, groups=groups)
 
     def forward(self, x):
         identity = x
@@ -124,13 +124,13 @@ class ResidualBlock(nn.Module):
         out_ch (int): number of output channels
     """
 
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, groups=1):
         super().__init__()
-        self.conv1 = conv3x3(in_ch, out_ch)
+        self.conv1 = conv3x3(in_ch, out_ch, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(out_ch, out_ch)
+        self.conv2 = conv3x3(out_ch, out_ch, groups=groups)
         if in_ch != out_ch:
-            self.skip = conv1x1(in_ch, out_ch)
+            self.skip = conv1x1(in_ch, out_ch, groups=groups)
         else:
             self.skip = None
 
@@ -149,7 +149,7 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class AttentionBlock(nn.Module):
+class GroupAttentionBlock(nn.Module):
     """Self attention block.
     Simplified variant from `"Learned Image Compression with
     Discretized Gaussian Mixture Likelihoods and Attention Modules"
@@ -159,7 +159,7 @@ class AttentionBlock(nn.Module):
         N (int): Number of channels)
     """
 
-    def __init__(self, N):
+    def __init__(self, N, groups=1):
         super().__init__()
 
         class ResidualUnit(nn.Module):
@@ -168,11 +168,11 @@ class AttentionBlock(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.conv = nn.Sequential(
-                    conv1x1(N, N // 2),
+                    conv3x3(N, N, groups=groups),
                     nn.ReLU(inplace=True),
-                    conv3x3(N // 2, N // 2),
+                    conv3x3(N, N, groups=groups),
                     nn.ReLU(inplace=True),
-                    conv1x1(N // 2, N),
+                    conv1x1(N, N, groups=groups),
                 )
                 self.relu = nn.ReLU(inplace=True)
 
@@ -189,7 +189,61 @@ class AttentionBlock(nn.Module):
             ResidualUnit(),
             ResidualUnit(),
             ResidualUnit(),
-            conv1x1(N, N),
+            conv1x1(N, groups, groups=groups),
+        )
+
+    def forward(self, x):
+        identity = x
+        a = self.conv_a(x)
+        b = self.conv_b(x)
+        mask = torch.sigmoid(b)
+        out = a * mask
+        out += identity
+        return out
+
+
+
+class AttentionBlock(nn.Module):
+    """Self attention block.
+    Simplified variant from `"Learned Image Compression with
+    Discretized Gaussian Mixture Likelihoods and Attention Modules"
+    <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
+    Takeuchi, Jiro Katto.
+    Args:
+        N (int): Number of channels)
+    """
+
+    def __init__(self, N, groups=1):
+        super().__init__()
+
+        class ResidualUnit(nn.Module):
+            """Simple residual unit."""
+
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Sequential(
+                    conv1x1(N, N // 2, groups=groups),
+                    nn.ReLU(inplace=True),
+                    conv3x3(N // 2, N // 2, groups=groups),
+                    nn.ReLU(inplace=True),
+                    conv1x1(N // 2, N, groups=groups),
+                )
+                self.relu = nn.ReLU(inplace=True)
+
+            def forward(self, x):
+                identity = x
+                out = self.conv(x)
+                out += identity
+                out = self.relu(out)
+                return out
+
+        self.conv_a = nn.Sequential(ResidualUnit(), ResidualUnit(), ResidualUnit())
+
+        self.conv_b = nn.Sequential(
+            ResidualUnit(),
+            ResidualUnit(),
+            ResidualUnit(),
+            conv1x1(N, N, groups=groups),
         )
 
     def forward(self, x):
@@ -203,13 +257,13 @@ class AttentionBlock(nn.Module):
 
 
 class NonLocalBlock(nn.Module):
-    def __init__(self, N):
+    def __init__(self, N, groups=1):
         super().__init__()
         self._c = N // 2
-        self._q = conv1x1(N, N // 2)
-        self._k = conv1x1(N, N // 2)
-        self._v = conv1x1(N, N // 2)
-        self._z = conv1x1(N // 2, N)
+        self._q = conv1x1(N, N // 2, groups=groups)
+        self._k = conv1x1(N, N // 2, groups=groups)
+        self._v = conv1x1(N, N // 2, groups=groups)
+        self._z = conv1x1(N // 2, N, groups=groups)
         # self._position = NPositionalEncoding2D(N, 120, 120)
 
     def forward(self, x: torch.Tensor):
@@ -241,11 +295,11 @@ class GlobalAttentionBlock(nn.Module):
         stride (int): stride value (default: 2)
     """
 
-    def __init__(self, N):
+    def __init__(self, N, groups=1):
         super().__init__()
-        self._attention = NonLocalBlock(N)
+        self._attention = NonLocalBlock(N, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(N, N)
+        self.conv2 = conv3x3(N, N, groups=groups)
         self.gdn = GenDivNorm(N, beta_min=Consts.Eps)
 
     def forward(self, x):
@@ -260,11 +314,11 @@ class GlobalAttentionBlock(nn.Module):
 
 
 class DownSample(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, groups=1):
         super().__init__()
         self._net = nn.Sequential(
-            ResidualBlockWithStride(channel, channel, stride=2),
-            ResidualBlock(channel, channel)
+            ResidualBlockWithStride(channel, channel, stride=2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups)
         )
 
     def forward(self, x):
@@ -272,11 +326,11 @@ class DownSample(nn.Module):
 
 
 class UpSample(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, groups=1):
         super().__init__()
         self._net = nn.Sequential(
-            ResidualBlock(channel, channel),
-            ResidualBlockUpsample(channel, channel, 2),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
         )
 
     def forward(self, x):

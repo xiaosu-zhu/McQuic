@@ -1,61 +1,28 @@
-from logging import Logger
-from typing import Tuple
-import os
+from collections import ChainMap
+from typing import List
 
 import torch
-from torch import nn
-from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms.functional import center_crop
-from tqdm import tqdm
-import numpy as np
-from cfmUtils.saver import Saver
-from cfmUtils.runtime import Timer
+from torch.utils.data import Dataset
+from mcqc.config import ModelSpec
+from mcqc.evaluation.refModel import RefDecoder, RefEncoder
 
-from mcqc import Consts
-from cfmUtils.datasets import Zip
+from mcqc.evaluation.tests import Performance, Speed, Test
+from mcqc import Config
+from mcqc.datasets import Basic
 
 
 class Eval:
-    def __init__(self, savePath: str, dataset: Dataset, model, device: str = "cuda", logger: Logger = None):
-        self._device = device
-        self._model = model.to(device)
-        Saver.load(savePath, logger, model=self._model)
-        self._savePath = savePath
-        self._model.eval()
+    def __init__(self, encoderPath: str, decoderPath: str, config: Config, device: int, dataset: Dataset):
+        self._encoder = torch.jit.load(encoderPath)
+        self._decoder = torch.jit.load(decoderPath)
         self._dataset = dataset
-        torch.autograd.set_grad_enabled(False)
-        self._logger = logger or Consts.Logger
 
-    def _encode(self):
-        dataLoader = DataLoader(self._dataset, batch_size=1, shuffle=False, num_workers=4)
-        B = list()
-        ticker = Timer()
-        for x in tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}"):
-            x = x.to(self._device, non_blocking=True)
-            latents = self._model._encoder(x)
-            codes = self._model._quantizer.encode(latents)
-            B.append(codes.detach().cpu())
-        interval, _ = ticker.tick()
-        self._logger.info("Encode %d samples for %.2f seconds, %.2e s/sample, %.2e samples/s", len(self._dataset), interval, interval / len(self._dataset), len(self._dataset) / interval)
-        B = torch.cat(B, 0).numpy()
-        return B
+        self._tests: List[Test] = [Speed(config=config, encoder=self._encoder, decoder=self._decoder, device=device)] # [Performance(dataset, config=config, encoder=self._encoder, decoder=self._decoder, device=device), Speed(config=config, encoder=self._encoder, decoder=self._decoder, device=device)]
 
-    def _decode(self, b: torch.Tensor, size):
-        quantized = self._model._quantizer.quantize(b)
-        restored = self._model._decoder(quantized)
-        return center_crop(restored, size)
+    def __call__(self):
+        results = dict(ChainMap(*[x.test() for x in self._tests]))
+        print(results)
 
-    def test(self):
-        B = self._encode()
-        saveDir = os.path.dirname(self._savePath)
-        np.save(os.path.join(saveDir, "B.npy"), B.cpu().numpy())
-        self._logger.info("Save B.npy at %s", saveDir)
-        testLoader = DataLoader(Zip(self._dataset, B), batch_size=1, shuffle=False, num_workers=4)
-        ssims = list()
-        psnrs = list()
-        for raw, b in testLoader:
-            restored = self._decode(b, raw.shape[-2:])
-            ssims.append(_EVALSSIM(restored, raw))
-            psnrs.append(psnr(restored, raw))
-        self._logger.info("MS-SSIM: %.4e", sum(ssims) / len(ssims))
-        self._logger.info("   PSNR: %.4e", sum(psnrs) / len(psnrs))
+
+if __name__ == "__main__":
+    Eval("ckpt/encoder.pt", "ckpt/decoder.pt", Config(model=ModelSpec(type="Base", m=32, channel=256)), 0, Basic("data/kodak"))()
