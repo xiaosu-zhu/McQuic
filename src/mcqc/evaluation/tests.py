@@ -1,5 +1,8 @@
 import abc
+import os
 from typing import Dict, List
+import torchvision
+import shutil
 
 from tqdm import tqdm, trange
 import torch
@@ -14,7 +17,7 @@ from mcqc.losses.ssim import MsSSIM, ssim
 
 
 def deTrans(image):
-    return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
+    return (image * 255).clamp(0.0, 255.0)
 
 
 class Test(abc.ABC):
@@ -78,22 +81,25 @@ class Performance(Test):
         self._ssim = MsSSIM(size_average=False).to(self._device)
 
     def test(self):
+        shutil.rmtree("ckpt/images", ignore_errors=True)
+        os.makedirs("ckpt/images", exist_ok=True)
         ssims = list()
         psnrs = list()
         bs = list()
         pixels = list()
-        for x in self._dataLoader:
+        for i, x in enumerate(tqdm(self._dataLoader)):
             x = x.to(self._device, non_blocking=True)
             _, _, h, w = x.shape
             # [1, ?, ?, m]
-            b = self._encoder(x)
-            y = self._decoder(b)
+            b, shape = self._encoder(x)
+            y = self._decoder(b, shape)
             x, y = deTrans(x), deTrans(y)
-            ssims.append(float(-(1.0 - self._ssim(x, y)).log10()))
+            ssims.append(float(-10 * (1.0 - self._ssim(x, y)).log10()))
             psnrs.append(float(psnr(x, y)))
             # list of [m, ?]
             bs.append(b.permute(0, 3, 1, 2).reshape(b.shape[-1], -1))
             pixels.append(h * w)
+            torchvision.io.write_png(y[0].byte().cpu(), f"ckpt/images/test{i}_SSIM_{ssims[-1]}_PSNR_{psnrs[-1]}.png")
 
         encodeds, bpps = self._compress(bs, pixels)
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}
@@ -116,12 +122,12 @@ class Performance(Test):
         for pix, codePerImage in zip(pixels, codes):
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
+            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
             compressed.append(binary)
             # binary: 1 byte per word
             bpps.append(float(8 * len(binary)) / pix)
         return compressed, bpps
 
     def _calculateFreq(self, code: torch.Tensor, k):
-        count = torch.bincount(code, minlength=k)
+        count = torch.bincount(code.long(), minlength=k)
         return count / code.numel()

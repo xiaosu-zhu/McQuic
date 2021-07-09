@@ -23,9 +23,10 @@ class QuantizerEncoder(nn.Module):
         # [n, h, w, m, d]
         q = latent.permute(0, 2, 3, 1).reshape(n, h, w, self._m, -1)
         # [n, h, w, m, d], [m, d, d] -> [n, h, w, m, d]
-        q = torch.einsum("nhwmd,mde->nhwme", q, self._wq)
+        # x @ w.t()
+        q = torch.einsum("nhwmd,mcd->nhwmc", q, self._wq)
         # [m, k, d], [m, d, d] -> [m, k, d]
-        k = torch.einsum("mkd,mde->mke", self._codebook, self._wk)
+        k = torch.einsum("mkd,mcd->mkc", self._codebook, self._wk)
         # [n, h, w, m]
         code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1).byte()
         return code
@@ -63,7 +64,7 @@ class QuantizerDecoder(nn.Module):
         # [n, h, w, m, k]
         oneHot = F.one_hot(codes.long(), k).float()
         # [m, k, d], [m, d, d] -> [m, k, d]
-        k = torch.einsum("mkd,mde->mke", self._codebook, self._wv)
+        k = torch.einsum("mkd,mcd->mkc", self._codebook, self._wv)
         # [n, c, h, w]
         return torch.einsum("nhwmk,mkd->nhwmd", oneHot, k).reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
@@ -83,11 +84,10 @@ class QuantizerDecoder(nn.Module):
         return self.decode(codes)
 
 
-
 class RefEncoder(nn.Module):
     def __init__(self, m, k, channel):
         super().__init__()
-        self._encoder = ResidualAttEncoder(channel, alias=False)
+        self._encoder = ResidualAttEncoder(channel, groups=1, alias=False)
         self._quantizer = QuantizerEncoder(m, k, channel)
 
     @torch.jit.unused
@@ -104,20 +104,20 @@ class RefEncoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.ByteTensor, torch.IntTensor]:
         x = (x - 0.5) / 0.5
-        # shape = x.shape
-        # n, c, h, w = shape
-        # if c == 1:
-        #     x = x.expand(1, 3, 1, 1)
-        # hPad = max(0, 32 - h)
-        # wPad = max(0, 32 - w)
-        # x = F.pad(x, (0, wPad, 0, hPad))
-        return self._quantizer(self._encoder(x)) # , torch.tensor([h, w], dtype=torch.int)
+        shape = x.shape
+        n, c, h, w = shape
+        if c == 1:
+            x = x.expand(1, 3, 1, 1)
+        hPad = max(0, 32 - h)
+        wPad = max(0, 32 - w)
+        x = F.pad(x, (0, wPad, 0, hPad))
+        return self._quantizer(self._encoder(x)), torch.tensor([h, w], dtype=torch.int)
 
 
 class RefDecoder(nn.Module):
     def __init__(self, m, k, channel):
         super().__init__()
-        self._decoder = ResidualAttDecoder(channel)
+        self._decoder = ResidualAttDecoder(channel, groups=1)
         self._quantizer = QuantizerDecoder(m, k, channel)
 
     @torch.jit.unused
@@ -133,5 +133,5 @@ class RefDecoder(nn.Module):
         return "_decoder", "_quantizer"
 
     def forward(self, codes: torch.ByteTensor, shape: torch.IntTensor) -> torch.Tensor:
-        # h, w = shape[0], shape[1]
-        return ((self._decoder(self._quantizer(codes))).tanh() + 1) / 2
+        h, w = shape[0], shape[1]
+        return ((self._decoder(self._quantizer(codes)))[..., :h, :w].tanh() + 1) / 2

@@ -39,13 +39,16 @@ def _transformerLR(step):
     return min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
 
 
-def _tuneReg(step):
+def _tuneReg(step, reg, loss):
     if step < WARMUP_STEP:
-        return 1e-4
-    elif step < DECAY_STEP:
-        return 1e-5
+        return 5e-5 * (step / 50)
     else:
-        return 1e-6
+        if loss < 3:
+            return 0.0
+        elif loss > 4.5:
+            return loss * 2e-3
+        else:
+            return reg + 1e-5
     step = step + 1
     if step < 10000:
         return 2e-4
@@ -75,7 +78,10 @@ class Plain(Algorithm):
             self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
 
         self._optimizer = optimizer(self._model.parameters(), **config.optim.params)
-        self._scheduler = scheduler(self._optimizer, **config.schdr.params)
+        if scheduler is not None:
+            self._scheduler = scheduler(self._optimizer, **config.schdr.params)
+        else:
+            self._scheduler = None
 
         dist.barrier(device_ids=[self._rank])
 
@@ -101,7 +107,7 @@ class Plain(Algorithm):
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
-        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
+        # self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
@@ -128,7 +134,7 @@ class Plain(Algorithm):
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
-        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
+        # self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
     def _visualizeIntermediate(self, latent, code, step):
@@ -152,8 +158,8 @@ class Plain(Algorithm):
         images = None
 
         temperature = 1.0
-        finalTemp = 0.01
-        annealRate = 0.9999
+        # finalTemp = 0.01
+        # annealRate = 0.9995
         initEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
@@ -174,7 +180,7 @@ class Plain(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
-            self._config.Coef.reg = max(0, self._scheduler.get_last_lr()[0] * 25 * temperature - 1e-5)
+            self._config.Coef.reg = 10 ** (2 * float(self._model.module._movingMean) - 7) * 1e-3
             # self._config.Coef.reg = 1e-2 * (0.5 ** abs((i - 1000) / 200.0))
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
@@ -186,9 +192,13 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
+                        self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
+                        self._saver.add_scalar("Stat/Reg", self._config.Coef.reg, global_step=step)
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
-            self._scheduler.step()
-            temperature = max(finalTemp, temperature * annealRate)
+            if self._scheduler is not None:
+                self._scheduler.step()
+            # self._config.Coef.reg = max(0, self._scheduler.get_last_lr()[0] * temperature - 5e-5)
+            # temperature = max(finalTemp, temperature * annealRate)
 
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:

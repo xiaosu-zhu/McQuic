@@ -57,7 +57,7 @@ class PQCompressor(nn.Module):
         codes = list()
         logits = list()
         for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, wv = quantizer(split, temp, True)
+            q, c, l, wv = quantizer(split, temp)
             qs.append(q)
             codes.append(c.byte())
             logits.append(l)
@@ -86,7 +86,7 @@ class PQContextCompressor(nn.Module):
         predicts = list()
         targets = list()
         for quantizer, context, split in zip(self._quantizer, self._context, splits):
-            q, c, l, wv = quantizer(split, temp, True)
+            q, c, l, wv = quantizer(split, temp)
             predict, target = context(q, c)
             predicts.append(predict)
             targets.append(target)
@@ -118,7 +118,7 @@ class PQSAGCompressor(nn.Module):
         codes = list()
         logits = list()
         for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, wv = quantizer(split, temp, True)
+            q, c, l, wv = quantizer(split, temp)
             qs.append(q)
             codes.append(c)
             logits.append(l)

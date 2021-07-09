@@ -17,4 +17,3 @@ class Consts:
     DataDir = os.path.join(srcRoot, "../data")
     SaveDir = os.path.join(srcRoot, "../saved")
     Logger = logging.getLogger(LoggerName)
-    Eps = 1e-12
