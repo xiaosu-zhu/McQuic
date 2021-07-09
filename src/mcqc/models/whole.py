@@ -1,5 +1,6 @@
 from logging import info
 from torch import nn
+import torch
 
 from mcqc.losses.structural import CompressionLoss, QError
 from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss, InfoMaxLoss
@@ -12,12 +13,14 @@ class WholePQ(nn.Module):
         super().__init__()
         self._compressor = PQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias)
         self._cLoss = CompressionLoss()
+        self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
         restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
+        self._movingMean -= 0.9 * (self._movingMean - reg.mean())
         # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
 

@@ -43,7 +43,7 @@ class ResidualBlockWithStride(nn.Module):
         self.conv1 = conv3x3(in_ch, out_ch, stride=stride, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
         self.conv2 = conv3x3(out_ch, out_ch, groups=groups)
-        self.gdn = GenDivNorm(out_ch, beta_min=Consts.Eps)
+        self.gdn = GenDivNorm(out_ch)
         if stride != 1 or in_ch != out_ch:
             self.skip = conv1x1(in_ch, out_ch, stride=stride, groups=groups)
         else:
@@ -76,7 +76,7 @@ class ResidualBlockDownSample(nn.Module):
         self.down1 = superPixelConv3x3(in_ch, out_ch, downsample, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
         self.conv = conv3x3(out_ch, out_ch, groups=groups)
-        self.gdn = GenDivNorm(out_ch, beta_min=Consts.Eps)
+        self.gdn = GenDivNorm(out_ch)
         self.down2 = superPixelConv3x3(in_ch, out_ch, downsample, groups=groups)
 
     def forward(self, x):
@@ -103,7 +103,7 @@ class ResidualBlockUpsample(nn.Module):
         self.subpel_conv = subPixelConv3x3(in_ch, out_ch, upsample, groups=groups)
         self.leaky_relu = nn.LeakyReLU(inplace=True)
         self.conv = conv3x3(out_ch, out_ch, groups=groups)
-        self.igdn = GenDivNorm(out_ch, inverse=True, beta_min=Consts.Eps)
+        self.igdn = GenDivNorm(out_ch, inverse=True)
         self.upsample = subPixelConv3x3(in_ch, out_ch, upsample, groups=groups)
 
     def forward(self, x):
@@ -222,11 +222,11 @@ class AttentionBlock(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.conv = nn.Sequential(
-                    conv1x1(N, N // 2, groups=groups),
+                    conv3x3(N, N // 2, groups=groups),
                     nn.ReLU(inplace=True),
                     conv3x3(N // 2, N // 2, groups=groups),
                     nn.ReLU(inplace=True),
-                    conv1x1(N // 2, N, groups=groups),
+                    conv3x3(N // 2, N, groups=groups),
                 )
                 self.relu = nn.ReLU(inplace=True)
 

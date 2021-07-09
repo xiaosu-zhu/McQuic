@@ -1,5 +1,5 @@
 import math
-from typing import List
+from typing import List, Union
 from math import sqrt
 
 from storch.method import RELAX
@@ -319,7 +319,7 @@ class AttentiveQuantizer(nn.Module):
 
     def encode(self, latent):
         # [n, h, w, c]
-        q = latent.permute(0, 2, 3, 1)
+        q = latent.permute(0, 2, 3, 1).contiguous()
         # [k, c]
         k = self._codebook
 
@@ -330,7 +330,7 @@ class AttentiveQuantizer(nn.Module):
             k = self._wk(k)
 
         # [n, h, w, k]
-        logit = q @ k.permute(1, 0) / self._scale
+        logit = q @ k.permute(1, 0).contiguous() / self._scale
         # sample = F.gumbel_softmax(logit, 1.0, True)
         return logit.argmax(-1)
 
@@ -351,11 +351,11 @@ class AttentiveQuantizer(nn.Module):
         if self._additionWeight:
             v = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = (sample @ v).permute(0, 3, 1, 2)
+        quantized = (sample @ v).permute(0, 3, 1, 2).contiguous()
 
         return quantized
 
-    def _gumbelAttention(self, q, k, v, mask, temperature=1.0):
+    def _gumbelAttention(self, q, k, v, mask: Union[None, torch.Tensor], temperature: float = 1.0):
         if self._additionWeight:
             # [n, h, w, c]
             q = self._wq(q)
@@ -364,7 +364,7 @@ class AttentiveQuantizer(nn.Module):
             v = self._wv(v)
 
         # [n, h, w, k]
-        logit = (q @ k.permute(1, 0)) / self._scale
+        logit = (q @ k.permute(1, 0).contiguous()) / self._scale
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
             logit = logit.masked_fill(mask, -1e9)
@@ -393,12 +393,12 @@ class AttentiveQuantizer(nn.Module):
     #     x[mask] = noise
     #     return x.permute(0, 3, 1, 2)
 
-    def forward(self, latent, temperature, *_):
+    def forward(self, latent, temperature):
         n, _, h, w = latent.shape
         k = self._codebook.shape[0]
         # randomMask = self._randomMask.sample((n, h, w, k)).bool().to(latent.device)
-        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, temperature)
-        quantized = quantized.permute(0, 3, 1, 2)
+        quantized, sample, logit, wv = self._gumbelAttention(latent.permute(0, 2, 3, 1).contiguous(), self._codebook, self._codebook, None, temperature)
+        quantized = quantized.permute(0, 3, 1, 2).contiguous()
         if self._dropout is not None:
             quantized = self._dropout(quantized)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
@@ -433,7 +433,7 @@ class Quantizer(nn.Module):
             with torch.cuda.stream(strm):
                 q.record_stream(self._defaultStream)
                 # [n, h, w, c]
-                q = q.permute(0, 2, 3, 1)
+                q = q.permute(0, 2, 3, 1).contiguous()
                 # [k, c]
                 k = self._codebook[i]
                 if self._additionWeight:
@@ -441,7 +441,7 @@ class Quantizer(nn.Module):
                     q = wq(q)
                     # [k, c]
                     k = wk(k)
-                logit = (q @ k.permute(1, 0)).argmax(-1)
+                logit = (q @ k.permute(1, 0).contiguous()).argmax(-1)
                 # logit = torch.einsum("nchw,kc->nkhw", q, k).argmax(1)
                 logits.append(logit)
         for l, strm in zip(logits, self._streams):
@@ -466,7 +466,7 @@ class Quantizer(nn.Module):
                 if self._additionWeight:
                     v = wv(v)
                 code = F.one_hot(code, v.shape[0]).float()
-                quantized = (code @ v).permute(0, 3, 1, 2)
+                quantized = (code @ v).permute(0, 3, 1, 2).contiguous()
                 # [k, c] indexed by [n, h, w] -> [n, h, w, c] -> [n, c, h, w]
                 # quantized = v[code].permute(0, 3, 1, 2)
                 quantizeds.append(quantized)
@@ -475,7 +475,7 @@ class Quantizer(nn.Module):
         return torch.cat(quantizeds, 1)
 
     def _gumbelAttention(self, q, k, v, wq, wk, wv, mask, temperature=1.0):
-        q = q.permute(0, 2, 3, 1)
+        q = q.permute(0, 2, 3, 1).contiguous()
         if self._additionWeight:
             # [n, h, w, c]
             q = wq(q)
@@ -483,7 +483,7 @@ class Quantizer(nn.Module):
             k = wk(k)
             v = wv(v)
         # [n, h, w, k]
-        logit = (q @ k.permute(1, 0)) / self._scale
+        logit = (q @ k.permute(1, 0).contiguous()) / self._scale
         # logit = torch.einsum("nchw,kc->nkhw", q, k) / self._scale
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
@@ -493,7 +493,7 @@ class Quantizer(nn.Module):
         else:
             # [n, h, w, k]
             sample = F.gumbel_softmax(logit, temperature, True)
-            result = (sample @ v).permute(0, 3, 1, 2)
+            result = (sample @ v).permute(0, 3, 1, 2).contiguous()
             # result = torch.einsum("nkhw,kc->nchw", sample, v)
         return result, sample, logit
 

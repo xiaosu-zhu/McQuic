@@ -16,6 +16,8 @@ def migrate(model: nn.Module, prefix: str, stateDict: Dict[str, torch.Tensor]):
 
 
 def convert(encoder: nn.Module, decoder: nn.Module, path: str):
+    encoder.eval()
+    decoder.eval()
     testInput = torch.rand([1, 3, 1357, 2468])
     try:
         testOutput = decoder(*encoder(testInput))
