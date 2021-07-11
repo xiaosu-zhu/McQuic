@@ -1,2 +1,2 @@
-from .Consts import Consts
+from .consts import Consts
 from .config import Config

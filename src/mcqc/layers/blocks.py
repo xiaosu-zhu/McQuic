@@ -5,7 +5,6 @@ import torch
 from torch import nn
 
 from mcqc import Consts
-from mcqc.layers.positional import NPositionalEncoding2D
 
 from .gdn import GenDivNorm
 from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3, superPixelConv3x3
@@ -264,7 +263,6 @@ class NonLocalBlock(nn.Module):
         self._k = conv1x1(N, N // 2, groups=groups)
         self._v = conv1x1(N, N // 2, groups=groups)
         self._z = conv1x1(N // 2, N, groups=groups)
-        # self._position = NPositionalEncoding2D(N, 120, 120)
 
     def forward(self, x: torch.Tensor):
         n, c, h, w = x.shape

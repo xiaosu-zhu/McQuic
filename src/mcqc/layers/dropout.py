@@ -36,3 +36,23 @@ class PointwiseDropout(nn.Module):
                 return x.mul_(sample).mul_(self._scale)
             return x * sample * self._scale
         return x
+
+
+class GroupDropout(nn.Module):
+    def __init__(self, rate, group, inplace=False):
+        super().__init__()
+        self._preserve = 1 - rate
+        self._inplace = inplace
+        self._group = group
+        self._scale = 1.0 / self._preserve
+        self._sample = torch.distributions.Bernoulli(probs=self._preserve)
+
+    def forward(self, x: torch.Tensor):
+        n, c, h, w = x.shape
+        if self.training:
+            sample = self._sample.sample((n, self._group, 1, 1, 1)).to(x.device)
+            sample = sample.expand(-1, -1, c // self._group, -1, -1).reshape(n, c, 1, 1)
+            if self._inplace:
+                return x.mul_(sample).mul_(self._scale)
+            return x * sample * self._scale
+        return x

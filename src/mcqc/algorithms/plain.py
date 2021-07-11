@@ -1,26 +1,21 @@
 import math
 import os
-from typing import Callable, Iterator, List, Tuple, Type
+from typing import List, Tuple, Type
 from logging import Logger
 
-import numpy as np
 import torch
-from torch import nn
 from torch.types import Number
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
-from torch.utils.tensorboard.summary import image
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 from cfmUtils.saver import Saver
 from cfmUtils.base import FrequecyHook
-import torchvision
 
 from mcqc.algorithms.algorithm import Algorithm
-from mcqc.evaluation.helpers import evalSSIM, psnr
-from mcqc.losses.ssim import MsSSIM
+from mcqc.evaluation.metrics import MsSSIM, PSNR
 from mcqc.models.whole import WholePQ
 from mcqc import Config
 
@@ -75,7 +70,8 @@ class Plain(Algorithm):
         self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
 
         if self._rank == 0:
-            self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
+            self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
+            self._evalPSNR = PSNR(sizeAverage=False).to(self._rank)
 
         self._optimizer = optimizer(self._model.parameters(), **config.optim.params)
         if scheduler is not None:
@@ -107,7 +103,7 @@ class Plain(Algorithm):
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
-        # self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
+        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
@@ -134,7 +130,7 @@ class Plain(Algorithm):
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
-        # self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
+        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
     def _visualizeIntermediate(self, latent, code, step):
@@ -180,7 +176,11 @@ class Plain(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i)
-            self._config.Coef.reg = 10 ** (2 * float(self._model.module._movingMean) - 7) * 1e-3
+            phase = (i // 200) % 2
+            ratio = ((i % 200) + 1.0) / 200.0
+            upper = 0.9999 ** i
+            self._config.Coef.reg = (5e-3 * upper * ratio) if phase == 1 else (5e-3 * upper * (1 - ratio))
+            # self._config.Coef.reg = 10 ** (2 * float(self._model.module._movingMean) - 8) * 1e-3
             # self._config.Coef.reg = 1e-2 * (0.5 ** abs((i - 1000) / 200.0))
             # temperature = -1/3 * temperature + 13/3
             for images in trainLoader:
@@ -192,8 +192,7 @@ class Plain(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
-                        self._saver.add_scalar("Stat/Reg", self._config.Coef.reg, global_step=step)
+                        # self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
                         self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
             if self._scheduler is not None:
                 self._scheduler.step()
@@ -242,7 +241,7 @@ class Plain(Algorithm):
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
             ssims.append(-10 * (1.0 - ssim).log10())
-            psnrs.append(psnr(restored.detach(), raw.detach()))
+            psnrs.append(self._evalPSNR(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
@@ -301,7 +300,7 @@ class Plain(Algorithm):
             ssims.append(-10 * (1.0 - ssim).log10())
             if k < 10:
                 self._saver.add_image(f"Test/{k}", restored[0], step)
-            psnrs.append(psnr(restored.detach(), raw.detach()))
+            psnrs.append(self._evalPSNR(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)

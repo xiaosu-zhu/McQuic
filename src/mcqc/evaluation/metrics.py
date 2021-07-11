@@ -3,7 +3,19 @@
 import warnings
 
 import torch
+from torch import nn
 import torch.nn.functional as F
+
+__all__ = [
+    "MsSSIM",
+    "Ssim",
+    "ms_ssim",
+    "ssim",
+    "psnr",
+    "PSNR"
+]
+
+_WEIGHTS = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
 
 
 def _fspecial_gauss_1d(size, sigma, device=None):
@@ -24,7 +36,7 @@ def _fspecial_gauss_1d(size, sigma, device=None):
     return g.unsqueeze(0).unsqueeze(0)
 
 
-def gaussian_filter(x, win):
+def _gaussian_filter(x, win):
     r""" Blur x with 1-D kernel
     Args:
         x (torch.Tensor): a batch of tensors to be blurred
@@ -74,16 +86,16 @@ def _ssim(X, Y, data_range, win, K=(0.01, 0.03)):
     C1 = (K1 * data_range) ** 2
     C2 = (K2 * data_range) ** 2
 
-    mu1 = gaussian_filter(X, win)
-    mu2 = gaussian_filter(Y, win)
+    mu1 = _gaussian_filter(X, win)
+    mu2 = _gaussian_filter(Y, win)
 
     mu1_sq = mu1.pow(2)
     mu2_sq = mu2.pow(2)
     mu1_mu2 = mu1 * mu2
 
-    sigma1_sq = compensation * (gaussian_filter(X * X, win) - mu1_sq)
-    sigma2_sq = compensation * (gaussian_filter(Y * Y, win) - mu2_sq)
-    sigma12 = compensation * (gaussian_filter(X * Y, win) - mu1_mu2)
+    sigma1_sq = compensation * (_gaussian_filter(X * X, win) - mu1_sq)
+    sigma2_sq = compensation * (_gaussian_filter(Y * Y, win) - mu2_sq)
+    sigma12 = compensation * (_gaussian_filter(X * Y, win) - mu1_mu2)
 
     cs_map = (2 * sigma12 + C2) / (sigma1_sq + sigma2_sq + C2)  # set alpha=beta=gamma=1
     ssim_map = ((2 * mu1_mu2 + C1) / (mu1_sq + mu2_sq + C1)) * cs_map
@@ -93,13 +105,13 @@ def _ssim(X, Y, data_range, win, K=(0.01, 0.03)):
     return ssim_per_channel, cs
 
 
-def ssim(X, Y, win, data_range=255, size_average=True, K=(0.01, 0.03), nonnegative_ssim=False):
+def ssim(X, Y, win, data_range=255, sizeAverage=True, K=(0.01, 0.03), nonnegative_ssim=False):
     r""" interface of ssim
     Args:
         X (torch.Tensor): a batch of images, (N,C,H,W)
         Y (torch.Tensor): a batch of images, (N,C,H,W)
         data_range (float or int, optional): value range of input images. (usually 1.0 or 255)
-        size_average (bool, optional): if size_average=True, ssim of all images will be averaged as a scalar
+        sizeAverage (bool, optional): if sizeAverage=True, ssim of all images will be averaged as a scalar
         win_size: (int, optional): the size of gauss kernel
         win_sigma: (float, optional): sigma of normal distribution
         win (torch.Tensor, optional): 1-D gauss kernel. if None, a new kernel will be created according to win_size and win_sigma
@@ -121,21 +133,19 @@ def ssim(X, Y, win, data_range=255, size_average=True, K=(0.01, 0.03), nonnegati
     if nonnegative_ssim:
         ssim_per_channel = torch.relu(ssim_per_channel)
 
-    if size_average:
+    if sizeAverage:
         return ssim_per_channel.mean()
     return ssim_per_channel.mean(1)
 
 
-_WEIGHTS = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
-
-def ms_ssim(X, Y, win, weights, poolMethod, data_range=255, size_average=True, K=(0.01, 0.03)):
+def ms_ssim(X, Y, win, weights, poolMethod, data_range=255, sizeAverage=True, K=(0.01, 0.03)):
 
     r""" interface of ms-ssim
     Args:
         X (torch.Tensor): a batch of images, (N,C,[T,]H,W)
         Y (torch.Tensor): a batch of images, (N,C,[T,]H,W)
         data_range (float or int, optional): value range of input images. (usually 1.0 or 255)
-        size_average (bool, optional): if size_average=True, ssim of all images will be averaged as a scalar
+        sizeAverage (bool, optional): if sizeAverage=True, ssim of all images will be averaged as a scalar
         win_size: (int, optional): the size of gauss kernel
         win_sigma: (float, optional): sigma of normal distribution
         win (torch.Tensor, optional): 1-D gauss kernel. if None, a new kernel will be created according to win_size and win_sigma
@@ -173,17 +183,17 @@ def ms_ssim(X, Y, win, weights, poolMethod, data_range=255, size_average=True, K
     mcs_and_ssim = torch.stack(mcs + [ssim_per_channel], dim=1)  # (batch, level, channel)
     ms_ssim_val = torch.prod(mcs_and_ssim ** weights.view(1, -1, 1), dim=1)
 
-    if size_average:
+    if sizeAverage:
         return ms_ssim_val.mean()
     return ms_ssim_val.mean(1)
 
 
-class Ssim(torch.nn.Module):
-    def __init__(self, data_range=255, size_average=True, win_size=11, win_sigma=1.5, channel=3, spatial_dims=2, K=(0.01, 0.03), nonnegative_ssim=False):
+class Ssim(nn.Module):
+    def __init__(self, data_range=255, sizeAverage=True, win_size=11, win_sigma=1.5, channel=3, spatial_dims=2, K=(0.01, 0.03), nonnegative_ssim=False):
         r""" class for ssim
         Args:
             data_range (float or int, optional): value range of input images. (usually 1.0 or 255)
-            size_average (bool, optional): if size_average=True, ssim of all images will be averaged as a scalar
+            sizeAverage (bool, optional): if sizeAverage=True, ssim of all images will be averaged as a scalar
             win_size: (int, optional): the size of gauss kernel
             win_sigma: (float, optional): sigma of normal distribution
             channel (int, optional): input channels (default: 3)
@@ -193,22 +203,22 @@ class Ssim(torch.nn.Module):
 
         super().__init__()
         self.register_buffer("win", _fspecial_gauss_1d(win_size, win_sigma).repeat([channel, 1] + [1] * spatial_dims))
-        self.size_average = size_average
+        self.sizeAverage = sizeAverage
         self.data_range = data_range
         self.K = K
         self.nonnegative_ssim = nonnegative_ssim
 
     def forward(self, X, Y):
-        return ssim(X, Y, self.win, data_range=self.data_range, size_average=self.size_average, K=self.K, nonnegative_ssim=self.nonnegative_ssim)
+        return ssim(X, Y, self.win, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K, nonnegative_ssim=self.nonnegative_ssim)
 
 
-class MsSSIM(torch.nn.Module):
-    def __init__(self, shape=4, data_range=255, size_average=True, win_size=11, win_sigma=1.5, channel=3, spatial_dims=2, weights=None, K=(0.01, 0.03)):
+class MsSSIM(nn.Module):
+    def __init__(self, shape=4, data_range=255, sizeAverage=True, win_size=11, win_sigma=1.5, channel=3, spatial_dims=2, weights=None, K=(0.01, 0.03)):
         r""" class for ms-ssim
         Args:
             shape (int): 4 for NCHW, 5 for NCTHW
             data_range (float or int, optional): value range of input images. (usually 1.0 or 255)
-            size_average (bool, optional): if size_average=True, ssim of all images will be averaged as a scalar
+            sizeAverage (bool, optional): if sizeAverage=True, ssim of all images will be averaged as a scalar
             win_size: (int, optional): the size of gauss kernel
             win_sigma: (float, optional): sigma of normal distribution
             channel (int, optional): input channels (default: 3)
@@ -226,7 +236,7 @@ class MsSSIM(torch.nn.Module):
             raise ValueError(f"Input shape should be 4-d or 5-d tensors, but got {shape}")
 
         self.register_buffer("win", _fspecial_gauss_1d(win_size, win_sigma).repeat([channel, 1] + [1] * spatial_dims))
-        self.size_average = size_average
+        self.sizeAverage = sizeAverage
         self.data_range = data_range
         if weights is None:
             weights = torch.tensor(_WEIGHTS)
@@ -236,4 +246,22 @@ class MsSSIM(torch.nn.Module):
         self.K = K
 
     def forward(self, X, Y):
-        return ms_ssim(X, Y, self.win, self.weights, self._avg_pool, data_range=self.data_range, size_average=self.size_average, K=self.K)
+        return ms_ssim(X, Y, self.win, self.weights, self._avg_pool, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K)
+
+
+def psnr(x: torch.Tensor, y: torch.Tensor, sizeAverage: bool = False, upperBound: float = 255.0):
+    mse = ((x.float() - y.float()) ** 2).mean(dim=(1, 2, 3))
+    res = 10 * (upperBound ** 2 / mse).log10()
+    return res.mean() if sizeAverage else res
+
+
+class PSNR(nn.Module):
+    def __init__(self, sizeAverage: bool = False, upperBound: float = 255.0):
+        super().__init__()
+        self.register_buffer("_upperBound", torch.tensor(upperBound ** 2))
+        self._average = sizeAverage
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        mse = ((x.float() - y.float()) ** 2).mean(dim=(1, 2, 3))
+        res = 10 * (self._upperBound / mse).log10()
+        return res.mean() if self._average else res

@@ -13,7 +13,7 @@ from mcqc.evaluation.helpers import psnr
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 
-from mcqc.losses.ssim import MsSSIM, ssim
+from mcqc.evaluation.metrics import MsSSIM
 
 
 def deTrans(image):
@@ -78,7 +78,7 @@ class Performance(Test):
     def __init__(self, dataset: Dataset, **kwArgs):
         super().__init__(**kwArgs)
         self._dataLoader = DataLoader(dataset, pin_memory=True)
-        self._ssim = MsSSIM(size_average=False).to(self._device)
+        self._ssim = MsSSIM(sizeAverage=False).to(self._device)
 
     def test(self):
         shutil.rmtree("ckpt/images", ignore_errors=True)
