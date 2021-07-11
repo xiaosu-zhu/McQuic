@@ -1,26 +1,20 @@
 import os
-from typing import Callable, Iterator, List, Tuple, Type
+from typing import List, Tuple, Type
 from logging import Logger
-import math
 
-import numpy as np
 import torch
-from torch import nn
 from torch.types import Number
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
-from torch.utils.tensorboard.summary import image
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 from cfmUtils.saver import Saver
 from cfmUtils.base import FrequecyHook
-import torchvision
 
 from mcqc.algorithms.algorithm import Algorithm
-from mcqc.evaluation.helpers import evalSSIM, psnr
-from mcqc.losses.ssim import MsSSIM
+from mcqc.evaluation.metrics import PSNR, MsSSIM
 from mcqc.models.whole import WholePQ
 from mcqc import Config
 
@@ -63,7 +57,8 @@ class FineTune(Algorithm):
         self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
 
         if self._rank == 0:
-            self._evalSSIM = MsSSIM(size_average=False).to(self._rank)
+            self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
+            self._evalPSNR = PSNR(sizeAverage=False).to(self._rank)
 
         self._optimizer = optimizer(self._model.parameters(), **config.optim.params)
         self._scheduler = scheduler(self._optimizer, **config.schdr.params)
@@ -186,7 +181,7 @@ class FineTune(Algorithm):
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
         self._model.eval()
-        model = self._model.module._compressor
+        model: WholePQ = self._model.module._compressor
         ssims = list()
         psnrs = list()
         bs = [list() for _ in range(self._config.Model.m)]
@@ -221,7 +216,7 @@ class FineTune(Algorithm):
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
             ssims.append(-10 * (1.0 - ssim).log10())
-            psnrs.append(psnr(restored.detach(), raw.detach()))
+            psnrs.append(self._evalPSNR(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
@@ -280,7 +275,7 @@ class FineTune(Algorithm):
             ssims.append(-10 * (1.0 - ssim).log10())
             if k < 10:
                 self._saver.add_image(f"Test/{k}", restored[0], step)
-            psnrs.append(psnr(restored.detach(), raw.detach()))
+            psnrs.append(self._evalPSNR(restored.detach(), raw.detach()))
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)

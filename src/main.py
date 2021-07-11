@@ -1,11 +1,9 @@
 
 import os
-from logging import Logger
 import math
 import random
 
 import torch
-import torchvision
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
@@ -17,15 +15,12 @@ from cfmUtils.runtime import queryGPU
 from cfmUtils.logger import configLogging
 from cfmUtils.saver import Saver
 from cfmUtils.config import read, summary
-from cfmUtils.vision.utils import verifyTruncated
 
 from mcqc import Consts, Config
-from mcqc.algorithms.context import Context
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
-from mcqc.algorithms import Plain, Gan, FineTune
-from mcqc.models.whole import WholePQInfoMax, WholeVQ, WholePQSAG, WholePQ, WholePQContext
-from mcqc.models.discriminator import Discriminator, FullDiscriminator
+from mcqc.algorithms import Plain, FineTune
+from mcqc.models.whole import WholeVQ, WholePQ, WholePQContext
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CyclicLR
 from mcqc.utils.vision import getTrainingPreprocess
@@ -76,44 +71,13 @@ def _generalConfig(rank: int, worldSize: int):
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
     dist.barrier(device_ids=[rank])
 
-# def Test(config: Config, saveDir: str, logger: Logger = None) -> None:
-#     _ = queryGPU(needGPUs=1, wantsMore=False, needVRamEachGPU=18000)
-#     dataset = SiftLike(config.Dataset).Train()
-#     _, D = dataset.shape
-#     paramsForEnv = {
-#         "m": config.HParams.M,
-#         "k": config.HParams.K,
-#         "d": D,
-#         "doNormalizeOnObs": config.HParams.NormalizeObs,
-#         "doNormalizeOnRew": config.HParams.NormalizeRew
-#     }
-#     config.HParams.__dict__.update({'d': D})
-#     paramsForActorCritic = config.HParams.__dict__
-#     methods = {
-#         "PPO": ActorCritic,
-#         "SAC": GumbelActorCritic,
-#         "A2C": None,
-#         "INC": InceptAC,
-#         "NOVC": ActorCritic
-#     }
-
-#     ConfigLogging(saveDir, Consts.LoggerName, "DEBUG" if FLAGS.debug else "INFO", rotateLogs=-1, logName="eval")
-
-#     (logger or Consts.Logger).info(str(config))
-#     runner = Eval(False, os.path.join(saveDir, Consts.CheckpointName), dataset, Env(**paramsForEnv), methods[config.Method](**paramsForActorCritic))
-#     runner.Test()
-
 models = {
     "Base": WholePQ,
-    "Context": WholePQContext,
-    "AutoRegressive": WholePQSAG,
-    "Info": WholePQInfoMax
+    "Context": WholePQContext
 }
 
 methods = {
     "Plain": Plain,
-    "MiniMax": Gan,
-    "AutoRegressive": Context,
     "FineTune": FineTune
 }
 

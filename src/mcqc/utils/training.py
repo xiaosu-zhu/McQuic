@@ -3,8 +3,6 @@ from typing import Any
 import math
 
 import torch
-from torch import nn
-from cfmUtils.saver import Saver
 from torch.optim.optimizer import Optimizer
 
 
@@ -17,7 +15,7 @@ class MovingMean:
     def step(self, key, value: torch.Tensor):
         if key in self._slots:
             mean = self._slots[key]
-            mean -= self._alpha * (mean - value.item())
+            mean -= self._alpha * (mean - float(value))
             self._slots[key] = mean
         else:
             mean = value.item()
@@ -26,8 +24,6 @@ class MovingMean:
 
     def __getitem__(self, key: Any) -> float:
         return self._slots[key]
-
-
 
 
 class CyclicLR(torch.optim.lr_scheduler._LRScheduler):

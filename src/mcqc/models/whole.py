@@ -1,11 +1,8 @@
-from logging import info
 from torch import nn
 import torch
 
-from mcqc.losses.structural import CompressionLoss, QError
-from mcqc.losses.mlm import MLELoss, MLMLoss, SAGLoss, ContextGANLoss, InfoMaxLoss
-from mcqc.models.compressor import MultiScaleVQCompressor, PQCompressor, PQSAGCompressor, PQContextCompressor
-from mcqc.models.infoMax import InfoMax
+from mcqc.losses.quantization import CompressionLoss, QError
+from mcqc.models.compressor import PQCompressor, PQContextCompressor
 
 
 class WholePQ(nn.Module):
@@ -30,7 +27,6 @@ class WholePQContext(nn.Module):
         super().__init__()
         self._compressor = PQContextCompressor(m, k, channel, numLayers)
         self._cLoss = CompressionLoss()
-        self._mLoss = ContextGANLoss()
 
     def forward(self, image, temp, step, **_):
         # maskedImage = self._masking(image)
@@ -39,45 +35,6 @@ class WholePQContext(nn.Module):
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
         contextLoss = self._mLoss(predicts, targets, step)
         return (ssimLoss, l1l2Loss, contextLoss, reg), (restored, codes, predicts, logits, None)
-
-
-class WholePQInfoMax(nn.Module):
-    def __init__(self, m, k, channel, numLayers):
-        super().__init__()
-        self._compressor = PQCompressor(m, k, channel, numLayers)
-        self._discriminator = InfoMax(channel)
-        self._cLoss = CompressionLoss()
-        self._mLoss = InfoMaxLoss()
-
-    def forward(self, image, temp, step, **_):
-        # Y, T <- D(E(X))
-        restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
-        # minimize distortion
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, None, logits, None)
-        # if ssimLoss > 0.1:
-            # maximize I(Y; T)
-            # logitsCondition, logitsJoint = self._discriminator(restored.detach(), quantized.detach())
-        # else:
-        logitsCondition, logitsJoint = self._discriminator(restored, quantized)
-        infoLoss = self._mLoss(logitsCondition, logitsJoint, step)
-
-        return (ssimLoss, l1l2Loss, infoLoss, reg), (restored, codes, None, logits, None)
-
-
-class WholePQSAG(nn.Module):
-    def __init__(self, m, k, channel, numLayers):
-        super().__init__()
-        self._compressor = PQSAGCompressor(m, k, channel, numLayers)
-        self._cLoss = CompressionLoss()
-        self._mLoss = MLELoss()
-
-    def forward(self, image, temp, **_):
-        # maskedImage = self._masking(image)
-        restored, (quantized, latent), codes, logits, predicts, targets = self._compressor(image, temp, True)
-
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, None)
-        mlmLoss = self._mLoss(predicts, targets)
-        return (ssimLoss, l1l2Loss, mlmLoss, reg), (restored, codes, predicts, logits, latent)
 
 
 class WholeVQ(nn.Module):

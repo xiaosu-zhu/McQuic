@@ -30,29 +30,29 @@ class MaskedConv2d(nn.Conv2d):
 
 def conv3x3(in_ch, out_ch, stride=1, bias=True, groups=1):
     """3x3 convolution with padding."""
-    return nn.Conv2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=3, stride=stride, padding=1)
+    return nn.Conv2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=3, stride=stride, padding=1, padding_mode="reflect")
 
 def conv5x5(in_ch, out_ch, stride=2, bias=True, groups=1):
     """5x5 convolution with padding."""
-    return nn.Conv2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=5, stride=stride, padding=2)
+    return nn.Conv2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=5, stride=stride, padding=2, padding_mode="reflect")
 
 def deconv5x5(in_ch, out_ch, stride=2, bias=True, groups=1):
     """ !!!USE IT CAREFULLY, output_padding cause it very slow!!!
     5x5 convolution with padding."""
-    return nn.ConvTranspose2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=5, stride=stride, padding=2, output_padding=1)
+    return nn.ConvTranspose2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=5, stride=stride, padding=2, output_padding=1, padding_mode="reflect")
 
 def subPixelConv3x3(in_ch, out_ch, r=1, groups=1):
     """3x3 sub-pixel convolution for up-sampling."""
     return nn.Sequential(
-        nn.Conv2d(in_ch, out_ch * r ** 2, groups=groups, kernel_size=3, padding=1), nn.PixelShuffle(r)
+        nn.Conv2d(in_ch, out_ch * r ** 2, groups=groups, kernel_size=3, padding=1, padding_mode="reflect"), nn.PixelShuffle(r)
     )
 
 def superPixelConv3x3(in_ch, out_ch, r=1, groups=1):
     """3x3 super-pixel convolution for down-sampling."""
     return nn.Sequential(
-        nn.Conv2d(in_ch, out_ch // (r ** 2), groups=groups, kernel_size=3, padding=1), nn.PixelUnshuffle(r)
+        nn.Conv2d(in_ch, out_ch // (r ** 2), groups=groups, kernel_size=3, padding=1, padding_mode="reflect"), nn.PixelUnshuffle(r)
     )
 
 def conv1x1(in_ch, out_ch, stride=1, bias=True, groups=1):
     """1x1 convolution."""
-    return nn.Conv2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=1, stride=stride)
+    return nn.Conv2d(in_ch, out_ch, bias=bias, groups=groups, kernel_size=1, stride=stride, padding_mode="reflect")

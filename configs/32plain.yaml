@@ -21,20 +21,20 @@ model:
     withGroup: true
     withAtt: true
     withDropout: true
-    alias: false
+    alias: true
 optim:
     type: Adam
-    params:
-        lr: 1.e-5
+    params: {}
+        # lr: 2.e-6
         # weight_decay: 1.e-5
 schdr:
-    type: None
-    params: {}
-    #     base_lr: 1.e-7
-    #     max_lr: 5.e-5
-    #     step_size_up: 200
-    #     mode: exp_range
-    #     gamma: 0.9999
+    type: Cyclic
+    params:
+         base_lr: 1.e-7
+         max_lr: 1.e-4
+         step_size_up: 200
+         mode: exp_range
+         gamma: 0.9999
         # max_lr: 1.e-4
         # epochs: 2000
         # steps_per_epoch: 43
