@@ -1,6 +1,7 @@
 import os
 from typing import List, Tuple, Type
 from logging import Logger
+import storch
 
 import torch
 from torch.types import Number
@@ -12,6 +13,7 @@ from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 from cfmUtils.saver import Saver
 from cfmUtils.base import FrequecyHook
+from storch import backward
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.metrics import MsSSIM, PSNR
@@ -20,22 +22,16 @@ from mcqc import Config
 from mcqc.utils.training import _ValueTuner
 
 
-class FineTune(Algorithm):
+WARMUP_STEP = 25000
+
+
+class Relax(Algorithm):
     def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], regScheduler: Type[_ValueTuner], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
-        self._rank = dist.get_rank()
-        self._worldSize = dist.get_world_size()
-        if self._rank == 0 and saver is None:
-            raise AttributeError("Not passing a saver for main process.")
-        if self._rank != 0 and saver is not None:
-            raise AttributeError("Try passing a saver for sub-process.")
-        torch.cuda.set_device(self._rank)
+        self._model = model.cuda()
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
-
-        if self._rank == 0:
-            self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
-            self._evalPSNR = PSNR(sizeAverage=False).to(self._rank)
+        self._evalSSIM = MsSSIM(sizeAverage=False).to(0)
+        self._evalPSNR = PSNR(sizeAverage=False).to(0)
 
         self._optimizer = optimizer(self._model.parameters(), **config.Optim.params)
         if scheduler is not None:
@@ -45,18 +41,13 @@ class FineTune(Algorithm):
 
         self._regScheduler = regScheduler(**config.RegSchdr.params)
 
-        dist.barrier(device_ids=[self._rank])
-
         self._ckpt = config.WarmStart
         self._saver = saver
         self._savePath = savePath
         self._logger = logger
         self._config = config
         self._continue = continueTrain
-        if self._rank == 0:
-            self._loggingHook = FrequecyHook({500: self._fastHook, self._config.EvalStep: self._mediumHook})
-        else:
-            self._loggingHook = None
+        self._loggingHook = FrequecyHook({1: self._fastHook, self._config.EvalStep: self._mediumHook})
         self._best = -1
 
     @staticmethod
@@ -65,7 +56,7 @@ class FineTune(Algorithm):
 
     @torch.no_grad()
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        images, restored, ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["images"], kwArgs["restored"], kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
@@ -73,6 +64,8 @@ class FineTune(Algorithm):
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
+        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
+        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
 
     @torch.no_grad()
     def _slowHook(self, **kwArgs):
@@ -113,49 +106,45 @@ class FineTune(Algorithm):
         self._saver.add_images("Train/Code", code, step)
 
     # pylint: disable=too-many-locals,arguments-differ
-    def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
+    def run(self, trainLoader: DataLoader, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
         # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
         # uniqueCodes = 2048
         images = None
 
         temperature = 1.0
-        finalTemp = 0.001
-        annealRate = 0.9992
+        finalTemp = 0.01
+        annealRate = 0.9995
         initEpoch = 0
         lastEpoch = 0
 
-        mapLocation = {"cuda:0": f"cuda:{self._rank}"}
-
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, None, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
-            if self._rank == 0:
-                self._logger.info("Resume training from %3dk step.", step // 1000)
+            self._logger.info("Resume training from %3dk step.", step // 1000)
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
-            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=lastEpoch)
+            loaded = Saver.load(self._ckpt, None, False, self._logger, model=self._model, epoch=lastEpoch)
             lastEpoch = loaded["epoch"]
-        if self._rank == 0:
-            ssim, _ = self._eval(evalLoader, step)
-            self._best = ssim
+        ssim, _ = self._eval(evalLoader, step)
+        self._best = ssim
 
         for i in range(initEpoch, self._config.Epoch):
-            sampler.set_epoch(i + lastEpoch)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
+                images = images.cuda(non_blocking=True)
+                images = storch.denote_independent(images, 0, "data")
+                restored, codes, quantized, logits, targets = self._model(images)
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                storch.backward()
+                # totalLoss.backward()
                 self._optimizer.step()
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        # self._saver.add_scalar("Stat/Reg", self._regScheduler.Value, global_step=step)
-                        # self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
-                        self._saver.add_scalar("Loss/MS-SSIM", -10 * self._model.module._movingMean, global_step=step)
-                        self._loggingHook(step, ssimLoss=-ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
+                        pass
+                        # self._loggingHook(step, ssimLoss=totalLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
@@ -164,7 +153,7 @@ class FineTune(Algorithm):
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
         self._model.eval()
-        model = self._model.module._compressor
+        model = self._model._compressor
         ssims = list()
         psnrs = list()
         bs = [list() for _ in range(self._config.Model.m)]
@@ -172,20 +161,13 @@ class FineTune(Algorithm):
         qs = list()
         totalPixels = 0
         for raw in dataLoader:
-            raw = raw.to(self._rank, non_blocking=True)
+            raw = raw.cuda(non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
 
             latent = model._encoder(raw)
-            # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, self._config.Model.m, 1)
-            lHat = list()
-            for i in range(self._config.Model.m):
-                b = model._quantizer[i].encode(splits[i])
-                q = model._quantizer[i].decode(b)
-                lHat.append(q)
-                bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
-            quantized = torch.cat(lHat, 1)
+            b = model._quantizer.encode(latent)
+            quantized = model._quantizer.decode(b)
             restored = torch.tanh(model._decoder(quantized))
 
             # restored = restored[:, :, :h, :w]
@@ -212,14 +194,14 @@ class FineTune(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
-        uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
-        self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
-        # [N, C, H, W] -> mean of [N, H, W]
-        self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
+        # uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
+        # self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
+        # # [N, C, H, W] -> mean of [N, H, W]
+        # self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
-        encoded, bpp = self._compress(bs, totalPixels)
-        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        # encoded, bpp = self._compress(bs, totalPixels)
+        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
         return ssimScore, psnrScore
 
@@ -232,7 +214,7 @@ class FineTune(Algorithm):
         bs = [list() for _ in range(self._config.Model.m)]
         totalPixels = 0
         for k, raw in enumerate(dataLoader):
-            raw = raw.to(self._rank, non_blocking=True)
+            raw = raw.cuda(non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
 

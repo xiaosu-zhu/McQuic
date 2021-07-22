@@ -1,0 +1,38 @@
+epoch: 10000000000
+evalStep: 1000
+testStep: 50000
+gpus: 2
+vRam: -1
+wantsMore: false
+dataset: compression1
+valDataset: clic/valid
+batchSize: 2
+coef:
+    ssim: 1.0
+    l1l2: 0.0
+model:
+    type: Relax
+    channel: 256
+    k: 256
+    m: 4
+    withGroup: true
+    withAtt: true
+    withDropout: true
+    alias: true
+optim:
+    type: Adam
+    params:
+        lr: 1.e-5
+schdr:
+    type: MultiStep
+    params:
+        milestones: [2000, 4000, 6000]
+        gamma: 0.3
+regSchdr:
+    type: MultiStep
+    params:
+        initValue: 1.0
+        gamma: 0.01
+        stepInterval: 1000
+warmStart: ""
+method: Relax

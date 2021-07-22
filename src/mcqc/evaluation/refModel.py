@@ -64,9 +64,9 @@ class QuantizerDecoder(nn.Module):
         # [n, h, w, m, k]
         oneHot = F.one_hot(codes.long(), k).float()
         # [m, k, d], [m, d, d] -> [m, k, d]
-        k = torch.einsum("mkd,mcd->mkc", self._codebook, self._wv)
+        v = torch.einsum("mkd,mcd->mkc", self._codebook, self._wv)
         # [n, c, h, w]
-        return torch.einsum("nhwmk,mkd->nhwmd", oneHot, k).reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        return torch.einsum("nhwmk,mkc->nhwmc", oneHot, v).reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     @torch.jit.unused
     def load_state_dict(self, state_dict: OrderedDict[str, torch.Tensor], strict: bool = True):

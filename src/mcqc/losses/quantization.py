@@ -1,10 +1,12 @@
 from typing import List
+import storch
+from storch.wrappers import deterministic
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from mcqc.evaluation.metrics import MsSSIM
+from mcqc.evaluation.metrics import MsSSIM, ssim
 
 
 def hinge_d_loss(logits_real, logits_fake):
@@ -35,12 +37,13 @@ class QError(nn.Module):
 class CompressionLoss(nn.Module):
     def __init__(self):
         super().__init__()
-        self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
+        self._msssim = MsSSIM(data_range=2.0, sizeAverage=False)
 
     def forward(self, images, restored, quantized, logits, latent):
         l2Loss = F.mse_loss(restored, images)
         l1Loss = F.l1_loss(restored, images)
-        ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
+        ssimLoss = (1 - self._msssim((restored + 1), (images + 1))).log10().mean()
+        # ssimLoss = -F.binary_cross_entropy(ssimLoss, torch.ones_like(ssimLoss))
         regs = list()
 
         for logit in logits:
@@ -51,3 +54,28 @@ class CompressionLoss(nn.Module):
             regs.append(reg)
         regs = sum(regs) / len(logits)
         return ssimLoss, l1Loss + l2Loss, regs
+
+
+class CompressionLossS(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._msssim = MsSSIM(data_range=2.0, sizeAverage=False)
+
+    @deterministic(flatten_plates=True)
+    def ff(self, images, restored, logits):
+        images = images[..., 0]
+        restored = restored[..., 0]
+        l2Loss = F.mse_loss(restored, images)
+        l1Loss = F.l1_loss(restored, images)
+        ssimLoss = 1 - self._msssim((restored + 1), (images + 1))
+        regs = list()
+
+        # N, H, W, K -> N, HW, K
+        posterior = Categorical(logits=logits)
+        prior = Categorical(logits=torch.zeros_like(logits))
+        reg = torch.distributions.kl_divergence(posterior, prior)
+        reg = reg.sum(dim=(1,2,3))
+        return ssimLoss, reg
+
+    def forward(self, images, restored, quantized, logits, latent):
+        return self.ff(images, restored, logits)

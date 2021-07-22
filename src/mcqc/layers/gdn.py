@@ -92,7 +92,7 @@ class GenDivNorm(nn.Module):
         self.gamma = nn.Parameter(gamma)
 
     def forward(self, x):
-        _, C, _, _ = x.size()
+        C = x.shape[-3]
 
         beta = self.beta_reparam(self.beta)
         gamma = self.gamma_reparam(self.gamma)
@@ -119,7 +119,7 @@ class EffGenDivNorm(GenDivNorm):
     """
 
     def forward(self, x):
-        _, C, _, _ = x.size()
+        C = x.shape[-3]
 
         beta = self.beta_reparam(self.beta)
         gamma = self.gamma_reparam(self.gamma)
