@@ -4,7 +4,7 @@ testStep: 50000
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: compression
+dataset: fullDataset
 valDataset: clic/valid
 batchSize: 8
 coef:
@@ -22,19 +22,17 @@ model:
 optim:
     type: Adam
     params:
-        lr: 1.e-5
+        lr: 4.e-5
 schdr:
     type: MultiStep
     params:
-        milestones: [1000, 10000, 20000]
-        gamma: 0.1
+        milestones: [800, 1200, 1600]
+        gamma: 0.5
 regSchdr:
-    type: Cyclic
+    type: MultiStep
     params:
         initValue: 0.1
-        gamma: 1.0
-        cyclicInterval: 50
-        boostInterval: 3
-        zeroOutRatio: 0.999
-warmStart: ckpt/32bit.ckpt
-method: FineTune
+        gamma: 0.1
+        stepInterval: 100
+warmStart: ""
+method: Plain

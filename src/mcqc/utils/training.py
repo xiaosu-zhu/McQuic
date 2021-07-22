@@ -1,6 +1,7 @@
 from logging import warning
 from typing import Any
 import math
+from cfmUtils.base.restorable import Restorable
 
 import torch
 from torch.optim.optimizer import Optimizer
@@ -257,3 +258,63 @@ class CyclicLR(torch.optim.lr_scheduler._LRScheduler):
                 else:
                     group['momentum'] = momentum
         return lrs
+
+
+class _ValueTuner(Restorable):
+    def __init__(self, initValue: float = 2e-2):
+        super().__init__()
+        self._epoch = 0
+        self._initValue = initValue
+
+    def step(self):
+        self._epoch += 1
+        self.calc()
+
+    def calc(self):
+        self._value = self._initValue
+
+    @property
+    def Value(self) -> float:
+        if not hasattr(self, "_value"):
+            self.calc()
+        return self._value
+
+
+class CyclicValue(_ValueTuner):
+    def __init__(self, initValue: float = 2e-2, gamma: float = 1.0, cyclicInterval: int = 400, boostInterval: int = 3, zeroOutRatio: float = 1./3.):
+        super().__init__(initValue=initValue)
+        self._cyclicInterval = cyclicInterval
+        self._boostInterval = boostInterval
+        self._zeroOutRatio = zeroOutRatio
+        self._gamma = gamma
+
+    def calc(self):
+        maxReg = self._initValue * (self._gamma ** self._epoch)
+        # phase 1
+        if (self._epoch // self._cyclicInterval) % self._boostInterval == 0:
+            self._value = maxReg
+        # phase 2
+        else:
+            j = (self._epoch % self._cyclicInterval) / float(self._cyclicInterval)
+            down = 2 * maxReg / (self._zeroOutRatio - 1) * j + maxReg
+            up = 2 * maxReg / (1 - self._zeroOutRatio) * j + (self._zeroOutRatio + 1) / (self._zeroOutRatio - 1) * maxReg
+            self._value = max(0, max(up, down))
+
+
+class ExponentialValue(_ValueTuner):
+    def __init__(self, initValue: float = 2e-2, gamma: float = 0.9999):
+        super().__init__(initValue=initValue)
+        self._gamma = gamma
+
+    def calc(self):
+        self._value = self._initValue * (self._gamma ** self._epoch)
+
+
+class StepValue(_ValueTuner):
+    def __init__(self, initValue: float = 2e-2, gamma: float = 0.1, stepInterval: int = 1000):
+        super().__init__(initValue=initValue)
+        self._gamma = gamma
+        self._stepInterval = stepInterval
+
+    def calc(self):
+        self._value = self._initValue * (self._gamma ** (self._epoch // self._stepInterval))

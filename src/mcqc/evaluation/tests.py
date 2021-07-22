@@ -9,11 +9,10 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from mcqc.config import Config
-from mcqc.evaluation.helpers import psnr
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 
-from mcqc.evaluation.metrics import MsSSIM
+from mcqc.evaluation.metrics import MsSSIM, psnr
 
 
 def deTrans(image):

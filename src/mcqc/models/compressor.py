@@ -1,6 +1,5 @@
-from typing import Any
-import sys
-
+import storch
+from storch.wrappers import deterministic
 import torch
 from torch import nn
 from mcqc.layers.dropout import PointwiseDropout
@@ -8,7 +7,7 @@ from mcqc.layers.dropout import PointwiseDropout
 from .encoder import ResidualEncoder, ResidualAttEncoder
 from .decoder import ResidualDecoder, ResidualAttDecoder
 from .contextModel import ContextModel
-from .quantizer import AttentiveQuantizer
+from .quantizer import AttentiveQuantizer, RelaxQuantizer
 
 
 class PQCompressor(nn.Module):
@@ -22,7 +21,7 @@ class PQCompressor(nn.Module):
             groups = 1
         self._encoder = ResidualAttEncoder(channel, groups, alias) if withAtt else ResidualEncoder(channel, groups, alias)
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, withDropout, False, True) for _ in range(m))
-        self._groupDropout = PointwiseDropout(0.05, True)
+        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
         self._decoder = ResidualAttDecoder(channel, groups) if withAtt else ResidualDecoder(channel, groups)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
@@ -38,9 +37,43 @@ class PQCompressor(nn.Module):
             codes.append(c.byte())
             logits.append(l)
         quantized = torch.cat(qs, 1)
-        quantized = self._groupDropout(quantized)
+        if self._groupDropout is not None:
+            quantized = self._groupDropout(quantized)
         restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), torch.stack(codes, 1), logits
+
+
+class PQRelaxCompressor(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+        super().__init__()
+        self._k = k
+        self._m = m
+        if withGroup:
+            groups = self._m
+        else:
+            groups = 1
+        self._encoder = ResidualAttEncoder(channel, groups, alias)
+        self._quantizer = RelaxQuantizer(m, k, channel)
+        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
+        self._decoder = ResidualAttDecoder(channel, groups)
+
+    @deterministic
+    def encode(self, x):
+        return self._encoder(x)
+
+    @deterministic(flatten_plates=True)
+    def decode(self, x):
+        return torch.tanh(self._decoder(x))
+
+    def forward(self, x: torch.Tensor):
+        latent = self.encode(x)
+        # M * [n, c // M, h, w]
+        qSamples, code, logit = self._quantizer(latent)
+        qSamples: storch.Tensor = qSamples
+        # if self._groupDropout is not None:
+        #     qSamples = self._groupDropout(qSamples)
+        restored = self.decode(qSamples)
+        return restored, qSamples, code, logit
 
 
 class PQContextCompressor(nn.Module):

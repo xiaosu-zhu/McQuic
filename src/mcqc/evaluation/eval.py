@@ -6,8 +6,6 @@ from torch.utils.data import Dataset
 from torchvision.transforms import ConvertImageDtype
 
 from mcqc.config import ModelSpec
-from mcqc.evaluation.refModel import RefDecoder, RefEncoder
-from mcqc.evaluation.scripting import migrate
 from mcqc.evaluation.tests import Performance, Speed, Test
 from mcqc import Config
 from mcqc.datasets import Basic
@@ -19,7 +17,7 @@ class Eval:
         self._decoder = torch.jit.load(decoderPath)
         self._dataset = dataset
 
-        self._tests: List[Test] = [Performance(dataset, config=config, encoder=self._encoder, decoder=self._decoder, device=device)] #, Speed(config=config, encoder=self._encoder, decoder=self._decoder, device=device)]
+        self._tests: List[Test] = [Performance(dataset, config=config, encoder=self._encoder, decoder=self._decoder, device=device), Speed(config=config, encoder=self._encoder, decoder=self._decoder, device=device)]
 
     def __call__(self):
         results = dict(ChainMap(*[x.test() for x in self._tests]))

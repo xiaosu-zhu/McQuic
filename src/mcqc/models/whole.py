@@ -1,8 +1,10 @@
+from numpy import imag
 from torch import nn
 import torch
+import storch
 
 from mcqc.losses.quantization import CompressionLoss, QError
-from mcqc.models.compressor import PQCompressor, PQContextCompressor
+from mcqc.models.compressor import PQCompressor, PQContextCompressor, PQRelaxCompressor
 
 
 class WholePQ(nn.Module):
@@ -17,9 +19,25 @@ class WholePQ(nn.Module):
         restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
-        self._movingMean -= 0.9 * (self._movingMean - reg.mean())
+        self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
+
+
+class WholePQRelax(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+        super().__init__()
+        self._compressor = PQRelaxCompressor(m, k, channel, withGroup, withAtt, withDropout, alias)
+        self._cLoss = CompressionLossS()
+
+    def forward(self, image, **_):
+        restored, qSamples, code, logit = self._compressor(image)
+
+        ssim, reg = self._cLoss(image, restored, qSamples, logit, None)
+        storch.add_cost(ssim, "ssim")
+        # storch.add_cost(reg, "reg")
+
+        return restored, code, qSamples, logit, None
 
 
 class WholePQContext(nn.Module):

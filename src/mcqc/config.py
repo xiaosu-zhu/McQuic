@@ -7,10 +7,6 @@ import typing
 class Coef:
     ssim: float = 2.0
     l1l2: float = 2.0
-    reg: float = 0.2
-    gen: float = 0.1
-    dis: float = 0.1
-    # lpips: float = 1.0
 
 
 @dataclass
@@ -38,11 +34,18 @@ class SchdrSpec:
 
 
 @dataclass
+class RegSchdrSpec:
+    type: str
+    params: dict
+
+
+@dataclass
 class Config:
     coef: Coef = Coef()
     model: ModelSpec = ModelSpec(type="Base", m=8, k=256)
     optim: OptimSpec = OptimSpec(type="Adam", params={})
     schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
+    regSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
     batchSize: int = 4
     epoch: int = 10
     gpus: int = 1
@@ -62,6 +65,10 @@ class Config:
     @property
     def Schdr(self) -> SchdrSpec:
         return self.schdr
+
+    @property
+    def RegSchdr(self) -> RegSchdrSpec:
+        return self.regSchdr
 
     @property
     def WarmStart(self) -> str:

@@ -1,4 +1,3 @@
-import math
 import os
 from typing import List, Tuple, Type
 from logging import Logger
@@ -18,46 +17,11 @@ from mcqc.algorithms.algorithm import Algorithm
 from mcqc.evaluation.metrics import MsSSIM, PSNR
 from mcqc.models.whole import WholePQ
 from mcqc import Config
-
-
-WARMUP_STEP = 20000
-DECAY_STEP = 50000
-DELAY_STEP = 5000
-def _transformerLR(step):
-    if step < WARMUP_STEP + DELAY_STEP:
-        return 1.0
-    elif step < DECAY_STEP + DELAY_STEP:
-        return 0.1
-    else:
-        return 0.05
-    step = step + 1
-    return min(step / WARMUP_STEP, 0.9999 ** (step - WARMUP_STEP))
-
-
-def _tuneReg(step, reg, loss):
-    if step < WARMUP_STEP:
-        return 5e-5 * (step / 50)
-    else:
-        if loss < 3:
-            return 0.0
-        elif loss > 4.5:
-            return loss * 2e-3
-        else:
-            return reg + 1e-5
-    step = step + 1
-    if step < 10000:
-        return 2e-4
-    elif step < 15000:
-        return 2e-3
-    elif step < 17000:
-        return 2e-2
-    else:
-        # scale to 1/5 every 5000 step
-        return 2e-2 * 0.999 ** (step - 16000)
+from mcqc.utils.training import _ValueTuner
 
 
 class Plain(Algorithm):
-    def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], regScheduler: Type[_ValueTuner], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
@@ -73,11 +37,13 @@ class Plain(Algorithm):
             self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
             self._evalPSNR = PSNR(sizeAverage=False).to(self._rank)
 
-        self._optimizer = optimizer(self._model.parameters(), **config.optim.params)
+        self._optimizer = optimizer(self._model.parameters(), **config.Optim.params)
         if scheduler is not None:
-            self._scheduler = scheduler(self._optimizer, **config.schdr.params)
+            self._scheduler = scheduler(self._optimizer, **config.Schdr.params)
         else:
             self._scheduler = None
+
+        self._regScheduler = regScheduler(**config.RegSchdr.params)
 
         dist.barrier(device_ids=[self._rank])
 
@@ -100,7 +66,7 @@ class Plain(Algorithm):
     @torch.no_grad()
     def _fastHook(self, **kwArgs):
         ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
-        self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
+        self._saver.add_scalar("Loss/MS-SSIM", -10 * ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
@@ -154,9 +120,10 @@ class Plain(Algorithm):
         images = None
 
         temperature = 1.0
-        # finalTemp = 0.01
-        # annealRate = 0.9995
+        finalTemp = 0.001
+        annealRate = 0.99
         initEpoch = 0
+        lastEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
@@ -168,36 +135,30 @@ class Plain(Algorithm):
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
-            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=initEpoch)
-            initEpoch = loaded["epoch"]
+            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=lastEpoch)
+            lastEpoch = loaded["epoch"]
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
 
         for i in range(initEpoch, self._config.Epoch):
-            sampler.set_epoch(i)
-            phase = (i // 200) % 2
-            ratio = ((i % 200) + 1.0) / 200.0
-            upper = 0.9999 ** i
-            self._config.Coef.reg = (5e-3 * upper * ratio) if phase == 1 else (5e-3 * upper * (1 - ratio))
-            # self._config.Coef.reg = 10 ** (2 * float(self._model.module._movingMean) - 8) * 1e-3
-            # self._config.Coef.reg = 1e-2 * (0.5 ** abs((i - 1000) / 200.0))
-            # temperature = -1/3 * temperature + 13/3
+            sampler.set_epoch(i + lastEpoch)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
-                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._config.Coef.reg * reg).backward()
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        # self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._config.Coef.reg, logits=logits, quantized=quantized, codes=codes)
+                        # self._saver.add_scalar("Stat/Reg", self._config.Coef.reg, global_step=step)
+                        self._saver.add_scalar("Loss/MS-SSIM", -10 * self._model.module._movingMean, global_step=step)
+                        self._loggingHook(step, ssimLoss=self._model.module._movingMean, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
+            temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
-            # self._config.Coef.reg = max(0, self._scheduler.get_last_lr()[0] * temperature - 5e-5)
-            # temperature = max(finalTemp, temperature * annealRate)
+            self._regScheduler.step()
 
     @torch.no_grad()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
