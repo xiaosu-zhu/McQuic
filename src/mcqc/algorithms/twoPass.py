@@ -20,7 +20,7 @@ from mcqc import Config
 from mcqc.utils.training import _ValueTuner
 
 
-class FineTune(Algorithm):
+class TwoPass(Algorithm):
     def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], regScheduler: Type[_ValueTuner], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
@@ -37,11 +37,12 @@ class FineTune(Algorithm):
             self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
             self._evalPSNR = PSNR(sizeAverage=False).to(self._rank)
 
-        self._optimizer = optimizer(self._model.parameters(), **config.Optim.params)
+        self._optimizerFirst = optimizer(list(self._model.module._compressor._encoder.parameters()) + list(self._model.module._compressor._quantizer.parameters()), **config.Optim.params)
+        self._optimizerSecond = optimizer(self._model.module._compressor._decoder.parameters(), **config.Optim.params)
         if scheduler is not None:
-            self._scheduler = scheduler(self._optimizer, **config.Schdr.params)
+            self._schedulers = [scheduler(o, **config.Schdr.params) for o in (self._optimizerFirst, self._optimizerSecond)]
         else:
-            self._scheduler = None
+            self._schedulers = None
 
         self._regScheduler = regScheduler(**config.RegSchdr.params)
 
@@ -69,7 +70,8 @@ class FineTune(Algorithm):
         self._saver.add_scalar("Loss/MS-SSIM", ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
-        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
+        if self._schedulers is not None:
+            self._saver.add_scalar("Stat/LR", self._schedulers[0].get_last_lr()[0], global_step=step)
         self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
@@ -95,8 +97,8 @@ class FineTune(Algorithm):
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
-        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
+        self._saver.save(self._logger, model=self._model, optimA=self._optimizerFirst, optimB=self._optimizerSecond, schdrA=self._schedulers[0], schdrB=self._schedulers[1], step=step, epoch=epoch, temperature=temperature)
+        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._schedulers[0].get_last_lr()[0], temperature)
 
     @torch.no_grad()
     def _visualizeIntermediate(self, latent, code, step):
@@ -121,14 +123,14 @@ class FineTune(Algorithm):
 
         temperature = 1.0
         finalTemp = 0.001
-        annealRate = 0.9992
+        annealRate = 0.999
         initEpoch = 0
         lastEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optimA=self._optimizerFirst, optimB=self._optimizerSecond, schdrA=self._schedulers[0], schdrB=self._schedulers[1], step=step, epoch=initEpoch, temperature=temperature)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -144,21 +146,26 @@ class FineTune(Algorithm):
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i + lastEpoch)
             for images in trainLoader:
-                self._optimizer.zero_grad(True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature, True)
+                self._optimizerFirst.zero_grad(True)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
-                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
-                self._optimizer.step()
+                    # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature, False)
+                self._optimizerSecond.zero_grad(True)
+                ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + 0 * reg).backward()
+                    # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                self._optimizerFirst.step()
+                self._optimizerSecond.step()
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        # self._saver.add_scalar("Stat/Reg", self._regScheduler.Value, global_step=step)
-                        # self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
-                        self._saver.add_scalar("Loss/MS-SSIM", self._model.module._movingMean, global_step=step)
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
+                        ssim = ssimLoss
+                        self._saver.add_scalar("Loss/MS-SSIM", ssim, global_step=step)
+                        self._loggingHook(step, ssimLoss=ssim, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
-            if self._scheduler is not None:
-                self._scheduler.step()
+            if self._schedulers is not None:
+                for s in self._schedulers:
+                    s.step()
             self._regScheduler.step()
 
     @torch.no_grad()
@@ -167,7 +174,8 @@ class FineTune(Algorithm):
         model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        bs = [list() for _ in range(self._config.Model.m)]
+        bs = list()
+        # bs = [list() for _ in range(self._config.Model.m)]
         zs = list()
         qs = list()
         totalPixels = 0
@@ -177,15 +185,13 @@ class FineTune(Algorithm):
             totalPixels += n * h * w
 
             latent = model._encoder(raw)
-            # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, self._config.Model.m, 1)
-            lHat = list()
-            for i in range(self._config.Model.m):
-                b = model._quantizer[i].encode(splits[i])
-                q = model._quantizer[i].decode(b)
-                lHat.append(q)
-                bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
-            quantized = torch.cat(lHat, 1)
+            b = model._quantizer.encode(latent)
+            bs.append(b)
+            quantized = model._quantizer.decode(b)
+            # b = model._quantizer.encode(latent)
+            # quantized = model._quantizer.decode(b)
+            # for i, bb in enumerate(bs):
+            #     bb.extend(x[None, ...] for x in b[i].int().detach().cpu())
             restored = torch.tanh(model._decoder(quantized))
 
             # restored = restored[:, :, :h, :w]
@@ -212,14 +218,14 @@ class FineTune(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
-        uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
+        uniqueCodes, _ = torch.unique(torch.cat(bs)[..., 0], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
-        encoded, bpp = self._compress(bs, totalPixels)
-        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        # encoded, bpp = self._compress(torch.cat(bs), totalPixels)
+        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
         return ssimScore, psnrScore
 

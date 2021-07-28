@@ -18,8 +18,8 @@ from cfmUtils.config import read, summary
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
-from mcqc.algorithms import Plain, FineTune
-from mcqc.models.whole import WholePQRelax, WholeVQ, WholePQ, WholePQContext
+from mcqc.algorithms import Plain, FineTune, TwoPass, New
+from mcqc.models.whole import WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
@@ -74,12 +74,16 @@ def _generalConfig(rank: int, worldSize: int):
 models = {
     "Base": WholePQ,
     "Context": WholePQContext,
-    "Relax": WholePQRelax
+    "Relax": WholePQRelax,
+    "TwoPass": WholePQTwoPass,
+    "New": WholePQNew
 }
 
 methods = {
     "Plain": Plain,
-    "FineTune": FineTune
+    "FineTune": FineTune,
+    "TwoPass": TwoPass,
+     "New": New
 }
 
 optims = {

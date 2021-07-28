@@ -37,23 +37,46 @@ class QError(nn.Module):
 class CompressionLoss(nn.Module):
     def __init__(self):
         super().__init__()
-        self._msssim = MsSSIM(data_range=2.0, sizeAverage=False)
+        self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
 
     def forward(self, images, restored, quantized, logits, latent):
         l2Loss = F.mse_loss(restored, images)
         l1Loss = F.l1_loss(restored, images)
-        ssimLoss = (1 - self._msssim((restored + 1), (images + 1))).log10().mean()
+        ssimLoss = 1 - self._msssim(restored + 1, images + 1)
+        # ssimLoss = (1 - self._msssim((restored + 1), (images + 1))).log10().mean()
         # ssimLoss = -F.binary_cross_entropy(ssimLoss, torch.ones_like(ssimLoss))
         regs = list()
 
         for logit in logits:
-            # N, H, W, K -> N, HW, K
+            # [N, H, W, K] -> [N, K]
+            # logit = logit.mean(dim=(1, 2))
             posterior = Categorical(logits=logit)
             prior = Categorical(logits=torch.zeros_like(logit))
             reg = torch.distributions.kl_divergence(posterior, prior).mean()
             regs.append(reg)
         regs = sum(regs) / len(logits)
+        # regs = 0.0
         return ssimLoss, l1Loss + l2Loss, regs
+
+
+class CompressionLossNew(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
+
+    def forward(self, images, restored, logit):
+        l2Loss = F.mse_loss(restored, images)
+        l1Loss = F.l1_loss(restored, images)
+        ssimLoss = 1 - self._msssim(restored + 1, images + 1)
+        # ssimLoss = (1 - self._msssim((restored + 1), (images + 1))).log10().mean()
+        # ssimLoss = -F.binary_cross_entropy(ssimLoss, torch.ones_like(ssimLoss))
+
+        # N, M, K, H, W -> N, M, H, W, K
+        logit = logit.permute(0, 1, 3, 4, 2)
+        posterior = Categorical(logits=logit)
+        prior = Categorical(logits=torch.zeros_like(logit))
+        reg = torch.distributions.kl_divergence(posterior, prior).mean()
+        return ssimLoss, l1Loss + l2Loss, reg
 
 
 class CompressionLossS(nn.Module):

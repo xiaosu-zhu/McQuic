@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from mcqc.layers.convs import deconv5x5
+from mcqc.layers.convs import conv1x1, deconv5x5
 from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock
 
@@ -49,6 +49,28 @@ class ResidualAttDecoder(nn.Module):
     def __init__(self, channel, groups):
         super().__init__()
         self._net = nn.Sequential(
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            subPixelConv3x3(channel, 3, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
+class ResidualAttDecoderNew(nn.Module):
+    def __init__(self, channel, groups, k):
+        super().__init__()
+        self._net = nn.Sequential(
+            conv1x1(groups * k, channel, groups=groups),
             AttentionBlock(channel, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
             ResidualBlockUpsample(channel, channel, 2, groups=groups),
