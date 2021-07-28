@@ -63,10 +63,10 @@ class Plain(Algorithm):
     def _deTrans(image):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _fastHook(self, **kwArgs):
         ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
-        self._saver.add_scalar("Loss/MS-SSIM", -10 * ssimLoss.mean(), global_step=step)
+        # self._saver.add_scalar("Loss/MS-SSIM", -10 * ssimLoss.mean(), global_step=step)
         self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
         self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
@@ -74,12 +74,12 @@ class Plain(Algorithm):
         self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _slowHook(self, **kwArgs):
         testLoader, step = kwArgs["testLoader"], kwArgs["now"]
         ssim, psnr = self._evalFull(testLoader, step)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _mediumHook(self, **kwArgs):
         images, restored, evalLoader, step, epoch, quantized, codes, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["codes"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
@@ -98,7 +98,7 @@ class Plain(Algorithm):
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _visualizeIntermediate(self, latent, code, step):
         img = latent[0][:, None, ...]
         fMin, fMax = img.min(), img.max()
@@ -119,8 +119,8 @@ class Plain(Algorithm):
         # uniqueCodes = 2048
         images = None
 
-        temperature = 1.0
-        finalTemp = 0.001
+        temperature = 0.5
+        finalTemp = 0.01
         annealRate = 0.99
         initEpoch = 0
         lastEpoch = 0
@@ -151,16 +151,16 @@ class Plain(Algorithm):
                 self._optimizer.step()
                 step += 1
                 if self._loggingHook is not None:
-                    with torch.no_grad():
-                        # self._saver.add_scalar("Stat/Reg", self._config.Coef.reg, global_step=step)
-                        self._saver.add_scalar("Loss/MS-SSIM", -10 * self._model.module._movingMean, global_step=step)
-                        self._loggingHook(step, ssimLoss=self._model.module._movingMean, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
+                    with torch.inference_mode():
+                        ssim = ssimLoss
+                        self._saver.add_scalar("Loss/MS-SSIM", ssim.log10(), global_step=step)
+                        self._loggingHook(step, ssimLoss=ssim.log10(), l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
         self._model.eval()
         model = self._model.module._compressor
@@ -215,10 +215,19 @@ class Plain(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
+        n, h, w = b.shape
+        code = b.reshape(n, 1, h, w).byte()
+        code = F.interpolate(code, scale_factor=4, mode="nearest")
+        self._saver.add_images("Eval/Code", code, step)
+        img = quantized[0][:, None, ...]
+        fMin, fMax = img.min(), img.max()
+        img = (img - fMin) / (fMax - fMin)
+        img = F.interpolate(img, scale_factor=4, mode="nearest")
+        self._saver.add_images("Eval/Feature", img, step)
         uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
-        self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
+        # self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
         encoded, bpp = self._compress(bs, totalPixels)
@@ -226,7 +235,7 @@ class Plain(Algorithm):
 
         return ssimScore, psnrScore
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _evalFull(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
         self._model.eval()
         model = self._model.module._compressor

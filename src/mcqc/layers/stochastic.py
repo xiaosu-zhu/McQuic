@@ -1,15 +1,52 @@
-from math import exp
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-import torchvision
 
 from mcqc.evaluation.metrics import MsSSIM
-from mcqc.utils.training import ExponentialValue
 EPSILON = 1e-16
 
 
+def topGumbel(gumbels, logits, samples):
+    # [k, ?, d] + [?, d]
+    # -log(Ej) + log(Z(θ))
+    topGumbels = gumbels + logits.logsumexp(dim=-1, keepdim=True)
+    # we only want value where j == i, i.e. the one-hot position
+    # [k, ?, d]
+    jiGumbels = samples * topGumbels
+    return jiGumbels
+
+
+def truncatedGumbel(gumbels, logits, samples, jiGumbels):
+    # sum to get log(Z(θ) / Ei) for broadcasting
+    topGumbel = jiGumbels.sum(-1, keepdim=True)
+    # [k, ?, d]
+    # θ - log(Ej)
+    reGumbel = gumbels + logits
+    # -log(exp(log(Ej) - θ) + exp(-log(Z(θ) / Ei)))
+    # = -log(Ej/exp(θ) + Ei/Z(θ))
+    truncated = -(EPSILON + (-reGumbel).exp() + (-topGumbel).exp()).log()
+    # we only want value where j != i
+    return (1 - samples) * truncated
+
+
+def gumbelRaoMCK(logits, tau, k):
+    samples = torch.distributions.OneHotCategorical(logits=logits).sample(())
+    # [k, ?, d]
+    # -log(Ej)
+    gumbels = -torch.empty([k, *logits.shape], memory_format=torch.legacy_contiguous_format, device=logits.device).exponential_().log()
+    jiGumbels = topGumbel(gumbels, logits, samples)
+    truncated = truncatedGumbel(gumbels, logits, samples, jiGumbels)
+    # Equation (9) in paper
+    merged = truncated + jiGumbels
+    # [?, d]
+    temperedSoftmax = (merged / tau).softmax(-1).mean(0)
+    return samples - temperedSoftmax.detach() + temperedSoftmax
+
+
+# https://arxiv.org/pdf/1810.00116.pdf
+# Improved Gradient-Based Optimization Over Discrete Distributions
+# improved Gumbel-Softmax from Sec. 3.5
 def iGumbelSoftmax(logits, tau, hard, dim=-1):
     logExp = logits.softmax(-1)
     gumbels = (
@@ -37,6 +74,30 @@ def iGumbelSoftmax(logits, tau, hard, dim=-1):
     return ret
 
 
+# https://arxiv.org/pdf/1806.02867.pdf
+# Direct Optimization through $\argmax$ for Discrete Variational Auto-Encoder
+# Direct VAE
+class DirectVAE(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self):
+        pass
+# def gumbel_perturbation(self,phi_x, eps=1e-10):
+#     M,K,N = self.M,self.K,self.N
+
+#     phi_x = phi_x.repeat(M,1)
+#     shape = phi_x.size()
+#     gumbel_noise = to_var(self.sample_gumbel(shape, eps=eps))
+#     phi_x_gamma = phi_x + gumbel_noise
+#     # hard:
+#     _, k = phi_x_gamma.data.max(-1)
+
+#     z_phi_gamma = to_var(torch.FloatTensor(*shape)).zero_().scatter_(-1, k.view(-1, 1), 1.0)
+
+#     return z_phi_gamma,phi_x_gamma
+
+# Relax / Rebar (Not working since grad-grad is hard to implement in ddp)
 class DiscreteReparam(nn.Module):
     def __init__(self, coupled: bool = False):
         super().__init__()
@@ -102,7 +163,7 @@ class DiscreteReparam(nn.Module):
 
         return b, gatedZ, gatedZb, logP
 
-
+# Relax / Rebar (Not working since grad-grad is hard to implement in ddp)
 class Relax(nn.Module):
     def __init__(self):
         super().__init__()

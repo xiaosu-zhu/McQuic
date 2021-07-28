@@ -4,7 +4,7 @@ testStep: 50000
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: fullDataset
+dataset: fullDataset1
 valDataset: clic/valid
 batchSize: 8
 coef:
@@ -26,13 +26,21 @@ optim:
 schdr:
     type: MultiStep
     params:
-        milestones: [800, 1200, 1600]
+        milestones: [400, 800, 1200]
         gamma: 0.5
+# regSchdr:
+#     type: Cyclic
+#     params:
+#         initValue: 0.1
+#         gamma: 1.0
+#         cyclicInterval: 10
+#         boostInterval: 3
+#         zeroOutRatio: 0.9999
 regSchdr:
     type: MultiStep
     params:
-        initValue: 0.1
+        initValue: 0.02
         gamma: 0.1
-        stepInterval: 100
+        stepInterval: 200
 warmStart: ""
 method: Plain

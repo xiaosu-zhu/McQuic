@@ -20,7 +20,7 @@ from mcqc import Config
 from mcqc.utils.training import _ValueTuner
 
 
-class FineTune(Algorithm):
+class New(Algorithm):
     def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], regScheduler: Type[_ValueTuner], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
@@ -81,11 +81,11 @@ class FineTune(Algorithm):
 
     @torch.no_grad()
     def _mediumHook(self, **kwArgs):
-        images, restored, evalLoader, step, epoch, quantized, codes, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["codes"], kwArgs["temperature"]
+        images, restored, evalLoader, step, epoch, codes, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["codes"], kwArgs["temperature"]
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        self._visualizeIntermediate(quantized, codes, step)
+        self._visualizeIntermediate(codes, step)
         if step % self._config.TestStep == 0:
             return
         ssim, _ = self._eval(evalLoader, step)
@@ -99,12 +99,12 @@ class FineTune(Algorithm):
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.no_grad()
-    def _visualizeIntermediate(self, latent, code, step):
-        img = latent[0][:, None, ...]
-        fMin, fMax = img.min(), img.max()
-        img = (img - fMin) / (fMax - fMin)
-        img = F.interpolate(img, scale_factor=4, mode="nearest")
-        self._saver.add_images("Train/Feature", img, step)
+    def _visualizeIntermediate(self, code, step):
+        # img = latent[0][:, None, ...]
+        # fMin, fMax = img.min(), img.max()
+        # img = (img - fMin) / (fMax - fMin)
+        # img = F.interpolate(img, scale_factor=4, mode="nearest")
+        # self._saver.add_images("Train/Feature", img, step)
 
         n, m, h, w = code.shape
 
@@ -120,8 +120,8 @@ class FineTune(Algorithm):
         images = None
 
         temperature = 1.0
-        finalTemp = 0.001
-        annealRate = 0.9992
+        finalTemp = 0.0001
+        annealRate = 0.9
         initEpoch = 0
         lastEpoch = 0
 
@@ -145,17 +145,16 @@ class FineTune(Algorithm):
             sampler.set_epoch(i + lastEpoch)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, logits) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
                 # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 step += 1
                 if self._loggingHook is not None:
                     with torch.no_grad():
-                        # self._saver.add_scalar("Stat/Reg", self._regScheduler.Value, global_step=step)
-                        # self._saver.add_scalar("Stat/RegEMA", self._model.module._movingMean, global_step=step)
-                        self._saver.add_scalar("Loss/MS-SSIM", self._model.module._movingMean, global_step=step)
-                        self._loggingHook(step, ssimLoss=ssimLoss, l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
+                        ssim = ssimLoss
+                        self._saver.add_scalar("Loss/MS-SSIM", ssim.log10(), global_step=step)
+                        self._loggingHook(step, ssimLoss=ssim.log10(), l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
@@ -167,31 +166,20 @@ class FineTune(Algorithm):
         model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        bs = [list() for _ in range(self._config.Model.m)]
-        zs = list()
-        qs = list()
+        bs = list()
         totalPixels = 0
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
 
-            latent = model._encoder(raw)
-            # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, self._config.Model.m, 1)
-            lHat = list()
-            for i in range(self._config.Model.m):
-                b = model._quantizer[i].encode(splits[i])
-                q = model._quantizer[i].decode(b)
-                lHat.append(q)
-                bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
-            quantized = torch.cat(lHat, 1)
-            restored = torch.tanh(model._decoder(quantized))
+            code, logit = model._encoder(raw, 0.0)
+            # [n, m, h, w]
+            b = code.reshape(n, self._config.model.m, -1, code.shape[-2], code.shape[-1]).argmax(2).byte()
+            bs.append(b)
+            restored = torch.tanh(model._decoder(code))
 
             # restored = restored[:, :, :h, :w]
-
-            zs.append(latent.detach().cpu())
-            qs.append(quantized.detach().cpu())
 
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
@@ -203,23 +191,22 @@ class FineTune(Algorithm):
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
-        zs = torch.cat(zs, 0)
-        qs = torch.cat(qs, 0)
         ssimScore = ssims.mean().item()
         psnrScore = psnrs.mean().item()
+        # [N, m, h, w]
+        bs = torch.cat(bs, 0)
         self._logger.info("MS-SSIM: %2.2fdB", ssimScore)
         self._logger.info("   PSNR: %2.2fdB", psnrScore)
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
-        uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
+        uniqueCodes, _ = torch.unique(bs[:, 0, ...], return_counts=True)
         self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
-        self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
-        encoded, bpp = self._compress(bs, totalPixels)
-        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        # encoded, bpp = self._compress(bs.permute(1, 0, 2, 3), totalPixels)
+        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
 
         return ssimScore, psnrScore
 
@@ -269,8 +256,8 @@ class FineTune(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._model.train()
-        encoded, bpp = self._compress(bs, totalPixels)
-        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        # encoded, bpp = self._compress(bs, totalPixels)
+        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
         return ssimScore, psnrScore
 
     def _compress(self, codes: List[List[torch.Tensor]], totalPixels):

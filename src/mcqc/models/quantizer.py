@@ -4,11 +4,24 @@ from storch.method.relax import RELAX
 
 import torch
 from torch import nn
+from torch.distributions import categorical
 from torch.distributions.categorical import Categorical
 import torch.nn.functional as F
 
 from mcqc.layers.dropout import PointwiseDropout
-from mcqc.layers.stochastic import DiscreteReparam, iGumbelSoftmax
+from mcqc.layers.stochastic import gumbelRaoMCK, iGumbelSoftmax
+
+
+class QuantizeBlock(nn.Module):
+    def __init__(self, m, k):
+        super().__init__()
+        self._m = m
+        self._scale = math.sqrt(k)
+
+    def forward(self, logit: torch.Tensor, temperature):
+        n, _, h, w = logit.shape
+        logit = logit.reshape(n, self._m, -1, h, w) / self._scale
+        return iGumbelSoftmax(logit, temperature, False, dim=2).reshape(n, -1, h, w) if self.training else torch.zeros_like(logit, memory_format=torch.legacy_contiguous_format).scatter_(2, logit.argmax(2, keepdim=True), 1.0).reshape(n, -1, h, w), logit
 
 class AttentiveQuantizer(nn.Module):
     def __init__(self, k: int, cin: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True):
@@ -73,7 +86,7 @@ class AttentiveQuantizer(nn.Module):
             v = self._wv(v)
 
         # [n, h, w, k]
-        logit = (q @ k.permute(1, 0)) / self._scale
+        logit = (q @ k.permute(1, 0)) # / self._scale
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
             logit = logit.masked_fill(mask, -1e9)
@@ -81,7 +94,10 @@ class AttentiveQuantizer(nn.Module):
             result, sample = self._softStraightThrough(logit, v)
         else:
             # [n, h, w, k]
-            sample = iGumbelSoftmax(logit, temperature, True)
+            # sample = iGumbelSoftmax(logit, temperature, True)
+            # sample = gumbelRaoMCK(logit, temperature, 32)
+            # sample = torch.distributions.OneHotCategoricalStraightThrough(logits=logit).rsample(())
+            sample = F.gumbel_softmax(logit, temperature, True)
             result = sample @ v
         return result, sample, logit, v
 
@@ -141,7 +157,7 @@ class Quantizer(nn.Module):
         self._additionWeight = additionWeight
         self._deterministic = deterministic
         if dropout:
-            self._dropout = PointwiseDropout(0.1)
+            self._dropout = PointwiseDropout(0.05)
         else:
             self._dropout = None
 
@@ -164,11 +180,11 @@ class Quantizer(nn.Module):
         # [n, h, w, m, k]
         oneHot = F.one_hot(codes.long(), k).float()
         # [m, k, d], [m, d, d] -> [m, k, d]
-        k = torch.einsum("mkd,mcd->mkc", self._codebook, self._wv)
+        v = torch.einsum("mkd,mcd->mkc", self._codebook, self._wv)
         # [n, c, h, w]
-        return torch.einsum("nhwmk,mkd->nhwmd", oneHot, k).reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        return torch.einsum("nhwmk,mkc->nhwmc", oneHot, v).reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
-    def forward(self, latent):
+    def forward(self, latent, temperature, first):
         # [n, h, w, m]
         n, _, h, w = latent.shape
         # [n, h, w, m, d]
@@ -182,10 +198,14 @@ class Quantizer(nn.Module):
         v = torch.einsum("mkd,mcd->mkc", self._codebook, self._wv)
         # [n, h, w, m, k]
         logit = torch.einsum("nhwmd,mkd->nhwmk", q, k)
-        hard = F.gumbel_softmax((logit / self._scale), 1.0, True)
-        quantized = torch.einsum("nhwmk,mkd->nhwmd", logit, v).reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        if first:
+            hard = iGumbelSoftmax((logit / self._scale), temperature, False)
+        else:
+            # [n, h, w, m, k]
+            hard = torch.distributions.OneHotCategorical(logits=logit).sample(())
+        quantized = torch.einsum("nhwmk,mkc->nhwmc", hard, v).reshape(n, h, w, -1).permute(0, 3, 1, 2)
         # [n, c, h, w], [n, h, w, m], [n, h, w, m, k]
-        return quantized, logit.argmax(-1).byte(), logit, None
+        return quantized, logit.argmax(-1).byte(), logit
 
 
 class RelaxQuantizer(nn.Module):
