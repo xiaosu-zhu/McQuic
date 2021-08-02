@@ -4,7 +4,7 @@ import torch
 import storch
 
 from mcqc.losses.quantization import CompressionLoss, CompressionLossNew, QError
-from mcqc.models.compressor import PQCompressor, PQCompressorNew, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
+from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorNew, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
 
 
 class WholePQ(nn.Module):
@@ -20,6 +20,21 @@ class WholePQ(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
         self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
+        # pLoss = self._pLoss(image, restored)
+        return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
+
+
+class WholeAQ(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+        super().__init__()
+        self._compressor = AQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias)
+        self._cLoss = CompressionLoss()
+        # self._pLoss = LPIPS(net_type='vgg', version='0.1')
+
+    def forward(self, image, temp, **_):
+        restored, (quantized, latent), (codes, frequencyMaps, trueCodes), logits = self._compressor(image, temp, True)
+
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits, frequencyMaps)
         # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
 

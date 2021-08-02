@@ -45,7 +45,7 @@ class Plain(Algorithm):
 
         self._regScheduler = regScheduler(**config.RegSchdr.params)
 
-        dist.barrier(device_ids=[self._rank])
+        # dist.barrier(device_ids=[self._rank])
 
         self._ckpt = config.WarmStart
         self._saver = saver
@@ -65,14 +65,12 @@ class Plain(Algorithm):
 
     @torch.inference_mode()
     def _fastHook(self, **kwArgs):
-        ssimLoss, l1l2Loss, reg, step, regCoeff, temp, logits = kwArgs["ssimLoss"], kwArgs["l1l2Loss"], kwArgs["reg"], kwArgs["now"], kwArgs["regCoeff"], kwArgs["temperature"], kwArgs["logits"]
+        images, restored, step, logits, quantized, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["quantized"], kwArgs["codes"]
         # self._saver.add_scalar("Loss/MS-SSIM", -10 * ssimLoss.mean(), global_step=step)
-        self._saver.add_scalar("Loss/L1L2", l1l2Loss.mean(), global_step=step)
-        self._saver.add_scalar("Loss/Reg", reg.mean(), global_step=step)
-        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
-        self._saver.add_scalar("Stat/Reg", regCoeff, global_step=step)
-        self._saver.add_scalar("Stat/Temperature", temp, global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
+        self._visualizeIntermediate(quantized, codes, step)
+        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
+        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
 
     @torch.inference_mode()
     def _slowHook(self, **kwArgs):
@@ -81,11 +79,7 @@ class Plain(Algorithm):
 
     @torch.inference_mode()
     def _mediumHook(self, **kwArgs):
-        images, restored, evalLoader, step, epoch, quantized, codes, temperature = kwArgs["images"], kwArgs["restored"], kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["quantized"], kwArgs["codes"], kwArgs["temperature"]
-        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
-        # self._saver.add_images("Train/Masked", self._deTrans(maskedImages), global_step=step)
-        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        self._visualizeIntermediate(quantized, codes, step)
+        evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
         if step % self._config.TestStep == 0:
             return
         ssim, _ = self._eval(evalLoader, step)
@@ -95,7 +89,7 @@ class Plain(Algorithm):
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature)
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.inference_mode()
@@ -119,16 +113,16 @@ class Plain(Algorithm):
         # uniqueCodes = 2048
         images = None
 
-        temperature = 0.5
-        finalTemp = 0.01
-        annealRate = 0.99
+        temperature = 1.0
+        finalTemp = 0.001
+        annealRate = 0.9999
         initEpoch = 0
         lastEpoch = 0
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -147,14 +141,20 @@ class Plain(Algorithm):
                 self._optimizer.zero_grad(True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
-                # torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                if True:
+                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
                 self._optimizer.step()
                 step += 1
                 if self._loggingHook is not None:
                     with torch.inference_mode():
                         ssim = ssimLoss
                         self._saver.add_scalar("Loss/MS-SSIM", ssim.log10(), global_step=step)
-                        self._loggingHook(step, ssimLoss=ssim.log10(), l1l2Loss=l1l2Loss, reg=reg, now=step, images=images, targets=targets, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, regCoeff=self._regScheduler.Value, logits=logits, quantized=quantized, codes=codes)
+                        self._saver.add_scalar("Loss/L1L2", l1l2Loss, global_step=step)
+                        self._saver.add_scalar("Loss/Reg", reg, global_step=step)
+                        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
+                        self._saver.add_scalar("Stat/Reg", self._regScheduler.Value, global_step=step)
+                        self._saver.add_scalar("Stat/Temperature", temperature, global_step=step)
+                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=logits, quantized=quantized, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
@@ -184,7 +184,7 @@ class Plain(Algorithm):
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
-            quantized = torch.cat(lHat, 1)
+            quantized = sum(lHat) # torch.cat(lHat, 1)
             # b = model._quantizer.encode(latent)
             # quantized = model._quantizer.decode(b)
             # for i, bb in enumerate(bs):

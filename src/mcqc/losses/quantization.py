@@ -5,6 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
+from mcqc.consts import Consts
 
 from mcqc.evaluation.metrics import MsSSIM, ssim
 
@@ -39,7 +40,7 @@ class CompressionLoss(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
 
-    def forward(self, images, restored, quantized, logits, latent):
+    def forward(self, images, restored, codes, logits, codeFreqMap):
         l2Loss = F.mse_loss(restored, images)
         l1Loss = F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim(restored + 1, images + 1)
@@ -47,14 +48,53 @@ class CompressionLoss(nn.Module):
         # ssimLoss = -F.binary_cross_entropy(ssimLoss, torch.ones_like(ssimLoss))
         regs = list()
 
-        for logit in logits:
-            # [N, H, W, K] -> [N, K]
-            # logit = logit.mean(dim=(1, 2))
-            posterior = Categorical(logits=logit)
-            prior = Categorical(logits=torch.zeros_like(logit))
-            reg = torch.distributions.kl_divergence(posterior, prior).mean()
-            regs.append(reg)
-        regs = sum(regs) / len(logits)
+        n, h, w, k = logits[0].shape
+
+        # codes: [m, n, h, w]; logits: m * list(n, h, w, k); codeFreqMap: m * list([n, h, w])
+        for code, logit, freqMap in zip(codes.permute(1, 0, 2, 3), logits, codeFreqMap):
+            needRegMask = (freqMap > (float(h * w) / k)).float()
+            sample = torch.distributions.Categorical(logits=torch.zeros_like(logit)).sample()
+            logit = logit.permute(0, 3, 1, 2)
+            ceReg = F.cross_entropy(logit, sample, reduction="none") * needRegMask
+            cePush = F.cross_entropy(logit, code, reduction="none") * (1 - needRegMask)
+            regs.append(ceReg.mean() + cePush.mean())
+        # # [m, n, h, w] and m * list(n, h, w, k) logits and [n, k] frequencies
+        # for code, logit, freq in zip(codes.permute(1, 0, 2, 3), logits, codeFreq):
+        #     # perturb code by the most rare codes with 0.1 probability
+        #     p = 1. / freq.shape[-1]
+        #     freq[freq < 1.] = 1.
+        #     weight = p / (freq + 1e-6)
+        #     dropoutMask = torch.distributions.Bernoulli(probs=torch.tensor(0.1, device=logit.device)).sample((n, h, w))
+        #     # [n, k] probs sample (h, w) -> [n, h, w]
+        #     sample = torch.distributions.Categorical(probs=weight).sample(((dropoutMask > 0.5).int().sum(), ))
+        #     code[dropoutMask > 0.5] = sample
+        #     # input: [n, k, h, w], target: [n, h, w] -> [n, h, w]
+        #     ce = F.cross_entropy(logit.permute(0, 3, 1, 2), code, reduction="none")
+        #     # [n, k]
+        #     weight = torch.zeros((n, k), device=ce.device)
+        #     for i, c in enumerate(code):
+        #         # frequency for all k entries --- sum up to h * w
+        #         frequency = torch.bincount(c.flatten(), minlength=k)
+        #         p = 1. / len(torch.unique(c.flatten()))
+        #         # weights, higher frequency, lower weights
+        #         weight[i] = p / (frequency + 1e-6)
+        #     # indexing frequency by code to get per code weight
+        #     ix = torch.arange(n, device=logit.device)[:, None, None].expand_as(code)
+        #     # [n, h, w] weight sum to 1 every row, peer-to-peer weighting `ce` to balance the loss
+        #     weight = weight[[ix, code]]
+        #     ce = (ce * weight).mean()
+        #     regs.append(ce)
+
+        regs = sum(regs) / len(regs)
+
+        # for logit in logits:
+        #     # [N, H, W, K] -> [N, K]
+        #     # logit = logit.mean(dim=(1, 2))
+        #     posterior = Categorical(logits=logit)
+        #     prior = Categorical(logits=torch.zeros_like(logit))
+        #     reg = torch.distributions.kl_divergence(posterior, prior).mean()
+        #     regs.append(reg)
+        # regs = sum(regs) / len(logits)
         # regs = 0.0
         return ssimLoss, l1Loss + l2Loss, regs
 

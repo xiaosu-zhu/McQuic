@@ -45,7 +45,7 @@ class New(Algorithm):
 
         self._regScheduler = regScheduler(**config.RegSchdr.params)
 
-        dist.barrier(device_ids=[self._rank])
+        # dist.barrier(device_ids=[self._rank])
 
         self._ckpt = config.WarmStart
         self._saver = saver
