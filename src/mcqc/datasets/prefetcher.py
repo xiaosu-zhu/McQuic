@@ -50,10 +50,10 @@ class Prefetcher:
         try:
             sample = next(self._iter)
             with torch.cuda.stream(self._stream):
-                sample = sample.to(self._rank, non_blocking=True)
+                # sample = sample.to(self._rank, non_blocking=True)
                 if self._transform is not None:
                     sample = self._transform(sample)
-                self._nextSample = sample
+                self._nextSample = sample.to(self._rank, non_blocking=True)
         except StopIteration:
             self._nextSample = None
             self._exhausted = True

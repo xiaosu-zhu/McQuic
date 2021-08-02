@@ -20,7 +20,7 @@ class PQCompressor(nn.Module):
         else:
             groups = 1
         self._encoder = ResidualAttEncoder(channel, groups, alias) if withAtt else ResidualEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, withDropout, False, True) for _ in range(m))
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True) for _ in range(m))
         self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
         self._decoder = ResidualAttDecoder(channel, groups) if withAtt else ResidualDecoder(channel, groups)
 
@@ -41,6 +41,45 @@ class PQCompressor(nn.Module):
             quantized = self._groupDropout(quantized)
         restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), torch.stack(codes, 1), logits
+
+
+class AQCompressor(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+        super().__init__()
+        self._k = k
+        self._m = m
+        if withGroup:
+            groups = self._m
+        else:
+            groups = 1
+        self._encoder = ResidualAttEncoder(channel, groups, alias)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel, withDropout, False, True) for _ in range(m))
+        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
+        self._decoder = ResidualAttDecoder(channel, 1)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latent = self._encoder(x)
+        # M * [n, c // M, h, w]
+        splits = torch.chunk(latent, self._m, 1)
+        qs = list()
+        codes = list()
+        logits = list()
+        fs = list()
+        ts = list()
+        for quantizer, split in zip(self._quantizer, splits):
+            q, c, l, (trueCode, frequency) = quantizer(split, temp)
+            qs.append(q)
+            codes.append(c)
+            logits.append(l)
+            # [n, h, w] dropout probability
+            fs.append(frequency)
+            ts.append(trueCode)
+        # fs = sum(fs) / len(fs)
+        quantized = sum(qs)
+        # if self._groupDropout is not None:
+        #     quantized = self._groupDropout(quantized, fs)
+        restored = torch.tanh(self._decoder(quantized))
+        return restored, (quantized, latent), (torch.stack(codes, 1), fs, torch.stack(ts, 1)), logits
 
 
 class PQCompressorNew(nn.Module):

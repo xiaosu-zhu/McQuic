@@ -28,10 +28,14 @@ class PointwiseDropout(nn.Module):
         self._scale = 1.0 / self._preserve
         self._sample = torch.distributions.Bernoulli(probs=self._preserve)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, weight: torch.Tensor = None):
         n, _, h, w = x.shape
         if self.training:
-            sample = self._sample.sample((n, 1, h, w)).to(x.device)
+            if weight is None:
+                sample = self._sample.sample((n, 1, h, w)).to(x.device)
+            else:
+                # [n, h, w] weight -> [n, 1, h, w]
+                sample = torch.distributions.Bernoulli(probs=weight).sample()[:, None, ...]
             if self._inplace:
                 return x.mul_(sample).mul_(self._scale)
             return x * sample * self._scale

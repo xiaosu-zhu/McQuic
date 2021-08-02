@@ -19,9 +19,9 @@ from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, FineTune, TwoPass, New
-from mcqc.models.whole import WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
+from mcqc.models.whole import WholeAQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
-from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, StepValue
+from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
@@ -61,7 +61,7 @@ def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_ADDR"] = "localhost"
     # if "MASTER_PORT" not in os.environ:
     #     os.environ["MASTER_PORT"] = str(random.randrange(10000, 65536))
-    os.environ["MASTER_PORT"] = "12345"
+    os.environ["MASTER_PORT"] = "19936"
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
     torch.manual_seed(rank)
@@ -69,14 +69,15 @@ def _generalConfig(rank: int, worldSize: int):
     torch.cuda.set_device(rank)
     np.random.seed(rank)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
-    dist.barrier(device_ids=[rank])
+    # dist.barrier(device_ids=[rank])
 
 models = {
     "Base": WholePQ,
     "Context": WholePQContext,
     "Relax": WholePQRelax,
     "TwoPass": WholePQTwoPass,
-    "New": WholePQNew
+    "New": WholePQNew,
+    "AQ": WholeAQ
 }
 
 methods = {
@@ -95,6 +96,7 @@ schdrs = {
     "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
     "Exponential": torch.optim.lr_scheduler.ExponentialLR,
     "MultiStep": torch.optim.lr_scheduler.MultiStepLR,
+    "MultiStepWarmUp": MultiStepLRWithWarmUp,
     "Cyclic": CyclicLR,
     "OneCycle": torch.optim.lr_scheduler.OneCycleLR
 }
