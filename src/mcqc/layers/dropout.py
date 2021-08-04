@@ -60,3 +60,27 @@ class GroupDropout(nn.Module):
                 return x.mul_(sample).mul_(self._scale)
             return x * sample * self._scale
         return x
+
+
+class AQMasking(nn.Module):
+    def __init__(self, rate, inplace=False):
+        super().__init__()
+        self._preserve = 1 - rate
+        self._inplace = inplace
+        self._sample = torch.distributions.Bernoulli(probs=self._preserve)
+
+    def forward(self, x: torch.Tensor):
+        if self.training:
+            m, n, c, h, w = x.shape
+            sample = self._sample.sample((m, n, c, 1, 1)).to(x.device)
+            # [1, n, c, 1, 1], if all droped, that is a bad sample, discard it
+            allDroped = sample.sum(0, keepdim=True) < 1
+            allDroped = allDroped.expand_as(sample)
+            sample[allDroped] = 1.0
+            # calculate scale
+            # [1, n, c, 1, 1]
+            scale = m / sample.sum(0, keepdim=True)
+            if self._inplace:
+                return x.mul_(sample).mul_(scale)
+            return x * sample * scale
+        return x
