@@ -2,7 +2,7 @@ import storch
 from storch.wrappers import deterministic
 import torch
 from torch import nn
-from mcqc.layers.dropout import PointwiseDropout
+from mcqc.layers.dropout import AQMasking, PointwiseDropout
 
 from .encoder import ResidualAttEncoderNew, ResidualEncoder, ResidualAttEncoder
 from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder
@@ -53,8 +53,8 @@ class AQCompressor(nn.Module):
         else:
             groups = 1
         self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel, withDropout, False, True) for _ in range(m))
-        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel, False, False, True) for _ in range(m))
+        self._aqMask = AQMasking(0.1, True) if withDropout else None
         self._decoder = ResidualAttDecoder(channel, 1)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
@@ -71,13 +71,15 @@ class AQCompressor(nn.Module):
             qs.append(q)
             codes.append(c)
             logits.append(l)
-            # [n, h, w] dropout probability
+            # [n, h, w] trueCode frequency
             fs.append(frequency)
             ts.append(trueCode)
         # fs = sum(fs) / len(fs)
-        quantized = sum(qs)
-        # if self._groupDropout is not None:
-        #     quantized = self._groupDropout(quantized, fs)
+        # [M, N, C, H, W]
+        quantized = torch.stack(qs, 0)
+        if self._aqMask is not None:
+            quantized = self._aqMask(quantized)
+        quantized = quantized.sum(0)
         restored = torch.tanh(self._decoder(quantized))
         return restored, (quantized, latent), (torch.stack(codes, 1), fs, torch.stack(ts, 1)), logits
 

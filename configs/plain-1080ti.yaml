@@ -1,23 +1,46 @@
 epoch: 10000000000
-gpus: 2
-vRam: -1
-wantsMore: false
-dataset: clic/train
-valDataset: clic/valid
-batchSize: 2
-lr: 5.e-5
 evalStep: 5000
 testStep: 50000
+gpus: 4
+vRam: -1
+wantsMore: false
+dataset: compression
+valDataset: clic/valid
+batchSize: 2
 coef:
-    ssim: 2.0
+    ssim: 1.0
     l1l2: 0.0
-    reg: 0.0
-    gen: 0.0
-    dis: 0.0
 model:
-    type: FineTune
+    type: AQ
     channel: 256
     k: 256
-    m: 32
-    numLayers: 1
+    m: 4
+    withGroup: true
+    withAtt: true
+    withDropout: false
+    alias: true
+optim:
+    type: Adam
+    params:
+        lr: 5.e-6
+schdr:
+    type: MultiStepWarmUp
+    params:
+        milestones: [50, 2000, 4000, 8000]
+        gamma: 0.5
+# regSchdr:
+#     type: Cyclic
+#     params:
+#         initValue: 0.1
+#         gamma: 1.0
+#         cyclicInterval: 10
+#         boostInterval: 3
+#         zeroOutRatio: 0.9999
+regSchdr:
+    type: MultiStep
+    params:
+        initValue: 0.05
+        gamma: 0.5
+        stepInterval: 8000
+warmStart: ckpt/aq.ckpt
 method: Plain

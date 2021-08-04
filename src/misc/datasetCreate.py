@@ -38,7 +38,7 @@ def getFilesFromDir(root, strict: bool = False):
 def main(targetDir):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
-    listA = ["data/ImageNet/test", "data/ImageNet/val", "data/coco/train2014", "data/nus"]
+    listA = [] # ["data/ImageNet/test", "data/ImageNet/val", "data/coco/train2014", "data/nus"]
     listB = ["data/clic/train", "data/DIV2K/train", "data/urban100", "data/manga109"]
     allFiles = list()
     for path in listA:
@@ -61,4 +61,4 @@ def main(targetDir):
 
 
 if __name__ == "__main__":
-    main("data/fullDataset")
+    main("data/compression")
