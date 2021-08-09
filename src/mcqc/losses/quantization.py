@@ -58,14 +58,14 @@ class CompressionLoss(nn.Module):
             # max bin -> 4
             # min bin -> 4 + maxbin - minbin
             # [n, k]
-            reverseBin = maxFreq + (float(h * w) / k) - binCount
+            reverseBin = maxFreq + float(h * w) - binCount
             # frequency to prob
-            prob = reverseBin / (maxFreq + (float(h * w) / k))
+            prob = reverseBin / (maxFreq + float(h * w))
             # [n, h, w]
             sample = torch.distributions.Categorical(probs=prob).sample((h, w)).permute(2, 0, 1)
             logit = logit.permute(0, 3, 1, 2)
             # [n, 1, 1]
-            weight = freqMap / maxFreq[:, None]
+            weight = freqMap / float(h * w)
             ceReg = F.cross_entropy(logit, sample, reduction="none") * needRegMask * weight
             cePush = F.cross_entropy(logit, code, reduction="none") * (1 - needRegMask) * weight
             regs.append((ceReg + cePush).mean())

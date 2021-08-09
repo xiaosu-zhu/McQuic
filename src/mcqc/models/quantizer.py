@@ -10,6 +10,7 @@ from torch import nn
 from torch.distributions import categorical
 from torch.distributions.categorical import Categorical
 import torch.nn.functional as F
+from torch import distributed as dist
 
 from mcqc.layers.dropout import PointwiseDropout
 from mcqc.layers.stochastic import gumbelRaoMCK, iGumbelSoftmax
@@ -27,9 +28,14 @@ class QuantizeBlock(nn.Module):
         return iGumbelSoftmax(logit, temperature, False, dim=2).reshape(n, -1, h, w) if self.training else torch.zeros_like(logit, memory_format=torch.legacy_contiguous_format).scatter_(2, logit.argmax(2, keepdim=True), 1.0).reshape(n, -1, h, w), logit
 
 class AttentiveQuantizer(nn.Module):
-    def __init__(self, k: int, cin: int, cout: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True):
+    def __init__(self, k: int, cin: int, cout: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True, ema: float = 0.99):
         super().__init__()
         self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cout)))
+        if ema is not None:
+            self._decay = ema
+            self.register_buffer("_shadowCodebook", self._codebook.clone().detach())
+        else:
+            self._decay = None
         if cin != cout and not additionWeight:
             raise AttributeError(f"Can't perform {cin} -> {cout} quantization without additionWeight")
         if additionWeight:
@@ -44,6 +50,12 @@ class AttentiveQuantizer(nn.Module):
         #     self._dropout = PointwiseDropout(0.05)
         # else:
         #     self._dropout = None
+
+    @torch.no_grad()
+    def EMAUpdate(self):
+        if self._decay is not None:
+            self._shadowCodebook.data = self._decay * self._shadowCodebook + (1 - self._decay) * self._codebook
+            self._codebook.data = self._shadowCodebook
 
     def encode(self, latent):
         # [n, h, w, c]
