@@ -152,7 +152,7 @@ class Plain(Algorithm):
                 if self._loggingHook is not None:
                     with torch.inference_mode():
                         ssim = ssimLoss
-                        self._saver.add_scalar("Loss/MS-SSIM", ssim.log10(), global_step=step)
+                        self._saver.add_scalar("Loss/MS-SSIM", -10 * ssim.log10(), global_step=step)
                         self._saver.add_scalar("Loss/L1L2", l1l2Loss, global_step=step)
                         self._saver.add_scalar("Loss/Reg", reg, global_step=step)
                         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
