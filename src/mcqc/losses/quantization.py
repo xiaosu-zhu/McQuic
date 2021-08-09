@@ -40,7 +40,7 @@ class CompressionLoss(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
 
-    def forward(self, images, restored, codes, logits, codeFreqMap):
+    def forward(self, images, restored, codes, logits, codeFreqMap, binCounts):
         l2Loss = F.mse_loss(restored, images)
         l1Loss = F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim(restored + 1, images + 1)
@@ -50,14 +50,25 @@ class CompressionLoss(nn.Module):
 
         n, h, w, k = logits[0].shape
 
-        # codes: [m, n, h, w]; logits: m * list(n, h, w, k); codeFreqMap: m * list([n, h, w])
-        for code, logit, freqMap in zip(codes.permute(1, 0, 2, 3), logits, codeFreqMap):
+        # codes: [m, n, h, w]; logits: m * list(n, h, w, k); codeFreqMap: m * list([n, h, w]), binCounts: m * list([n, k])
+        for code, logit, freqMap, binCount in zip(codes.permute(1, 0, 2, 3), logits, codeFreqMap, binCounts):
+            maxFreq, _ = binCount.max(-1, keepdim=True)
             needRegMask = (freqMap > (float(h * w) / k)).float()
-            sample = torch.distributions.Categorical(logits=torch.zeros_like(logit)).sample()
+            # reverse frequencies
+            # max bin -> 4
+            # min bin -> 4 + maxbin - minbin
+            # [n, k]
+            reverseBin = maxFreq + (float(h * w) / k) - binCount
+            # frequency to prob
+            prob = reverseBin / (maxFreq + (float(h * w) / k))
+            # [n, h, w]
+            sample = torch.distributions.Categorical(probs=prob).sample((h, w)).permute(2, 0, 1)
             logit = logit.permute(0, 3, 1, 2)
-            ceReg = F.cross_entropy(logit, sample, reduction="none") * needRegMask
-            cePush = F.cross_entropy(logit, code, reduction="none") * (1 - needRegMask)
-            regs.append(ceReg.mean() + cePush.mean())
+            # [n, 1, 1]
+            weight = freqMap / maxFreq[:, None]
+            ceReg = F.cross_entropy(logit, sample, reduction="none") * needRegMask * weight
+            cePush = F.cross_entropy(logit, code, reduction="none") * (1 - needRegMask) * weight
+            regs.append((ceReg + cePush).mean())
         # # [m, n, h, w] and m * list(n, h, w, k) logits and [n, k] frequencies
         # for code, logit, freq in zip(codes.permute(1, 0, 2, 3), logits, codeFreq):
         #     # perturb code by the most rare codes with 0.1 probability

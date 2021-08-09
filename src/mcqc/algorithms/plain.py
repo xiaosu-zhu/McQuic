@@ -141,8 +141,8 @@ class Plain(Algorithm):
                 self._optimizer.zero_grad(True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
-                if True:
-                    torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                # if True:
+                #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
                 if self._loggingHook is not None:

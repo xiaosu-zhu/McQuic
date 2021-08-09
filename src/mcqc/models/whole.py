@@ -32,9 +32,9 @@ class WholeAQ(nn.Module):
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, (quantized, latent), (codes, frequencyMaps, trueCodes), logits = self._compressor(image, temp, True)
+        restored, (quantized, latent), (codes, frequencyMaps, binCounts, trueCodes), logits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits, frequencyMaps)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits, frequencyMaps, binCounts)
         # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
 

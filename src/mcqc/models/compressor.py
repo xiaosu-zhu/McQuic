@@ -66,14 +66,16 @@ class AQCompressor(nn.Module):
         logits = list()
         fs = list()
         ts = list()
+        binCounts = list()
         for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, (trueCode, frequency) = quantizer(split, temp)
+            q, c, l, (trueCode, frequency, binCount) = quantizer(split, temp)
             qs.append(q)
             codes.append(c)
             logits.append(l)
             # [n, h, w] trueCode frequency
             fs.append(frequency)
             ts.append(trueCode)
+            binCounts.append(binCount)
         # fs = sum(fs) / len(fs)
         # [M, N, C, H, W]
         quantized = torch.stack(qs, 0)
@@ -81,7 +83,7 @@ class AQCompressor(nn.Module):
             quantized = self._aqMask(quantized)
         quantized = quantized.sum(0)
         restored = torch.tanh(self._decoder(quantized))
-        return restored, (quantized, latent), (torch.stack(codes, 1), fs, torch.stack(ts, 1)), logits
+        return restored, (quantized, latent), (torch.stack(codes, 1), fs, binCounts, torch.stack(ts, 1)), logits
 
 
 class PQCompressorNew(nn.Module):

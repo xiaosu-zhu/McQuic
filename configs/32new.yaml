@@ -1,7 +1,7 @@
 epoch: 10000000000
 evalStep: 5000
 testStep: 50000
-gpus: 8
+gpus: 4
 vRam: -1
 wantsMore: false
 dataset: compression
@@ -26,7 +26,7 @@ optim:
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [500, 2000, 4000, 8000]
+        milestones: [50, 2000, 4000, 8000]
         gamma: 0.5
 # regSchdr:
 #     type: Cyclic
@@ -42,5 +42,5 @@ regSchdr:
         initValue: 0.05
         gamma: 0.5
         stepInterval: 2000
-warmStart: ckpt/aq.ckpt
+warmStart: "" # ckpt/aq.ckpt
 method: Plain
