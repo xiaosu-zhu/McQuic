@@ -119,6 +119,8 @@ class Plain(Algorithm):
         initEpoch = 0
         lastEpoch = 0
 
+        updateOps = [q.EMAUpdate for q in self._model.module._compressor._quantizer]
+
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
         if self._continue:
@@ -145,6 +147,8 @@ class Plain(Algorithm):
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
+                for op in updateOps:
+                    op()
                 if self._loggingHook is not None:
                     with torch.inference_mode():
                         ssim = ssimLoss

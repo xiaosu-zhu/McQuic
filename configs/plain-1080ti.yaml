@@ -39,8 +39,8 @@ schdr:
 regSchdr:
     type: MultiStep
     params:
-        initValue: 0.05
+        initValue: 0.1
         gamma: 0.5
         stepInterval: 8000
-warmStart: ckpt/aq.ckpt
+warmStart: "" # ckpt/aq.ckpt
 method: Plain
