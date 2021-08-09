@@ -103,12 +103,12 @@ class AttentiveQuantizer(nn.Module):
                 # [n, h, w]
                 trueCode = prob.argmax(-1)
                 # [n, k]
-                frequency = torch.zeros((n, k), device=logit.device)
+                binCount = torch.zeros((n, k), device=logit.device)
                 for i, l in enumerate(trueCode):
-                    frequency[i] = torch.bincount(l.flatten(), minlength=k)
+                    binCount[i] = torch.bincount(l.flatten(), minlength=k)
                 # [n, k] indexed by [n, h, w] -> [n, h, w] frequencies
                 ix = torch.arange(n)[:, None, None].expand_as(trueCode)
-                frequency = frequency[[ix, trueCode]]
+                frequency = binCount[[ix, trueCode]]
                 # [n, h, w]
                 dropout = torch.distributions.Bernoulli(frequency / (h * w)).sample().bool()
                 # scatter to mask
@@ -118,12 +118,12 @@ class AttentiveQuantizer(nn.Module):
                 # [n, h, w]
                 trueCode = logit.argmax(-1)
                 # [n, k]
-                frequency = torch.zeros((n, k), device=logit.device)
+                binCount = torch.zeros((n, k), device=logit.device)
                 for i, l in enumerate(trueCode):
-                    frequency[i] = torch.bincount(l.flatten(), minlength=k)
+                    binCount[i] = torch.bincount(l.flatten(), minlength=k)
                 # [n, k] indexed by [n, h, w] -> [n, h, w] frequencies
                 ix = torch.arange(n)[:, None, None].expand_as(trueCode)
-                frequency = frequency[[ix, trueCode]]
+                frequency = binCount[[ix, trueCode]]
                 # frequency = torch.ones_like(logit) * logit.shape[0] / logit.numel()
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
@@ -134,12 +134,12 @@ class AttentiveQuantizer(nn.Module):
             result, sample = self._softStraightThrough(maskedLogit, v)
         else:
             # [n, h, w, k]
-            sample = iGumbelSoftmax(maskedLogit, temperature, True)
+            # sample = iGumbelSoftmax(maskedLogit, temperature, True)
             # sample = gumbelRaoMCK(maskedLogit, temperature, 32)
             # sample = torch.distributions.OneHotCategoricalStraightThrough(logits=maskedLogit).rsample(())
-            # sample = F.gumbel_softmax(maskedLogit, temperature, True)
+            sample = F.gumbel_softmax(maskedLogit, temperature, True)
             result = sample @ v
-        return result, sample, logit, (trueCode, frequency)
+        return result, sample, logit, (trueCode, frequency, binCount)
 
     def _argmax(self, q, k, v):
         if self._additionWeight:
@@ -150,7 +150,7 @@ class AttentiveQuantizer(nn.Module):
         sample = F.one_hot(logit.argmax(-1), logit.shape[-1]).float()
         result = sample @ v
         frequency = torch.ones_like(logit) * logit.shape[0] / logit.numel()
-        return result, sample, logit, frequency
+        return result, sample, logit, frequency, None
 
     # def _randomErase(self, x: torch.Tensor):
     #     n, c, h, w = x.shape
@@ -174,14 +174,14 @@ class AttentiveQuantizer(nn.Module):
         k = self._codebook.shape[0]
         # randomMask = self._randomMask.sample((n, h, w, k)).bool().to(latent.device)
         if temperature >= 0:
-            quantized, sample, logit, (trueCode, frequency) = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, temperature)
+            quantized, sample, logit, (trueCode, frequency, binCount) = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, temperature)
         else:
-            quantized, sample, logit, (trueCode, frequency) = self._argmax(latent.permute(0, 2, 3, 1), self._codebook, self._codebook)
+            quantized, sample, logit, (trueCode, frequency, binCount) = self._argmax(latent.permute(0, 2, 3, 1), self._codebook, self._codebook)
         quantized = quantized.permute(0, 3, 1, 2)
         # if self._dropout is not None:
         #     quantized = self._dropout(quantized)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
-        return quantized, trueCode.byte(), logit, (trueCode, frequency)
+        return quantized, trueCode.byte(), logit, (trueCode, frequency, binCount)
 
 
 class Quantizer(nn.Module):
