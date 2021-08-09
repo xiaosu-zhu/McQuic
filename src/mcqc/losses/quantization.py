@@ -54,18 +54,18 @@ class CompressionLoss(nn.Module):
         for code, logit, freqMap, binCount in zip(codes.permute(1, 0, 2, 3), logits, codeFreqMap, binCounts):
             maxFreq, _ = binCount.max(-1, keepdim=True)
             needRegMask = (freqMap > (float(h * w) / k)).float()
+
+            relaxedFreq = maxFreq + binCount.mean(-1, keepdim=True)
             # reverse frequencies
-            # max bin -> 4
-            # min bin -> 4 + maxbin - minbin
+            # max bin -> meanFreq
+            # min bin -> meanFreq + maxbin - minbin
             # [n, k]
-            reverseBin = maxFreq + float(h * w) - binCount
-            # frequency to prob
-            prob = reverseBin / (maxFreq + float(h * w))
-            # [n, h, w]
-            sample = torch.distributions.Categorical(probs=prob).sample((h, w)).permute(2, 0, 1)
+            reverseBin = relaxedFreq - binCount
+            # [n, h, w], auto convert freq to prob in pytorch implementation
+            sample = torch.distributions.Categorical(probs=reverseBin).sample((h, w)).permute(2, 0, 1)
             logit = logit.permute(0, 3, 1, 2)
-            # [n, 1, 1]
-            weight = freqMap / float(h * w)
+            # [n, 1, 1], normalize then sigmoid, higher frequency -> higher weight
+            weight =  ((freqMap / float(h * w) - 0.5)* 4).sigmoid()
             ceReg = F.cross_entropy(logit, sample, reduction="none") * needRegMask * weight
             cePush = F.cross_entropy(logit, code, reduction="none") * (1 - needRegMask) * weight
             regs.append((ceReg + cePush).mean())
