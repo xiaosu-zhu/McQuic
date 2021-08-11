@@ -25,9 +25,9 @@ class WholePQ(nn.Module):
 
 
 class WholeAQ(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
-        self._compressor = AQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias)
+        self._compressor = AQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias, ema)
         self._cLoss = CompressionLoss()
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 

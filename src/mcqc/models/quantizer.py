@@ -28,7 +28,7 @@ class QuantizeBlock(nn.Module):
         return iGumbelSoftmax(logit, temperature, False, dim=2).reshape(n, -1, h, w) if self.training else torch.zeros_like(logit, memory_format=torch.legacy_contiguous_format).scatter_(2, logit.argmax(2, keepdim=True), 1.0).reshape(n, -1, h, w), logit
 
 class AttentiveQuantizer(nn.Module):
-    def __init__(self, k: int, cin: int, cout: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True, ema: float = 0.99):
+    def __init__(self, k: int, cin: int, cout: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True, ema: float = 0.8):
         super().__init__()
         self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, cout)))
         if ema is not None:
@@ -74,10 +74,20 @@ class AttentiveQuantizer(nn.Module):
         # sample = F.gumbel_softmax(logit, 1.0, True)
         return logit.argmax(-1)
 
-    def _softStraightThrough(self, logit, value):
+    def _softStraightThrough(self, logit, temprature, trueCode, binCount, frequency, value):
+        n, h, w = frequency.shape
         k, c = value.shape
-        soft = logit.softmax(-1)
-        sample = logit.argmax(-1)
+        soft = (logit / temprature).softmax(-1)
+        needMask = (frequency > (float(h * w) / k)).long()
+        maxFreq, _ = binCount.max(-1, keepdim=True)
+        relaxedFreq = maxFreq + binCount.mean(-1, keepdim=True)
+        # reverse frequencies
+        # max bin -> meanFreq
+        # min bin -> meanFreq + maxbin - minbin
+        # [n, k]
+        reverseBin = relaxedFreq - binCount
+        masked = torch.distributions.Categorical(probs=reverseBin).sample((h, w)).permute(2, 0, 1)
+        sample = trueCode * (1 - needMask) + masked * needMask
         sample = F.one_hot(sample, k).float()
         soft = soft @ value
         hard = sample @ value
@@ -143,7 +153,7 @@ class AttentiveQuantizer(nn.Module):
         else:
             maskedLogit = logit
         if self._deterministic:
-            result, sample = self._softStraightThrough(maskedLogit, v)
+            result, sample = self._softStraightThrough(maskedLogit, temperature, trueCode, binCount, frequency, v)
         else:
             # [n, h, w, k]
             # sample = iGumbelSoftmax(maskedLogit, temperature, True)
@@ -193,7 +203,7 @@ class AttentiveQuantizer(nn.Module):
         # if self._dropout is not None:
         #     quantized = self._dropout(quantized)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
-        return quantized, trueCode.byte(), logit, (trueCode, frequency, binCount)
+        return quantized, sample.argmax(-1), logit, (trueCode, frequency, binCount)
 
 
 class Quantizer(nn.Module):

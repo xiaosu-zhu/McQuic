@@ -19,6 +19,7 @@ class ModelSpec:
     withAtt: bool = True
     withDropout: bool = True
     alias: bool = True
+    ema: float = 0.8
 
 
 @dataclass
