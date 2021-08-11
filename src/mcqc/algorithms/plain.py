@@ -100,6 +100,8 @@ class Plain(Algorithm):
         img = F.interpolate(img, scale_factor=4, mode="nearest")
         self._saver.add_images("Train/Feature", img, step)
 
+        code = code.byte()
+
         n, m, h, w = code.shape
 
         code = code.reshape(n * m, 1, h, w)[:32]

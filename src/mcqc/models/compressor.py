@@ -44,7 +44,7 @@ class PQCompressor(nn.Module):
 
 
 class AQCompressor(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
         self._k = k
         self._m = m
@@ -53,7 +53,7 @@ class AQCompressor(nn.Module):
         else:
             groups = 1
         self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel, False, False, True) for _ in range(m))
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel, False, False, True, ema if ema > 0.0 else None) for _ in range(m))
         self._aqMask = AQMasking(0.1, True) if withDropout else None
         self._decoder = ResidualAttDecoder(channel, 1)
 

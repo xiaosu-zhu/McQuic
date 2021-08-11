@@ -19,10 +19,11 @@ model:
     withAtt: true
     withDropout: false
     alias: true
+    ema: 0.9
 optim:
     type: Adam
     params:
-        lr: 5.e-6
+        lr: 1.e-5
 schdr:
     type: MultiStepWarmUp
     params:
@@ -42,5 +43,5 @@ regSchdr:
         initValue: 0.1
         gamma: 0.5
         stepInterval: 2000
-warmStart: "" # ckpt/aq.ckpt
+warmStart: ckpt/aq.ckpt
 method: Plain

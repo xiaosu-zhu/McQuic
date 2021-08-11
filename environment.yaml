@@ -1,4 +1,4 @@
-name: pytorch
+name: mcqc
 channels:
   - pytorch
   - defaults
@@ -7,17 +7,15 @@ channels:
 dependencies:
   - python
   - pip
-  - pytorch>1.9
+  - pytorch
   - torchvision
   - cudatoolkit
-  - numpy
-  - scipy
   - tensorboard
   - tqdm
-  - pynvml
+  - scipy
+  - matplotlib
   - pip:
     - pyyaml
-    - opencv-python
     - cfmUtils
     - pyro-ppl
     - storchastic
