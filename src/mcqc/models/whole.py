@@ -8,20 +8,20 @@ from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorNew, 
 
 
 class WholePQ(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
-        self._compressor = PQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias)
+        self._compressor = PQCompressor(m, k, channel, withGroup, withAtt, withDropout, alias, ema)
         self._cLoss = CompressionLoss()
-        self.register_buffer("_movingMean", torch.zeros([1]))
+        # self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, (quantized, latent), codes, logits = self._compressor(image, temp, True)
+        restored, (quantized, latent), (codes, frequencyMaps, binCounts, trueCodes), logits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, quantized, logits, latent)
-        self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits, frequencyMaps, binCounts)
+        # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
+        return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits, frequencyMaps)
 
 
 class WholeAQ(nn.Module):
@@ -36,7 +36,7 @@ class WholeAQ(nn.Module):
 
         ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits, frequencyMaps, binCounts)
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, None)
+        return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits, frequencyMaps)
 
 
 class WholePQNew(nn.Module):

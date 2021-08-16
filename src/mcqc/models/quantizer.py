@@ -75,20 +75,20 @@ class AttentiveQuantizer(nn.Module):
         return logit.argmax(-1)
 
     def _softStraightThrough(self, logit, temprature, trueCode, binCount, frequency, value):
-        n, h, w = frequency.shape
+        # n, h, w = frequency.shape
         k, c = value.shape
         soft = (logit / temprature).softmax(-1)
-        needMask = (frequency > (float(h * w) / k)).long()
-        maxFreq, _ = binCount.max(-1, keepdim=True)
-        relaxedFreq = maxFreq + binCount.mean(-1, keepdim=True)
-        # reverse frequencies
-        # max bin -> meanFreq
-        # min bin -> meanFreq + maxbin - minbin
-        # [n, k]
-        reverseBin = relaxedFreq - binCount
-        masked = torch.distributions.Categorical(probs=reverseBin).sample((h, w)).permute(2, 0, 1)
-        sample = trueCode * (1 - needMask) + masked * needMask
-        sample = F.one_hot(sample, k).float()
+        # needMask = (frequency > (float(h * w) / k)).long()
+        # maxFreq, _ = binCount.max(-1, keepdim=True)
+        # relaxedFreq = maxFreq + binCount.mean(-1, keepdim=True)
+        # # reverse frequencies
+        # # max bin -> meanFreq
+        # # min bin -> meanFreq + maxbin - minbin
+        # # [n, k]
+        # reverseBin = relaxedFreq - binCount
+        # masked = torch.distributions.Categorical(probs=reverseBin).sample((h, w)).permute(2, 0, 1)
+        # sample = trueCode * (1 - needMask) + masked * needMask
+        sample = F.one_hot(trueCode, k).float()
         soft = soft @ value
         hard = sample @ value
         return (hard - soft).detach() + soft, sample
@@ -125,7 +125,7 @@ class AttentiveQuantizer(nn.Module):
                 # [n, h, w]
                 trueCode = prob.argmax(-1)
                 # [n, k]
-                binCount = torch.zeros((n, k), device=logit.device)
+                binCount = torch.zeros((n, k), device=logit.device, dtype=torch.long)
                 for i, l in enumerate(trueCode):
                     binCount[i] = torch.bincount(l.flatten(), minlength=k)
                 # [n, k] indexed by [n, h, w] -> [n, h, w] frequencies
@@ -140,7 +140,7 @@ class AttentiveQuantizer(nn.Module):
                 # [n, h, w]
                 trueCode = logit.argmax(-1)
                 # [n, k]
-                binCount = torch.zeros((n, k), device=logit.device)
+                binCount = torch.zeros((n, k), device=logit.device, dtype=torch.long)
                 for i, l in enumerate(trueCode):
                     binCount[i] = torch.bincount(l.flatten(), minlength=k)
                 # [n, k] indexed by [n, h, w] -> [n, h, w] frequencies

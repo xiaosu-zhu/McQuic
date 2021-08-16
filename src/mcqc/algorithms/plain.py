@@ -126,7 +126,7 @@ class Plain(Algorithm):
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature) #, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -143,7 +143,7 @@ class Plain(Algorithm):
             sampler.set_epoch(i + lastEpoch)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, targets) = self._model(images, temperature)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, frequencyMaps) = self._model(images, temperature)
                 ((self._config.Coef.ssim * ssimLoss + self._config.Coef.l1l2 * l1l2Loss).mean() + self._regScheduler.Value * reg).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
@@ -160,6 +160,7 @@ class Plain(Algorithm):
                         self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
                         self._saver.add_scalar("Stat/Reg", self._regScheduler.Value, global_step=step)
                         self._saver.add_scalar("Stat/Temperature", temperature, global_step=step)
+                        self._saver.add_scalar("Stat/Freq", (frequencyMaps[0] > 4).sum() / len(frequencyMaps[0]), global_step=step)
                         self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=logits, quantized=quantized, codes=codes)
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
@@ -190,7 +191,7 @@ class Plain(Algorithm):
                 q = model._quantizer[i].decode(b)
                 lHat.append(q)
                 bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
-            quantized = sum(lHat) # torch.cat(lHat, 1)
+            quantized = torch.cat(lHat, 1)
             # b = model._quantizer.encode(latent)
             # quantized = model._quantizer.decode(b)
             # for i, bb in enumerate(bs):
