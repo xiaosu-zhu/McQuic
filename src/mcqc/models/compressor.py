@@ -11,7 +11,7 @@ from .quantizer import AttentiveQuantizer, Quantizer, RelaxQuantizer
 
 
 class PQCompressor(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
         self._k = k
         self._m = m
@@ -19,10 +19,10 @@ class PQCompressor(nn.Module):
             groups = self._m
         else:
             groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias) if withAtt else ResidualEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True) for _ in range(m))
+        self._encoder = ResidualAttEncoder(channel, groups, alias)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, False, False, True, ema if ema > 0.0 else None) for _ in range(m))
         self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, groups) if withAtt else ResidualDecoder(channel, groups)
+        self._decoder = ResidualAttDecoder(channel, groups)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
@@ -31,16 +31,23 @@ class PQCompressor(nn.Module):
         qs = list()
         codes = list()
         logits = list()
+        fs = list()
+        ts = list()
+        binCounts = list()
         for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, wv = quantizer(split, temp)
+            q, c, l, (trueCode, frequency, binCount) = quantizer(split, temp)
             qs.append(q)
-            codes.append(c.byte())
+            codes.append(c)
             logits.append(l)
+            # [n, h, w] trueCode frequency
+            fs.append(frequency)
+            ts.append(trueCode)
+            binCounts.append(binCount)
         quantized = torch.cat(qs, 1)
         if self._groupDropout is not None:
             quantized = self._groupDropout(quantized)
         restored = torch.tanh(self._decoder(quantized))
-        return restored, (quantized, latent), torch.stack(codes, 1), logits
+        return restored, (quantized, latent), (torch.stack(codes, 1), fs, binCounts, torch.stack(ts, 1)), logits
 
 
 class AQCompressor(nn.Module):

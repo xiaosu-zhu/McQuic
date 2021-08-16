@@ -11,7 +11,7 @@ coef:
     ssim: 1.0
     l1l2: 0.0
 model:
-    type: AQ
+    type: Base
     channel: 256
     k: 256
     m: 4
@@ -19,29 +19,29 @@ model:
     withAtt: true
     withDropout: false
     alias: true
-    ema: 0.9
+    ema: -1.0
 optim:
     type: Adam
     params:
-        lr: 1.e-5
+        lr: 5.e-6
 schdr:
     type: MultiStepWarmUp
     params:
         milestones: [50, 2000, 4000, 8000]
         gamma: 0.5
-# regSchdr:
-#     type: Cyclic
-#     params:
-#         initValue: 0.1
-#         gamma: 1.0
-#         cyclicInterval: 10
-#         boostInterval: 3
-#         zeroOutRatio: 0.9999
 regSchdr:
-    type: MultiStep
+    type: Cyclic
     params:
-        initValue: 0.1
-        gamma: 0.5
-        stepInterval: 2000
-warmStart: ckpt/aq.ckpt
+        initValue: 0.01
+        gamma: 1.0
+        cyclicInterval: 100
+        boostInterval: 3
+        zeroOutRatio: 0.5
+# regSchdr:
+#     type: MultiStep
+#     params:
+#         initValue: 0.01
+#         gamma: 0.5
+#         stepInterval: 2000
+warmStart: "" # ckpt/aq.ckpt
 method: Plain
