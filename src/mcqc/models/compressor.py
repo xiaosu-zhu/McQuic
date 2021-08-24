@@ -20,9 +20,9 @@ class PQCompressor(nn.Module):
         else:
             groups = 1
         self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, False, False, True, ema if ema > 0.0 else None) for _ in range(m))
-        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, groups)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True, ema if ema > 0.0 else None) for _ in range(m))
+        self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
+        self._decoder = ResidualAttDecoder(channel, 1)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)

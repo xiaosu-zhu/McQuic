@@ -370,3 +370,28 @@ class StepValue(_ValueTuner):
 
     def calc(self):
         self._value = self._initValue * (self._gamma ** (self._epoch // self._stepInterval))
+
+
+class JumpValue(_ValueTuner):
+    def __init__(self, initValue: float = 10.0, gamma: float = 0.9, stepInterval: int = 1000, minValue: float = 0.01):
+        super().__init__(initValue=initValue)
+        self._gamma = gamma
+        self._stepInterval = stepInterval
+        self._max = initValue
+        self._min = minValue
+
+        self._iteration = int(math.log(self._min / self._max) / math.log(self._gamma))
+
+    def calc(self):
+        self._value = self._initValue * (self._gamma ** ((self._epoch // self._stepInterval) % self._iteration))
+
+
+if __name__ == "__main__":
+    a = JumpValue(10.0, 0.9931160484209338, 10, 0.01)
+    from matplotlib import pyplot as plt
+    values = list()
+    for i in range(10000):
+        a.step()
+        values.append(float(a._value))
+    plt.plot(values)
+    plt.savefig("value.pdf")
