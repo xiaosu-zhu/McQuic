@@ -6,15 +6,15 @@ vRam: -1
 wantsMore: false
 dataset: compression
 valDataset: clic/valid
-batchSize: 8
+batchSize: 9
 coef:
     ssim: 1.0
     l1l2: 0.0
 model:
     type: Base
-    channel: 256
-    k: 256
-    m: 4
+    channel: 192
+    k: 4096
+    m: 3
     withGroup: true
     withAtt: true
     withDropout: false
@@ -23,25 +23,32 @@ model:
 optim:
     type: Adam
     params:
-        lr: 5.e-6
+        lr: 7.e-6
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [50, 2000, 4000, 8000]
-        gamma: 0.5
-regSchdr:
-    type: Cyclic
-    params:
-        initValue: 0.01
-        gamma: 1.0
-        cyclicInterval: 100
-        boostInterval: 3
-        zeroOutRatio: 0.5
+        milestones: [100, 2000, 4000]
+        gamma: 0.1
+# regSchdr:
+#     type: Cyclic
+#     params:
+#         initValue: 0.0001
+#         gamma: 1.0
+#         cyclicInterval: 100
+#         boostInterval: 2
+#         zeroOutRatio: 0.3
 # regSchdr:
 #     type: MultiStep
 #     params:
-#         initValue: 0.01
-#         gamma: 0.5
-#         stepInterval: 2000
-warmStart: "" # ckpt/aq.ckpt
+#         initValue: 0.0
+#         gamma: 0.1
+#         stepInterval: 1000
+regSchdr:
+    type: Jump
+    params:
+        initValue: 0.1
+        minValue: 0.0000001
+        gamma: 0.954992586021436 # 10.0 * (gamma ^ 500) = 0.01
+        stepInterval: 1
+warmStart: ckpt/newPQ.ckpt
 method: Plain

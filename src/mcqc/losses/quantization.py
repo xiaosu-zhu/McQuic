@@ -48,90 +48,65 @@ class CompressionLoss(nn.Module):
         l2Loss = F.mse_loss(restored, images)
         l1Loss = F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim(restored + 1, images + 1)
+
         # ssimLoss = (1 - self._msssim((restored + 1), (images + 1))).log10().mean()
         # ssimLoss = -F.binary_cross_entropy(ssimLoss, torch.ones_like(ssimLoss))
+
         regs = list()
 
         n, h, w, k = logits[0].shape
-        ths = torch.tensor((h * w) // k, dtype=torch.long, device=device)
+        # ths = torch.tensor(float(h * w) / k, device=device).clamp(1.0, h * w)
 
         # codes: [m, n, h, w]; logits: m * list(n, h, w, k); codeFreqMap: m * list([n, h, w]), binCounts: m * list([n, k])
         for code, logit, freqMap, binCount in zip(codes.permute(1, 0, 2, 3), logits, codeFreqMap, binCounts):
-
-
-            # Expectation of number of each bin not masked: (h * w) / k
-            maskProb = torch.distributions.Bernoulli(probs=(1.0 - float(h * w) / (freqMap * k)).clamp(0.0, 1.0))
+            # binCount = binCount.float()
             # maxFreq, _ = binCount.max(-1, keepdim=True)
+
+            # prob = ths / freqMap
+            # Expectation of number of each bin not masked: (h * w) / k
+            # maskProb = torch.distributions.Bernoulli(probs=(1.0 - prob).clamp(0.05, 0.95))
+            maskProb = torch.distributions.Bernoulli(probs=(freqMap / float(h * w)).clamp(0.01, 0.99))
             # [n, h, w]
             needRegMask = maskProb.sample().bool()
 
-            code = code.clone().detach()
-
-            # adjust final code
-            # fm, bc, regMask shape: [h, w]
-            for i, (c, fm, bc, regMask) in enumerate(zip(code, freqMap, binCount, needRegMask)):
-                # needRegMask codes will be re-allocated
-                newCount = torch.bincount(c[~regMask].flatten(), minlength=k)
-                # contain negative numbers
-                remain = ths - newCount
-                # totally, have j negatives
-                negativeTotalCount = (remain[remain < 0]).sum()
-                # set negative to zero, then, we remain j numbers to remove
-                remain[remain < 0] = 0
-                # [h*w - sum(freqMap > ths)] sequence, the remaining codes to allocate
-                sequence = torch.repeat_interleave(torch.arange(k, device=device), remain)
-                # remove the last j numbers
-                sequence = sequence[torch.randperm(len(sequence))]
-                if negativeTotalCount < 0:
-                    sequence = sequence[:negativeTotalCount]
-                code[i][regMask] = sequence
-
-            bc = torch.bincount(code.flatten())
-
-            # relaxedFreq = maxFreq + binCount.mean(-1, keepdim=True)
-            # # reverse frequencies
-            # # max bin -> meanFreq
-            # # min bin -> meanFreq + maxbin - minbin
-            # # [n, k]
+            # # adjust final code
+            # # fm, bc, regMask shape: [h, w]
+            # for i, (c, fm, bc, regMask) in enumerate(zip(code, freqMap, binCount, needRegMask)):
+            #     # needRegMask codes will be re-allocated
+            #     newCount = torch.bincount(c[~regMask].flatten(), minlength=k)
+            #     # contain negative numbers
+            #     remain = ths - newCount
+            #     # totally, have j negatives
+            #     negativeTotalCount = (remain[remain < 0]).sum()
+            #     # set negative to zero, then, we remain j numbers to remove
+            #     remain[remain < 0] = 0
+            #     # [h*w - sum(freqMap > ths)] sequence, the remaining codes to allocate
+            #     sequence = torch.repeat_interleave(torch.arange(k, device=device), remain)
+            #     # remove the last j numbers
+            #     sequence = sequence[torch.randperm(len(sequence))]
+            #     if negativeTotalCount < 0:
+            #         sequence = sequence[:negativeTotalCount]
+            #     code[i][regMask] = sequence
+            # relaxedFreq = maxFreq # + binCount.mean(-1, keepdim=True)
+            # reverse frequencies
+            # max bin -> 0
+            # min bin -> maxbin - minbin
+            # [n, k]
             # reverseBin = relaxedFreq - binCount
-            # # [n, h, w], auto convert freq to prob in pytorch implementation
+            # [n, h, w], auto convert freq to prob in pytorch implementation
+            # sample = torch.distributions.Categorical(probs=reverseBin).sample((h, w)).permute(2, 0, 1)
             # sample = torch.distributions.Categorical(logits=torch.zeros_like(logit)).sample()
+            sample = torch.distributions.Categorical(probs=(binCount < 1).float()).sample((h, w)).permute(2, 0, 1)
             logit = logit.permute(0, 3, 1, 2)
-            # # [n, 1, 1], normalize then sigmoid, higher frequency -> higher weight
+            # [n, 1, 1], normalize then sigmoid, higher frequency -> higher weight
             # weight = freqMap / float(h * w) # ((freqMap / float(h * w) - 0.5)* 4).sigmoid()
-            ceReg = F.cross_entropy(logit, code, reduction="none") * needRegMask
-            cePush = 0.0001 * F.cross_entropy(logit, code, reduction="none") * (~needRegMask)
-            # cePush = F.cross_entropy(logit, code, reduction="none") * (1 - needRegMask) * weight
-            regs.append((ceReg + cePush).mean())
-        # # [m, n, h, w] and m * list(n, h, w, k) logits and [n, k] frequencies
-        # for code, logit, freq in zip(codes.permute(1, 0, 2, 3), logits, codeFreq):
-        #     # perturb code by the most rare codes with 0.1 probability
-        #     p = 1. / freq.shape[-1]
-        #     freq[freq < 1.] = 1.
-        #     weight = p / (freq + 1e-6)
-        #     dropoutMask = torch.distributions.Bernoulli(probs=torch.tensor(0.1, device=logit.device)).sample((n, h, w))
-        #     # [n, k] probs sample (h, w) -> [n, h, w]
-        #     sample = torch.distributions.Categorical(probs=weight).sample(((dropoutMask > 0.5).int().sum(), ))
-        #     code[dropoutMask > 0.5] = sample
-        #     # input: [n, k, h, w], target: [n, h, w] -> [n, h, w]
-        #     ce = F.cross_entropy(logit.permute(0, 3, 1, 2), code, reduction="none")
-        #     # [n, k]
-        #     weight = torch.zeros((n, k), device=ce.device)
-        #     for i, c in enumerate(code):
-        #         # frequency for all k entries --- sum up to h * w
-        #         frequency = torch.bincount(c.flatten(), minlength=k)
-        #         p = 1. / len(torch.unique(c.flatten()))
-        #         # weights, higher frequency, lower weights
-        #         weight[i] = p / (frequency + 1e-6)
-        #     # indexing frequency by code to get per code weight
-        #     ix = torch.arange(n, device=logit.device)[:, None, None].expand_as(code)
-        #     # [n, h, w] weight sum to 1 every row, peer-to-peer weighting `ce` to balance the loss
-        #     weight = weight[[ix, code]]
-        #     ce = (ce * weight).mean()
-        #     regs.append(ce)
+            ceReg = F.cross_entropy(logit, sample, reduction="none") * needRegMask # * (float(h * w) / needRegMask.float().sum(dim=(1, 2), keepdims=True))
+            # # cePush = 0.001 * F.cross_entropy(logit, code, reduction="none") * (~needRegMask)
+            # cePush = F.cross_entropy(logit, code, reduction="none") * (~needRegMask) * weight
+            regs.append((ceReg).mean())
+
 
         regs = sum(regs) / len(regs)
-
         # for logit in logits:
         #     # [N, H, W, K] -> [N, K]
         #     # logit = logit.mean(dim=(1, 2))

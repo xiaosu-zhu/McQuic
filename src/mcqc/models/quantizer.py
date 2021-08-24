@@ -42,6 +42,8 @@ class AttentiveQuantizer(nn.Module):
             self._wq = nn.Linear(cin, cout, bias=False)
             self._wk = nn.Linear(cout, cout, bias=False)
             self._wv = nn.Linear(cout, cout, bias=False)
+        # self._temperature1 = nn.Parameter(torch.ones(()))
+        # self._temperature2 = nn.Parameter(torch.ones(()))
         self._scale = math.sqrt(cin)
         self._additionWeight = additionWeight
         self._deterministic = deterministic
@@ -114,16 +116,12 @@ class AttentiveQuantizer(nn.Module):
             v = self._wv(v)
 
         # [n, h, w, k]
-        logit = (q @ k.permute(1, 0)) / self._scale
+        logit = (q @ k.permute(1, 0)) / self._scale # * self._temperature1
         n, h, w, k = logit.shape
         with torch.no_grad():
             if self._dropout:
-                # [n, h, w, k]
-                prob = logit.softmax(-1)
-                prob[prob < 1./k] = 0.0
-                mask = torch.distributions.Bernoulli(prob).sample().bool()
                 # [n, h, w]
-                trueCode = prob.argmax(-1)
+                trueCode = logit.argmax(-1)
                 # [n, k]
                 binCount = torch.zeros((n, k), device=logit.device, dtype=torch.long)
                 for i, l in enumerate(trueCode):
@@ -133,9 +131,10 @@ class AttentiveQuantizer(nn.Module):
                 frequency = binCount[[ix, trueCode]]
                 # [n, h, w]
                 dropout = torch.distributions.Bernoulli(frequency / (h * w)).sample().bool()
+                # mask = torch.zeros_like(logit, dtype=bool)
                 # scatter to mask
                 # the max of logit has 0.1 probability to be masked
-                mask = torch.logical_or(torch.zeros_like(mask, dtype=bool).scatter_(-1, trueCode, dropout[..., None]), mask)
+                mask = torch.zeros_like(logit, dtype=bool).scatter_(-1, trueCode[..., None], dropout[..., None])
             else:
                 # [n, h, w]
                 trueCode = logit.argmax(-1)
