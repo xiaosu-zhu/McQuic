@@ -126,8 +126,10 @@ class Plain(Algorithm):
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
+        import copy
+        schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature) #, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=schdr, step=step, epoch=initEpoch, temperature=temperature) #, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -136,6 +138,10 @@ class Plain(Algorithm):
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
             loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=lastEpoch)
             lastEpoch = loaded["epoch"]
+
+        self._scheduler.last_epoch = schdr.last_epoch
+        del schdr
+
 
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
@@ -236,8 +242,13 @@ class Plain(Algorithm):
         img = (img - fMin) / (fMax - fMin)
         img = F.interpolate(img, scale_factor=4, mode="nearest")
         self._saver.add_images("Eval/Feature", img, step)
-        uniqueCodes, _ = torch.unique(torch.cat(bs[0]), return_counts=True)
-        self._saver.add_scalar("Eval/UniqueCodes", len(uniqueCodes), global_step=step)
+        # [N, h, w] codes
+        bs0 = torch.cat(bs[0])
+        uniqueCounts = list()
+        for bs0i in bs0:
+            uniqueCode = torch.unique(bs0i)
+            uniqueCounts.append(len(uniqueCode))
+        self._saver.add_scalar("Eval/UniqueCodes", sum(uniqueCounts) / len(uniqueCounts), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         # self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()

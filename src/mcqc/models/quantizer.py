@@ -42,7 +42,7 @@ class AttentiveQuantizer(nn.Module):
             self._wq = nn.Linear(cin, cout, bias=False)
             self._wk = nn.Linear(cout, cout, bias=False)
             self._wv = nn.Linear(cout, cout, bias=False)
-        # self._temperature1 = nn.Parameter(torch.ones(()))
+        self._temperature1 = nn.Parameter(torch.ones(()))
         # self._temperature2 = nn.Parameter(torch.ones(()))
         self._scale = math.sqrt(cin)
         self._additionWeight = additionWeight
@@ -116,7 +116,7 @@ class AttentiveQuantizer(nn.Module):
             v = self._wv(v)
 
         # [n, h, w, k]
-        logit = (q @ k.permute(1, 0)) / self._scale # * self._temperature1
+        logit = (q @ k.permute(1, 0)) / self._scale * self._temperature1
         n, h, w, k = logit.shape
         with torch.no_grad():
             if self._dropout:
