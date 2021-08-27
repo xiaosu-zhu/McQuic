@@ -18,7 +18,7 @@ class WholePQ(nn.Module):
     def forward(self, image, temp, **_):
         restored, (quantized, latent), (codes, frequencyMaps, binCounts, trueCodes), logits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits, frequencyMaps, binCounts)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codes, trueCodes, logits, frequencyMaps, binCounts)
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
         return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits, frequencyMaps)

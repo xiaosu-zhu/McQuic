@@ -27,7 +27,7 @@ optim:
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [100, 2000, 4000]
+        milestones: [100, 4000, 8000]
         gamma: 0.1
 # regSchdr:
 #     type: Cyclic
@@ -46,8 +46,8 @@ schdr:
 regSchdr:
     type: Jump
     params:
-        initValue: 0.1
-        minValue: 0.0000001
+        initValue: 0.5
+        minValue: 0.0000005
         gamma: 0.954992586021436 # 10.0 * (gamma ^ 500) = 0.01
         stepInterval: 1
 warmStart: ckpt/newPQ.ckpt
