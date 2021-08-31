@@ -206,22 +206,27 @@ class AttentiveQuantizer(nn.Module):
 
 
 class Quantizer(nn.Module):
-    def __init__(self, m: int, k: int, d: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True):
+    def __init__(self, m: int, k: int, d: int, dropout: bool = True, deterministic: bool = False, additionWeight: bool = True, ema: float = 0.8):
         super().__init__()
         self._m = m
         d = d // m
-        self._codebook = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(m, k, d)))
+        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, k, d)))
         if additionWeight:
-            self._wq = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(m, d, d)))
-            self._wk = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(m, d, d)))
-            self._wv = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(m, d, d)))
+            self._wq = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, d, d)))
+            self._wk = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, d, d)))
+            self._wv = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, d, d)))
         self._scale = math.sqrt(d)
         self._additionWeight = additionWeight
         self._deterministic = deterministic
-        if dropout:
-            self._dropout = PointwiseDropout(0.05)
-        else:
-            self._dropout = None
+        self._temperature = nn.Parameter(torch.ones(()))
+        # if dropout:
+        #     self._dropout = PointwiseDropout(0.05)
+        # else:
+        #     self._dropout = None
+
+    @torch.no_grad()
+    def EMAUpdate(self):
+        return
 
     def encode(self, latent):
         n, _, h, w = latent.shape
@@ -233,7 +238,7 @@ class Quantizer(nn.Module):
         # [m, k, d], [m, d, d] -> [m, k, d]
         k = torch.einsum("mkd,mcd->mkc", self._codebook, self._wk)
         # [n, h, w, m]
-        code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1).byte()
+        code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1)
         return code
 
     def decode(self, codes):
@@ -246,7 +251,7 @@ class Quantizer(nn.Module):
         # [n, c, h, w]
         return torch.einsum("nhwmk,mkc->nhwmc", oneHot, v).reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
-    def forward(self, latent, temperature, first):
+    def forward(self, latent, temperature, first=True):
         # [n, h, w, m]
         n, _, h, w = latent.shape
         # [n, h, w, m, d]
@@ -261,13 +266,14 @@ class Quantizer(nn.Module):
         # [n, h, w, m, k]
         logit = torch.einsum("nhwmd,mkd->nhwmk", q, k)
         if first:
-            hard = iGumbelSoftmax((logit / self._scale), temperature, False)
+            # hard = iGumbelSoftmax((logit / self._scale), temperature, False)
+            hard = F.gumbel_softmax(logit / self._scale * self._temperature, temperature, True)
         else:
             # [n, h, w, m, k]
             hard = torch.distributions.OneHotCategorical(logits=logit).sample(())
         quantized = torch.einsum("nhwmk,mkc->nhwmc", hard, v).reshape(n, h, w, -1).permute(0, 3, 1, 2)
         # [n, c, h, w], [n, h, w, m], [n, h, w, m, k]
-        return quantized, logit.argmax(-1).byte(), logit
+        return quantized, logit.argmax(-1), logit
 
 
 class RelaxQuantizer(nn.Module):
@@ -292,7 +298,7 @@ class RelaxQuantizer(nn.Module):
         # [m, k, d], [m, d, d] -> [m, k, d]
         k = torch.einsum("mkd,mcd->mkc", self._codebook, self._wk)
         # [n, h, w, m]
-        code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1).byte()
+        code = torch.einsum("nhwmd,mkd->nhwmk", q, k).argmax(-1)
         return code
 
     def decode(self, codes):
@@ -322,4 +328,4 @@ class RelaxQuantizer(nn.Module):
         varPosterior = Categorical(logits=logit)
         sample = self._method(varPosterior)
         quantized = torch.einsum("znhwmk,mkd->znhwmd", sample, v).reshape(-1, n, h, w, c).permute(0, 1, 4, 2, 3)
-        return quantized, logit.argmax(-1).byte(), logit
+        return quantized, logit.argmax(-1), logit

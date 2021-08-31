@@ -20,6 +20,16 @@ from mcqc import Config
 from mcqc.utils.training import _ValueTuner
 
 
+_logMapping = {
+    "ssim": "Loss/MS-SSIM",
+    "l1l2": "Loss/L1L2",
+    "reg": "Loss/Reg",
+    "lr": "Stat/LR",
+    "regCoeff": "Stat/Reg",
+    "temperature": "Stat/T"
+}
+
+
 class Plain(Algorithm):
     def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], regScheduler: Type[_ValueTuner], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
@@ -54,7 +64,7 @@ class Plain(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({500: self._fastHook, self._config.EvalStep: self._mediumHook})
+            self._loggingHook = FrequecyHook({100: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -66,23 +76,16 @@ class Plain(Algorithm):
     @torch.inference_mode()
     def _fastHook(self, **kwArgs):
         images, restored, step, logits, quantized, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["quantized"], kwArgs["codes"]
-        # self._saver.add_scalar("Loss/MS-SSIM", -10 * ssimLoss.mean(), global_step=step)
-        self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
-        self._saver.add_histogram("Stat/Code", codes[0, 0].flatten(), global_step=step)
-        self._visualizeIntermediate(quantized, codes, step)
-        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
-        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
+        self._saver.add_scalar(_logMapping["ssim"], -10 * kwArgs["ssim"].log10(), global_step=step)
+        self._saver.add_scalar(_logMapping["l1l2"], kwArgs["l1l2"], global_step=step)
+        self._saver.add_scalar(_logMapping["reg"], kwArgs["reg"], global_step=step)
+        self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
+        self._saver.add_scalar(_logMapping["regCoeff"], self._regScheduler.Value, global_step=step)
+        self._saver.add_scalar(_logMapping["temperature"], kwArgs["temperature"], global_step=step)
 
     @torch.inference_mode()
     def _slowHook(self, **kwArgs):
-        testLoader, step = kwArgs["testLoader"], kwArgs["now"]
-        ssim, psnr = self._evalFull(testLoader, step)
-
-    @torch.inference_mode()
-    def _mediumHook(self, **kwArgs):
         evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
-        # if step % self._config.TestStep == 0:
-        #     return
         ssim, _ = self._eval(evalLoader, step)
         if ssim > self._best:
             self._best = ssim
@@ -90,6 +93,17 @@ class Plain(Algorithm):
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
+
+    @torch.inference_mode()
+    def _mediumHook(self, **kwArgs):
+        images, restored, step, logits, quantized, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["quantized"], kwArgs["codes"]
+        evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
+        self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
+        self._saver.add_histogram("Stat/Code", codes[0, 0].flatten(), global_step=step)
+        self._visualizeIntermediate(quantized, codes, step)
+        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
+        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
+        self._visualizeIntermediate(quantized, codes, step)
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
@@ -112,24 +126,23 @@ class Plain(Algorithm):
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
-        # tristate: None (pure latent), False (quantized with straight-through), True (pure quanitzed)
-        # uniqueCodes = 2048
         images = None
 
         temperature = 1.0
-        # finalTemp = 0.001
-        # annealRate = 0.9999
+        finalTemp = 0.001
+        annealRate = 0.9999
         initEpoch = 0
         lastEpoch = 0
 
         updateOps = [q.EMAUpdate for q in self._model.module._compressor._quantizer]
+        # updateOp = self._model.module._compressor._quantizer.EMAUpdate
 
         mapLocation = {"cuda:0": f"cuda:{self._rank}"}
 
-        import copy
-        schdr = copy.deepcopy(self._scheduler)
+        # import copy
+        # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=schdr, step=step, epoch=initEpoch, temperature=temperature) #, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -139,9 +152,9 @@ class Plain(Algorithm):
             loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=lastEpoch)
             lastEpoch = loaded["epoch"]
 
-        self._scheduler.last_epoch = schdr.last_epoch
-        del schdr
-
+        # self._scheduler.last_epoch = schdr.last_epoch
+        # del schdr
+        # self._scheduler.step()
 
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
@@ -154,26 +167,20 @@ class Plain(Algorithm):
             regCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits, frequencyMaps) = self._model(images, temperature)
+                (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits) = self._model(images, temperature)
                 ((ssimCoef * ssimLoss + l1lsCoef * l1l2Loss).mean() + regCoef * reg).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
+                # updateOp()
                 for op in updateOps:
                     op()
                 if self._loggingHook is not None:
                     with torch.inference_mode():
                         ssim = ssimLoss
-                        self._saver.add_scalar("Loss/MS-SSIM", -10 * ssim.log10(), global_step=step)
-                        self._saver.add_scalar("Loss/L1L2", l1l2Loss, global_step=step)
-                        self._saver.add_scalar("Loss/Reg", reg, global_step=step)
-                        self._saver.add_scalar("Stat/LR", self._scheduler.get_last_lr()[0], global_step=step)
-                        self._saver.add_scalar("Stat/Reg", self._regScheduler.Value, global_step=step)
-                        # self._saver.add_scalar("Stat/Temperature", temperature, global_step=step)
-                        self._saver.add_scalar("Stat/Freq", (frequencyMaps[0] > 4).sum() / len(frequencyMaps[0]), global_step=step)
-                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=logits, quantized=quantized, codes=codes)
-            # temperature = max(finalTemp, temperature * annealRate)
+                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=logits, quantized=quantized, codes=codes, ssim=ssim, l1l2=l1l2Loss, reg=reg)
+            temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
@@ -204,12 +211,10 @@ class Plain(Algorithm):
                 bs[i].extend(x[None, ...] for x in b.int().detach().cpu())
             quantized = torch.cat(lHat, 1)
             # b = model._quantizer.encode(latent)
+            # for i in range(self._config.Model.m):
+            #     bs[i].extend(x[None, ...] for x in b[..., i].int().detach().cpu())
             # quantized = model._quantizer.decode(b)
-            # for i, bb in enumerate(bs):
-            #     bb.extend(x[None, ...] for x in b[i].int().detach().cpu())
             restored = torch.tanh(model._decoder(quantized))
-
-            # restored = restored[:, :, :h, :w]
 
             zs.append(latent.detach().cpu())
             qs.append(quantized.detach().cpu())
@@ -304,8 +309,8 @@ class Plain(Algorithm):
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._model.train()
-        encoded, bpp = self._compress(bs, totalPixels)
-        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+        # encoded, bpp = self._compress(bs, totalPixels)
+        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
         return ssimScore, psnrScore
 
     def _compress(self, codes: List[List[torch.Tensor]], totalPixels):
@@ -316,7 +321,7 @@ class Plain(Algorithm):
             b = [x.flatten() for x in b]
             # list of 256 probs
             prob = self._calculateFreq(torch.cat(b), self._config.Model.k)
-            cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
+            cdf = pmf_to_quantized_cdf(prob.tolist(), 22)
             # M * [cdf]
             cdfs.append(cdf)
         encoder = ans.RansEncoder()
