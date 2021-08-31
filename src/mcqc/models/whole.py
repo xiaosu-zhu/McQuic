@@ -3,8 +3,8 @@ from torch import nn
 import torch
 import storch
 
-from mcqc.losses.quantization import CompressionLoss, CompressionLossNew, QError
-from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorNew, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
+from mcqc.losses.quantization import CompressionLoss, CompressionLossNew, CompressionLossQ, QError
+from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
 
 
 class WholePQ(nn.Module):
@@ -16,12 +16,29 @@ class WholePQ(nn.Module):
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, (quantized, latent), (codes, frequencyMaps, binCounts, trueCodes), logits = self._compressor(image, temp, True)
+        restored, quantized, latent, trueCodes, logits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, codes, trueCodes, logits, frequencyMaps, binCounts)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, trueCodes, logits, None, None)
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits, frequencyMaps)
+        return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits)
+
+
+class WholePQQ(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
+        super().__init__()
+        self._compressor = PQCompressorQ(m, k, channel, withGroup, withAtt, withDropout, alias, ema)
+        self._cLoss = CompressionLossQ()
+        # self.register_buffer("_movingMean", torch.zeros([1]))
+        # self._pLoss = LPIPS(net_type='vgg', version='0.1')
+
+    def forward(self, image, temp, **_):
+        restored, quantized, latent, trueCodes, logits = self._compressor(image, temp, True)
+
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, logits)
+        # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
+        # pLoss = self._pLoss(image, restored)
+        return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits)
 
 
 class WholeAQ(nn.Module):

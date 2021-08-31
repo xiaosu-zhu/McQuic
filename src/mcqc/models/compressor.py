@@ -9,7 +9,6 @@ from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder
 from .contextModel import ContextModel
 from .quantizer import AttentiveQuantizer, Quantizer, RelaxQuantizer
 
-
 class PQCompressor(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
@@ -47,7 +46,27 @@ class PQCompressor(nn.Module):
         if self._groupDropout is not None:
             quantized = self._groupDropout(quantized)
         restored = torch.tanh(self._decoder(quantized))
-        return restored, (quantized, latent), (torch.stack(codes, 1), fs, binCounts, torch.stack(ts, 1)), logits
+        return restored, quantized, latent, torch.stack(ts, -1), logits
+
+class PQCompressorQ(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
+        super().__init__()
+        self._k = k
+        self._m = m
+        if withGroup:
+            groups = self._m
+        else:
+            groups = 1
+        self._encoder = ResidualAttEncoder(channel, groups, alias)
+        self._quantizer = Quantizer(m, k, channel, False, False, True, -1)
+        self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
+        self._decoder = ResidualAttDecoder(channel, 1)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latent = self._encoder(x)
+        quantized, trueCodes, logits = self._quantizer(latent, temp)
+        restored = torch.tanh(self._decoder(quantized))
+        return restored, quantized, latent, trueCodes, logits
 
 
 class AQCompressor(nn.Module):

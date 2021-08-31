@@ -167,7 +167,7 @@ class GroupAttentionBlock(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.conv = nn.Sequential(
-                    conv3x3(N, N, groups=groups),
+                    conv1x1(N, N, groups=groups),
                     nn.ReLU(inplace=True),
                     conv3x3(N, N, groups=groups),
                     nn.ReLU(inplace=True),
@@ -221,11 +221,11 @@ class AttentionBlock(nn.Module):
             def __init__(self):
                 super().__init__()
                 self.conv = nn.Sequential(
-                    conv3x3(N, N // 2, groups=groups),
+                    conv1x1(N, N // 2, groups=groups),
                     nn.ReLU(inplace=True),
                     conv3x3(N // 2, N // 2, groups=groups),
                     nn.ReLU(inplace=True),
-                    conv3x3(N // 2, N, groups=groups),
+                    conv1x1(N // 2, N, groups=groups),
                 )
                 self.relu = nn.ReLU(inplace=True)
 

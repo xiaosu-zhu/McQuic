@@ -76,7 +76,7 @@ class Basic(VisionDataset):
 
 
 class BasicLMDB(VisionDataset):
-    def __init__(self, root: str, maxTxns: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    def __init__(self, root: str, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
         super().__init__(root, transform=transform)
         self._maxTxns = maxTxns
         # env and txn is delay-loaded in ddp. They can't pickle
@@ -87,6 +87,7 @@ class BasicLMDB(VisionDataset):
         with open(os.path.join(root, "metadata.json"), "r") as fp:
             metadata = json.load(fp)
         self._length = metadata["length"]
+        self._repeat = repeat
 
     def __enter__(self):
         return self
@@ -109,6 +110,7 @@ class BasicLMDB(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
+        index = index % self._length
         if self._env is None:
             self._initEnv()
         sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, "big")))))
@@ -122,4 +124,4 @@ class BasicLMDB(VisionDataset):
         return sample
 
     def __len__(self) -> int:
-        return self._length
+        return self._length * self._repeat

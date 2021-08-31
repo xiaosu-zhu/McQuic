@@ -18,7 +18,7 @@ from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, FineTune, TwoPass, New
-from mcqc.models.whole import WholeAQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
+from mcqc.models.whole import WholeAQ, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
@@ -75,7 +75,7 @@ models = {
     "Context": WholePQContext,
     "Relax": WholePQRelax,
     "TwoPass": WholePQTwoPass,
-    "New": WholePQNew,
+    "New": WholePQQ,
     "AQ": WholeAQ
 }
 
@@ -126,7 +126,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     #     return torch.optim.lr_scheduler.ExponentialLR(optim, 0.99)
     method = methods[config.Method](config, model, optims[config.Optim.type], schdrs.get(config.Schdr.type, None), regSchdrs.get(config.RegSchdr.type, None), saver, savePath, continueTrain, logger)
 
-    trainDataset = BasicLMDB(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, transform=getTrainingPreprocess())
+    trainDataset = BasicLMDB(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, repeat=config.Repeat, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
 
     trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(config.BatchSize, len(trainDataset)), num_workers=config.BatchSize + 4, pin_memory=True, drop_last=False, persistent_workers=True)
@@ -136,7 +136,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     if rank == 0:
         valDataset = Basic(os.path.join("data", config.ValDataset), transform=getEvalTransform())
         testDataset = Basic(os.path.join("data", config.ValDataset), transform=getTestTransform())
-        valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize * 4, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+        valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
         testLoader = DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
     method.run(prefetcher, trainSampler, valLoader, testLoader)
 

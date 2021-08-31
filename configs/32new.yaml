@@ -5,20 +5,21 @@ gpus: 4
 vRam: -1
 wantsMore: false
 dataset: compression
+repeat: 10 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 9
+batchSize: 12
 coef:
     ssim: 1.0
     l1l2: 0.0
 model:
     type: Base
-    channel: 192
-    k: 4096
-    m: 3
+    channel: 128
+    k: 32768
+    m: 2
     withGroup: true
     withAtt: true
     withDropout: false
-    alias: true
+    alias: false
     ema: -1.0
 optim:
     type: Adam
@@ -27,7 +28,7 @@ optim:
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [100, 4000, 8000]
+        milestones: [10, 800, 1600] # manually divided by repeat
         gamma: 0.1
 # regSchdr:
 #     type: Cyclic
@@ -37,18 +38,25 @@ schdr:
 #         cyclicInterval: 100
 #         boostInterval: 2
 #         zeroOutRatio: 0.3
-# regSchdr:
-#     type: MultiStep
-#     params:
-#         initValue: 0.0
-#         gamma: 0.1
-#         stepInterval: 1000
 regSchdr:
-    type: Jump
+    type: MultiStep
     params:
-        initValue: 0.5
-        minValue: 0.0000005
-        gamma: 0.954992586021436 # 10.0 * (gamma ^ 500) = 0.01
-        stepInterval: 1
-warmStart: ckpt/newPQ.ckpt
+        initValue: 1.e-4
+        gamma: 1.e-3
+        stepInterval: 400 # manually divided by repeat
+# regSchdr:
+#     type: Jump
+#     params:
+#         initValue: 0.5
+#         minValue: 1.e-20
+#         gamma: 0.99 # 10.0 * (gamma ^ 500) = 0.01
+#         stepInterval: 1
+# regSchdr:
+#     type: Jump
+#     params:
+#         initValue: 0.5
+#         minValue: 0.0000005
+#         gamma: 0.954992586021436 # 10.0 * (gamma ^ 500) = 0.01
+#         stepInterval: 1
+warmStart: "" # ckpt/newPQ.ckpt
 method: Plain

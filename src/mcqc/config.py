@@ -2,6 +2,8 @@ from typing import List, Union
 from dataclasses import dataclass
 import typing
 
+from torch.nn.modules.activation import ReLU
+
 
 @dataclass
 class Coef:
@@ -58,6 +60,11 @@ class Config:
     evalStep: int = 1000
     testStep: int = 10000
     warmStart: str = "ckpt/global.ckpt"
+    repeat: int = 1
+
+    @property
+    def Repeat(self) -> int:
+        return self.repeat
 
     @property
     def Optim(self) -> OptimSpec:
