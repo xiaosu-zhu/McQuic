@@ -99,11 +99,10 @@ class Plain(Algorithm):
         images, restored, step, logits, quantized, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["quantized"], kwArgs["codes"]
         evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
-        self._saver.add_histogram("Stat/Code", codes[0, 0].flatten(), global_step=step)
+        self._saver.add_histogram("Stat/Code", codes[0, ..., 0].flatten(), global_step=step)
         self._visualizeIntermediate(quantized, codes, step)
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        self._visualizeIntermediate(quantized, codes, step)
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
@@ -117,9 +116,9 @@ class Plain(Algorithm):
 
         code = (code.float() / self._config.Model.k * 255).byte()
 
-        n, m, h, w = code.shape
+        n, h, w, m = code.shape
 
-        code = code.reshape(n * m, 1, h, w)[:32]
+        code = code.permute(0, 3, 1, 2).reshape(n * m, 1, h, w)[:32]
         code = F.interpolate(code, scale_factor=4, mode="nearest")
         self._saver.add_images("Train/Code", code, step)
 
@@ -142,7 +141,7 @@ class Plain(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature) #, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -161,6 +160,9 @@ class Plain(Algorithm):
             self._best = ssim
 
         for i in range(initEpoch, self._config.Epoch):
+            if self._saver is not None:
+                self._saver.add_scalar("Stat/Epoch", i + lastEpoch, step)
+
             sampler.set_epoch(i + lastEpoch)
             ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             l1lsCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
