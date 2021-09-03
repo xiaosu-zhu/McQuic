@@ -66,7 +66,7 @@ def getTrainingTransform():
     ])
 
 def getTrainingPreprocess():
-    return T.RandomCrop(384, pad_if_needed=True)
+    return T.RandomCrop(512, pad_if_needed=True)
 
 def getEvalTransform():
     return T.Compose([
