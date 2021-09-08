@@ -18,9 +18,9 @@ from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, FineTune, TwoPass, New
-from mcqc.models.whole import WholeAQ, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
+from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
-from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, JumpValue, MultiStepLRWithWarmUp, StepValue
+from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
@@ -76,7 +76,8 @@ models = {
     "Relax": WholePQRelax,
     "TwoPass": WholePQTwoPass,
     "New": WholePQQ,
-    "AQ": WholeAQ
+    "AQ": WholeAQ,
+    "Big": WholePQBig
 }
 
 methods = {
@@ -104,7 +105,8 @@ regSchdrs = {
     "Exponential": ExponentialValue,
     "Cyclic": CyclicValue,
     "MultiStep": StepValue,
-    "Jump": JumpValue
+    "Jump": JumpValue,
+    "JumpAlter": JumpAlter
 }
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):

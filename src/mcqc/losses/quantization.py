@@ -107,24 +107,23 @@ class CompressionLoss(nn.Module):
         regs = sum(regs) / len(regs)
         """
 
-        # for logit, code in zip(logits, codes.permute(1, 0, 2, 3)):
-        #     # [N, H, W, K] -> [N, K]
-        #     # logit = logit.mean(dim=(1, 2))
-        #     # posterior = Categorical(logits=logit)
-        #     # prior = Categorical(logits=torch.zeros_like(logit))
-        #     # reg = torch.distributions.kl_divergence(posterior, prior).mean()
-        #     # [n, h, w, k]
-        #     # weight = (-logit).detach().softmax(-1)
-        #     # oneHot = F.one_hot(code, num_classes=logit.shape[-1]).float()
-        #     # [n, h, w]
-        #     # targetWeight = (weight * oneHot).sum(-1)
-        #     code = torch.randint(logit.shape[-1], [n, h, w], device=device)
-        #     logit = logit.permute(0, 3, 1, 2)
-        #     mle = F.cross_entropy(logit, code)
-        #     regs.append(mle)
-        #     # regs.append(reg) # + 0.01 * mle)
-        # regs = sum(regs) / len(logits)
-        regs = 0.0
+        for logit, code in zip(logits, codes.permute(1, 0, 2, 3)):
+            # [N, H, W, K] -> [N, K]
+            # logit = logit.mean(dim=(1, 2))
+            posterior = Categorical(logits=logit)
+            prior = Categorical(logits=torch.zeros_like(logit))
+            reg = torch.distributions.kl_divergence(posterior, prior).mean()
+            # [n, h, w, k]
+            # weight = (-logit).detach().softmax(-1)
+            # oneHot = F.one_hot(code, num_classes=logit.shape[-1]).float()
+            # [n, h, w]
+            # targetWeight = (weight * oneHot).sum(-1)
+            code = torch.randint(logit.shape[-1], [n, h, w], device=device)
+            logit = logit.permute(0, 3, 1, 2)
+            mle = F.cross_entropy(logit, code)
+            # regs.append(mle)
+            regs.append(reg + 0.01 * mle)
+        regs = sum(regs) / len(logits)
         # regs = 0.0
         return ssimLoss, l1Loss + l2Loss, regs
 
