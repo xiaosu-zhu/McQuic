@@ -4,8 +4,8 @@ import torch
 from torch import nn
 from mcqc.layers.dropout import AQMasking, PointwiseDropout
 
-from .encoder import ResidualAttEncoderNew, ResidualEncoder, ResidualAttEncoder
-from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder
+from .encoder import ResidualAttEncoderBig, ResidualAttEncoderNew, ResidualEncoder, ResidualAttEncoder
+from .decoder import ResidualAttDecoderBig, ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder
 from .contextModel import ContextModel
 from .quantizer import AttentiveQuantizer, Quantizer, RelaxQuantizer
 
@@ -22,6 +22,46 @@ class PQCompressor(nn.Module):
         self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True, ema if ema > 0.0 else None) for _ in range(m))
         self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
         self._decoder = ResidualAttDecoder(channel, 1)
+
+    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
+        latent = self._encoder(x)
+        # M * [n, c // M, h, w]
+        splits = torch.chunk(latent, self._m, 1)
+        qs = list()
+        codes = list()
+        logits = list()
+        fs = list()
+        ts = list()
+        binCounts = list()
+        for quantizer, split in zip(self._quantizer, splits):
+            q, c, l, (trueCode, frequency, binCount) = quantizer(split, temp)
+            qs.append(q)
+            codes.append(c)
+            logits.append(l)
+            # [n, h, w] trueCode frequency
+            fs.append(frequency)
+            ts.append(trueCode)
+            binCounts.append(binCount)
+        quantized = torch.cat(qs, 1)
+        if self._groupDropout is not None:
+            quantized = self._groupDropout(quantized)
+        restored = torch.tanh(self._decoder(quantized))
+        return restored, quantized, latent, torch.stack(ts, -1), logits
+
+
+class PQCompressorBig(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
+        super().__init__()
+        self._k = k
+        self._m = m
+        if withGroup:
+            groups = self._m
+        else:
+            groups = 1
+        self._encoder = ResidualAttEncoderBig(channel, groups, alias)
+        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True, ema if ema > 0.0 else None) for _ in range(m))
+        self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
+        self._decoder = ResidualAttDecoderBig(channel, 1)
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)

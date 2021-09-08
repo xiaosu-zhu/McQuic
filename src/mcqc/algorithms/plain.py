@@ -141,7 +141,7 @@ class Plain(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature) #, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -316,31 +316,60 @@ class Plain(Algorithm):
         return ssimScore, psnrScore
 
     def _compress(self, codes: List[List[torch.Tensor]], totalPixels):
+        # list of N binaries, each binary contains [M, h, w] codes.
         compressed = list()
         cdfs = list()
+
+        entropy = list()
         # b: Tensor of [N, 32, 32]
         for b in codes:
             b = [x.flatten() for x in b]
             # list of 256 probs
             prob = self._calculateFreq(torch.cat(b), self._config.Model.k)
-            cdf = pmf_to_quantized_cdf(prob.tolist(), 22)
+            estimateEntropy = prob.log2()
+            estimateEntropy[estimateEntropy == float("-inf")] = 0
+            estimateEntropy = -(prob * estimateEntropy).sum().item()
+            entropy.append(estimateEntropy)
+            cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
             # M * [cdf]
             cdfs.append(cdf)
+        entropy = sum(entropy)
+        self._logger.info("Estimate \"perfect\" BPP: %.4f", entropy / 256.0)
         encoder = ans.RansEncoder()
+        rawCodes = list()
+        # numTokens = 32 * 32
         # codePerImage: M * [Tensor of [h * w]]
         for codePerImage in zip(*codes):
             # [M, h, w]
             codePerImage = torch.cat(codePerImage, 0)
+            rawCodes.append(codePerImage)
+            indices = torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist()
+            cdfSizes = [self._config.Model.k + 1] * self._config.Model.m
+            offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist(), cdfs, [self._config.Model.k] * self._config.Model.m, torch.zeros_like(codePerImage).flatten().int().tolist())
+            binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
+            # [M, h, w] binary
             compressed.append(binary)
         # binary: 1 byte per word
         # N * [binaries]
         total = 8 * sum(len(binary) for binary in compressed)
         bpp = float(total) / totalPixels
+        # self._decompressAndCheck(rawCodes, compressed, cdfs)
         self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, len(codes[0]), bpp)
         return compressed, bpp
+
+    def _decompressAndCheck(self, rawCodes: List[torch.Tensor], binaries: List[str], cdfs: List[List[float]]):
+        decoder = ans32.RansDecoder()
+        for binary, raw in zip(binaries, rawCodes):
+            m, h, w = raw.shape
+            code: List[int] = decoder.decode_with_indexes(binary, torch.arange(m)[:, None, None].expand(m, h, w).flatten().int().tolist(), cdfs, [self._config.Model.k] * m, torch.zeros(m, h, w).flatten().int().tolist())
+            code = torch.tensor(code, dtype=torch.long).reshape(m, h, w)
+            print(code)
+            print(raw)
+            input()
+            if torch.any(raw != code):
+                raise ValueError("Decompress failed, decoded b not equals to raw b.")
 
     def _calculateFreq(self, code: torch.Tensor, k):
         count = torch.bincount(code, minlength=k)
