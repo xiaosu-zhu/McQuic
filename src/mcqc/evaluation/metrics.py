@@ -170,6 +170,7 @@ def ms_ssim(X, Y, win, weights, poolMethod, data_range=255, sizeAverage=True, K=
 
     levels = weights.shape[0]
     mcs = []
+    ssim_per_channel = None
     for i in range(levels):
         ssim_per_channel, cs = _ssim(X, Y, win=win, data_range=data_range, K=K)
 
@@ -178,6 +179,9 @@ def ms_ssim(X, Y, win, weights, poolMethod, data_range=255, sizeAverage=True, K=
             padding = [s % 2 for s in X.shape[2:]]
             X = poolMethod(X, kernel_size=2, padding=padding)
             Y = poolMethod(Y, kernel_size=2, padding=padding)
+
+    if ssim_per_channel is None:
+        raise ValueError()
 
     ssim_per_channel = torch.relu(ssim_per_channel)  # (batch, channel)
     mcs_and_ssim = torch.stack(mcs + [ssim_per_channel], dim=1)  # (batch, level, channel)

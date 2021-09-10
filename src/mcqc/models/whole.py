@@ -3,7 +3,7 @@ from torch import nn
 import torch
 import storch
 
-from mcqc.losses.quantization import CompressionLoss, CompressionLossNew, CompressionLossQ, QError
+from mcqc.losses.quantization import CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, QError
 from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorBig, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
 
 
@@ -27,17 +27,17 @@ class WholePQBig(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
         self._compressor = PQCompressorBig(m, k, channel, withGroup, withAtt, withDropout, alias, ema)
-        self._cLoss = CompressionLoss()
+        self._cLoss = CompressionLossBig()
         # self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, quantized, latent, trueCodes, logits = self._compressor(image, temp, True)
+        restored, (q1, q2), latent, (c1, c2), (l1, l2), predict = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, trueCodes, trueCodes, logits, None, None)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, c1, c2, predict, l1, l2)
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits)
+        return (ssimLoss, l1l2Loss, reg), (restored, (c1, c2), (l1, l2), predict.argmax(1))
 
 
 class WholePQQ(nn.Module):

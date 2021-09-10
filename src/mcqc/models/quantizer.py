@@ -118,6 +118,8 @@ class AttentiveQuantizer(nn.Module):
         # [n, h, w, k]
         logit = (q @ k.permute(1, 0)) / self._scale * self._temperature1
         n, h, w, k = logit.shape
+        trueCode = logit.argmax(-1)
+        """
         with torch.no_grad():
             if self._dropout:
                 # [n, h, w]
@@ -146,6 +148,7 @@ class AttentiveQuantizer(nn.Module):
                 ix = torch.arange(n)[:, None, None].expand_as(trueCode)
                 frequency = binCount[[ix, trueCode]]
                 # frequency = torch.ones_like(logit) * logit.shape[0] / logit.numel()
+        """
         # 将 mask 加入到缩放的张量上。
         if mask is not None:
             maskedLogit = logit.masked_fill(mask, -1e9)
@@ -160,7 +163,7 @@ class AttentiveQuantizer(nn.Module):
             # sample = torch.distributions.OneHotCategoricalStraightThrough(logits=maskedLogit).rsample(())
             sample = F.gumbel_softmax(maskedLogit, temperature, True)
             result = sample @ v
-        return result, sample, logit, (trueCode, frequency, binCount)
+        return result, sample, logit, trueCode
 
     def _argmax(self, q, k, v):
         if self._additionWeight:
@@ -170,8 +173,9 @@ class AttentiveQuantizer(nn.Module):
         logit = (q @ k.permute(1, 0))
         sample = F.one_hot(logit.argmax(-1), logit.shape[-1]).float()
         result = sample @ v
-        frequency = torch.ones_like(logit) * logit.shape[0] / logit.numel()
-        return result, sample, logit, frequency, None
+        trueCode = logit.argmax(-1)
+        # frequency = torch.ones_like(logit) * logit.shape[0] / logit.numel()
+        return result, sample, logit, trueCode
 
     # def _randomErase(self, x: torch.Tensor):
     #     n, c, h, w = x.shape
@@ -195,14 +199,14 @@ class AttentiveQuantizer(nn.Module):
         k = self._codebook.shape[0]
         # randomMask = self._randomMask.sample((n, h, w, k)).bool().to(latent.device)
         if temperature >= 0:
-            quantized, sample, logit, (trueCode, frequency, binCount) = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, temperature)
+            quantized, sample, logit, trueCode = self._gumbelAttention(latent.permute(0, 2, 3, 1), self._codebook, self._codebook, None, temperature)
         else:
-            quantized, sample, logit, (trueCode, frequency, binCount) = self._argmax(latent.permute(0, 2, 3, 1), self._codebook, self._codebook)
+            quantized, sample, logit, trueCode = self._argmax(latent.permute(0, 2, 3, 1), self._codebook, self._codebook)
         quantized = quantized.permute(0, 3, 1, 2)
         # if self._dropout is not None:
         #     quantized = self._dropout(quantized)
         # [n, c, h, w], [n, h, w], [n, h, w, k], [k, c]
-        return quantized, sample.argmax(-1), logit, (trueCode, frequency, binCount)
+        return quantized, trueCode, logit
 
 
 class Quantizer(nn.Module):
