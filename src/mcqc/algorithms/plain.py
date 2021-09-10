@@ -41,7 +41,7 @@ class Plain(Algorithm):
             raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False, find_unused_parameters=True)
 
         if self._rank == 0:
             self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
@@ -93,6 +93,8 @@ class Plain(Algorithm):
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
+        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.inference_mode()
     def _mediumHook(self, **kwArgs):
@@ -103,8 +105,6 @@ class Plain(Algorithm):
         self._visualizeIntermediate(quantized, codes, step)
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
-        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.inference_mode()
     def _visualizeIntermediate(self, latent, code, step):
@@ -165,12 +165,12 @@ class Plain(Algorithm):
 
             sampler.set_epoch(i + lastEpoch)
             ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            l1lsCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
+            l1l2Coef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             regCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
                 (ssimLoss, l1l2Loss, reg), (restored, codes, quantized, logits) = self._model(images, temperature)
-                ((ssimCoef * ssimLoss + l1lsCoef * l1l2Loss).mean() + regCoef * reg).backward()
+                ((ssimCoef * ssimLoss + l1l2Coef * l1l2Loss).mean() + regCoef * reg).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()

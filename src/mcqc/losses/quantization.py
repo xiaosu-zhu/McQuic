@@ -1,3 +1,4 @@
+import math
 from typing import List
 import storch
 from storch.wrappers import deterministic
@@ -9,7 +10,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 from mcqc.consts import Consts
 
-from mcqc.evaluation.metrics import MsSSIM, ssim
+from mcqc.evaluation.metrics import MsSSIM
 
 
 def hinge_d_loss(logits_real, logits_fake):
@@ -42,15 +43,13 @@ class CompressionLoss(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
 
-    def forward(self, images, restored, codes, trueCodes, logits, codeFreqMap, binCounts):
+    def forward(self, images, restored, codes, trueCodes, logits, z, zHat):
         device = images.device
 
-        l2Loss = F.mse_loss(restored, images)
-        l1Loss = F.l1_loss(restored, images)
+        l2Loss = 0.0 # F.mse_loss(restored, images)
+        l1Loss = 0.0 # F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim(restored + 1, images + 1)
 
-        # ssimLoss = (1 - self._msssim((restored + 1), (images + 1))).log10().mean()
-        # ssimLoss = -F.binary_cross_entropy(ssimLoss, torch.ones_like(ssimLoss))
 
         regs = list()
         n, h, w, k = logits[0].shape
@@ -111,21 +110,47 @@ class CompressionLoss(nn.Module):
             # [N, H, W, K] -> [N, K]
             # logit = logit.mean(dim=(1, 2))
             posterior = Categorical(logits=logit)
-            prior = Categorical(logits=torch.zeros_like(logit))
-            reg = torch.distributions.kl_divergence(posterior, prior).mean()
-            # [n, h, w, k]
-            # weight = (-logit).detach().softmax(-1)
-            # oneHot = F.one_hot(code, num_classes=logit.shape[-1]).float()
-            # [n, h, w]
-            # targetWeight = (weight * oneHot).sum(-1)
-            code = torch.randint(logit.shape[-1], [n, h, w], device=device)
-            logit = logit.permute(0, 3, 1, 2)
-            mle = F.cross_entropy(logit, code)
-            # regs.append(mle)
-            regs.append(reg + 0.01 * mle)
+            # [N, H, W]
+            reg = posterior.entropy().mean()
+            # prior = Categorical(logits=torch.zeros_like(logit))
+            # reg = torch.distributions.kl_divergence(posterior, prior).mean()
+            # # [n, h, w, k]
+            # # weight = (-logit).detach().softmax(-1)
+            # # oneHot = F.one_hot(code, num_classes=logit.shape[-1]).float()
+            # # [n, h, w]
+            # # targetWeight = (weight * oneHot).sum(-1)
+            # code = torch.randint(logit.shape[-1], [n, h, w], device=device)
+            # logit = logit.permute(0, 3, 1, 2)
+            # mle = F.cross_entropy(logit, code)
+            # # regs.append(mle)
+            # regs.append(reg + 0.01 * mle)
         regs = sum(regs) / len(logits)
         # regs = 0.0
         return ssimLoss, l1Loss + l2Loss, regs
+
+
+class CompressionLossBig(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
+
+    def forward(self, images, restored, c1, c2, predict, l1, l2):
+        device = images.device
+
+        _, _, h, w = c1.shape
+
+        l2Loss = 0.0 # F.mse_loss(restored, images)
+        l1Loss = 0.0 # F.l1_loss(restored, images)
+        ssimLoss = 1 - self._msssim(restored + 1, images + 1)
+        # [N, K, M, H, W], [N, M, H, W]
+        contextLoss = F.cross_entropy(predict, c1)
+        # [n, m, h, w, k] -> [n, k, m, h, w]
+        l1, l2 = l1.permute(0, 4, 1, 2, 3), l2.permute(0, 4, 1, 2, 3)
+        # [N, K, M, H, W], [N, M, H, W]
+        # sum(-logP) / ()
+        bppLoss = (F.cross_entropy(l1, c1, reduction="mean") + F.cross_entropy(l2, c2, reduction="mean")) / math.log(2)
+
+        return ssimLoss, contextLoss, -bppLoss
 
 
 class CompressionLossQ(nn.Module):

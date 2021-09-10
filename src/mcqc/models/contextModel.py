@@ -2,33 +2,22 @@ from math import perm
 import torch
 from torch import nn
 from torch.distributions import Categorical
+from mcqc.layers.convs import conv1x1
 
 from mcqc.layers.positional import PositionalEncoding2D
+from mcqc.models.decoder import UpSampler
 
 
 class ContextModel(nn.Module):
-    def __init__(self, d, nHead, nLayers, dFFN, k, rate=0.1):
+    def __init__(self, m, k, channel):
         super().__init__()
-        self._transformer = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, nHead, dFFN, rate, "gelu"), nLayers)
-        self._position = PositionalEncoding2D(d, 120, 120, rate)
+        self._net = UpSampler(channel, 1)
+        self._liner = conv1x1(channel, m*k)
+        self._m = m
 
-        self._dropout = nn.Dropout(rate, True)
-        self._ffn = nn.Linear(d, k)
-
-    def _createInputandMask(self, latent: torch.Tensor):
-        n, d, h, w = latent.shape
-        latent = latent.permute(2, 3, 0, 1)
-        latent = self._position(latent)
-        latent = latent.reshape(h*w, n, d)
-        return latent, torch.eye(h*w, device=latent.device, dtype=torch.bool)
-
-    def forward(self, latent, code):
-        # [hw, n, d], [hw, hw]
-        latent, mask = self._createInputandMask(latent)
-        hw, n, d = latent.shape
-        # [hw, n, d]
-        encoded = self._transformer(latent, mask)
-        # [hw, n, k]
-        logit = self._ffn(self._dropout(encoded))
-        # [n, k, hw], [n, hw]
-        return logit.permute(1, 2, 0), code.reshape(n, -1)
+    def forward(self, q):
+        n, _, h, w = q.shape
+        # [N, M*K, H, W]
+        predict = self._liner(self._net(q)).reshape(n, -1, self._m, h * 2, w * 2)
+        # [N, K, M, H, W]
+        return predict
