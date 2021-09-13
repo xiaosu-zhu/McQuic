@@ -7,14 +7,14 @@ wantsMore: false
 dataset: compression
 repeat: 10 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 9
+batchSize: 8
 coef:
     ssim: 1.0
-    l1l2: 10.0
+    l1l2: 1.0
 model:
     type: Big
     channel: 192
-    k: 4096
+    k: 2048
     m: 3
     withGroup: false
     withAtt: true
@@ -24,11 +24,11 @@ model:
 optim:
     type: Adam
     params:
-        lr: 7.e-5
+        lr: 5.e-6
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [100, 800, 1600] # manually divided by repeat
+        milestones: [50, 800, 1600] # manually divided by repeat
         gamma: 0.1
 # regSchdr:
 #     type: Cyclic
@@ -41,7 +41,7 @@ schdr:
 regSchdr:
     type: MultiStep
     params:
-        initValue: 1.e-3
+        initValue: 1.e-5
         gamma: 1.e-3
         stepInterval: 600 # manually divided by repeat
 # regSchdr:

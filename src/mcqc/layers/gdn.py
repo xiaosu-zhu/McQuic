@@ -109,6 +109,41 @@ class GenDivNorm(nn.Module):
         return out
 
 
+class GenDivNorm1D(nn.Module):
+
+    def __init__(self, in_dims, inverse=False, beta_min=1e-6, gamma_init=0.1):
+        super().__init__()
+
+        beta_min = float(beta_min)
+        gamma_init = float(gamma_init)
+        self.inverse = bool(inverse)
+
+        self.beta_reparam = NonNegativeParametrizer(minimum=beta_min)
+        beta = torch.ones(in_dims)
+        beta = self.beta_reparam.init(beta)
+        self.beta = nn.Parameter(beta)
+
+        self.gamma_reparam = NonNegativeParametrizer()
+        gamma = gamma_init * torch.eye(in_dims)
+        gamma = self.gamma_reparam.init(gamma)
+        self.gamma = nn.Parameter(gamma)
+
+    def forward(self, x):
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+
+        norm = x ** 2 @ gamma + beta
+
+        if self.inverse:
+            norm = torch.sqrt(norm)
+        else:
+            norm = torch.rsqrt(norm)
+
+        out = x * norm
+
+        return out
+
+
 class EffGenDivNorm(GenDivNorm):
     r"""Simplified GDN layer.
     Introduced in `"Computationally Efficient Neural Image Compression"

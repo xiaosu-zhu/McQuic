@@ -3,6 +3,7 @@ from storch.wrappers import deterministic
 import torch
 from torch import nn
 from mcqc.layers.dropout import AQMasking, PointwiseDropout
+from mcqc.models.quantizer import NonLinearQuantizer
 
 from .encoder import Director, DownSampler, ResidualAttEncoderNew, ResidualEncoder, ResidualAttEncoder
 from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder, UpSampler
@@ -59,12 +60,13 @@ class PQCompressorBig(nn.Module):
         else:
             groups = 1
         self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer1 = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True, ema if ema > 0.0 else None) for _ in range(m))
+        self._quantizer1 = nn.ModuleList(NonLinearQuantizer(k, channel // m, doubling=True) for _ in range(m))
         self._mapperZ = DownSampler(channel, 1, alias)
         self._mapperQ = DownSampler(channel, 1, alias)
-        self._quantizer2 = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True, ema if ema > 0.0 else None) for _ in range(m))
+        self._quantizer2 = nn.ModuleList(NonLinearQuantizer(k, channel // m, doubling=False) for _ in range(m))
         self._scatterZ = Director(channel, 1)
         self._scatterQ = UpSampler(channel, 1)
+        # self._conditionQ = nn.ModuleList(UpSampler(channel, 1, k) for _ in range(m))
         self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
         self._decoder = ResidualAttDecoder(channel, 1)
         self._context = ContextModel(m, k, channel)
@@ -73,21 +75,24 @@ class PQCompressorBig(nn.Module):
         latent = self._encoder(x)
         # M * [n, c // M, h, w]
         splits = torch.chunk(latent, self._m, 1)
-        q1 = list()
+        softs = list()
         c1 = list()
         l1 = list()
+        hards = list()
         for quantizer, split in zip(self._quantizer1, splits):
-            q, c, l = quantizer(split, temp)
-            q1.append(q)
+            soft, c, l, hard = quantizer(split, temp)
+            softs.append(soft)
             c1.append(c)
             l1.append(l)
-        q1 = torch.cat(q1, 1)
+            hards.append(hard)
+        softs = torch.cat(softs, 1)
         # [n, m, h, w]
         c1 = torch.stack(c1, 1)
+        hards = torch.cat(hards, 1)
         # [n, m, h, w, k]
         l1 = torch.stack(l1, 1)
         # [N, c, h/2, w/2]
-        q1Mapped = self._mapperQ(q1)
+        q1Mapped = self._mapperQ(softs)
         zMapped = self._mapperZ(latent)
         residual = zMapped - q1Mapped
         splits = torch.chunk(residual, self._m, 1)
@@ -95,7 +100,7 @@ class PQCompressorBig(nn.Module):
         c2 = list()
         l2 = list()
         for quantizer, split in zip(self._quantizer2, splits):
-            q, c, l = quantizer(split, temp)
+            _, c, l, q = quantizer(split, temp)
             q2.append(q)
             c2.append(c)
             l2.append(l)
@@ -106,14 +111,15 @@ class PQCompressorBig(nn.Module):
         l2 = torch.stack(l2, 1)
 
         rHat = self._scatterQ(q2)
-        zHat = self._scatterZ(q1)
+
+        zHat = self._scatterZ(hards)
 
         quantized = zHat + rHat
 
         predict = self._context(q2.detach())
 
         restored = torch.tanh(self._decoder(quantized))
-        return restored, (q1, q2), latent, (c1, c2), (l1, l2), predict
+        return restored, (hards, q2), latent, (c1, c2), (l1, l2), predict
 
 class PQCompressorQ(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
