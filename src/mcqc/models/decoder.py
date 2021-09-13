@@ -67,13 +67,15 @@ class ResidualAttDecoder(nn.Module):
 
 
 class UpSampler(nn.Module):
-    def __init__(self, channel, groups):
+    def __init__(self, channel, groups, outChannel=None):
         super().__init__()
+        if outChannel is None:
+            outChannel = channel
         self._net = nn.Sequential(
             AttentionBlock(channel, groups=groups),
             ResidualBlockUpsample(channel, channel, 2, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
-            conv3x3(channel, channel, stride=1, groups=groups)
+            conv3x3(channel, outChannel, stride=1, groups=groups)
         )
 
     def forward(self, x: torch.Tensor):

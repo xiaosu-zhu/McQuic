@@ -211,18 +211,21 @@ class New(Algorithm):
             latent = model._encoder(raw)
             # M * [n, c // M, h, w]
             splits = torch.chunk(latent, self._config.Model.m, 1)
-            lHat = list()
             code1 = list()
+            hards = list()
+            softs = list()
             for i in range(self._config.Model.m):
-                b1 = model._quantizer1[i].encode(splits[i])
-                q = model._quantizer1[i].decode(b1)
-                lHat.append(q)
+                b1, soft = model._quantizer1[i].softEncode(splits[i])
+                q, qSoft = model._quantizer1[i].softDecode(b1, soft)
+                softs.append(qSoft)
+                hards.append(q)
                 bs1[i].extend(x[None, ...] for x in b1.int().detach().cpu())
                 code1.append(b1)
-            q1 = torch.cat(lHat, 1)
+            softs = torch.cat(softs, 1)
+            hards = torch.cat(hards, 1)
             # [n, m, h, w]
             code1 = torch.stack(code1, 1)
-            q1Mapped = model._mapperQ(q1)
+            q1Mapped = model._mapperQ(softs)
             zMapped = model._mapperZ(latent)
             residual = zMapped - q1Mapped
             splits = torch.chunk(residual, self._config.Model.m, 1)
@@ -243,7 +246,7 @@ class New(Algorithm):
             contextPrediction.append(correct)
 
             rHat = model._scatterQ(q2)
-            zHat = model._scatterZ(q1)
+            zHat = model._scatterZ(hards)
 
             quantized = zHat + rHat
 

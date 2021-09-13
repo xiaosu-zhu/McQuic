@@ -145,12 +145,23 @@ class CompressionLossBig(nn.Module):
         # [N, K, M, H, W], [N, M, H, W]
         contextLoss = F.cross_entropy(predict, c1)
         # [n, m, h, w, k] -> [n, k, m, h, w]
-        l1, l2 = l1.permute(0, 4, 1, 2, 3), l2.permute(0, 4, 1, 2, 3)
+        # l1, l2 = l1.permute(0, 4, 1, 2, 3), l2.permute(0, 4, 1, 2, 3)
         # [N, K, M, H, W], [N, M, H, W]
         # sum(-logP) / ()
-        bppLoss = (F.cross_entropy(l1, c1, reduction="mean") + F.cross_entropy(l2, c2, reduction="mean")) / math.log(2)
+        # bppLoss = (F.cross_entropy(l1, c1, reduction="mean") + F.cross_entropy(l2, c2, reduction="mean")) / math.log(2)
 
-        return ssimLoss, contextLoss, -bppLoss
+        l1 = l1.mean((2,3))
+        l2 = l2.mean((2,3))
+
+        posterior1 = torch.distributions.Categorical(logits=l1)
+        posterior2 = torch.distributions.Categorical(logits=l2)
+
+        prior1 = torch.distributions.Categorical(logits=torch.zeros_like(l1))
+        prior2 = torch.distributions.Categorical(logits=torch.zeros_like(l2))
+
+        reg = torch.distributions.kl_divergence(posterior1, prior1).mean() + torch.distributions.kl_divergence(posterior2, prior2).mean()
+
+        return ssimLoss, contextLoss, reg
 
 
 class CompressionLossQ(nn.Module):

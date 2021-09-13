@@ -4,7 +4,6 @@ from torch import nn
 from mcqc.layers.convs import conv1x1, conv3x3, conv5x5
 from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockDownSample, ResidualBlockWithStride, AttentionBlock
-from mcqc.models.quantizer import QuantizeBlock
 
 
 class Encoder(nn.Module):
@@ -109,13 +108,15 @@ class DownSampler(nn.Module):
         return self._net(x)
 
 class Director(nn.Module):
-    def __init__(self, channel, groups, alias=False):
+    def __init__(self, channel, groups, outChannel=None):
         super().__init__()
+        if outChannel is None:
+            outChannel = channel
         self._net = nn.Sequential(
             ResidualBlock(channel, channel, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
-            conv3x3(channel, channel, stride=1, groups=groups),
-            AttentionBlock(channel, groups=groups)
+            conv3x3(channel, outChannel, stride=1, groups=groups),
+            AttentionBlock(outChannel, groups=groups)
         )
 
     def forward(self, x: torch.Tensor):
