@@ -65,17 +65,23 @@ class Mapper(nn.Module):
 
 
 class NonLinearQuantizer(nn.Module):
-    def __init__(self, k: int, d: int, doubling=False):
+    def __init__(self, k: int, d: int):
         super().__init__()
         self._k = k
-        dHidden = int(math.sqrt(k * d))
-        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(dHidden, dHidden)))
-        self._wk = Mapper(dHidden, k, d)
-        self._wv = Mapper(dHidden, k, d)
-        if doubling:
-            self._wvShadow = Mapper(dHidden, k, d)
-        else:
-            self._wvShadow = None
+        # dHidden = int(math.sqrt(k * d))
+        # self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(dHidden, dHidden)))
+        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, d)))
+        # self._wk = Mapper(dHidden, k, d)
+        # self._wv = Mapper(dHidden, k, d)
+        # self._wv = _resLinear(d, d)
+        # self._wk = _resLinear(d, d)
+        self._wv = nn.Linear(d, d, False)
+        self._wk = nn.Linear(d, d, False)
+        # if doubling:
+        #     # self._wvShadow = Mapper(dHidden, k, d)
+        #     self._wvShadow = nn.Linear(d, d, False)
+        # else:
+        #     self._wvShadow = None
         self._temperature1 = nn.Parameter(torch.ones(()))
         # self._temperature2 = nn.Parameter(torch.ones(()))
         self._scale = math.sqrt(d)
@@ -126,7 +132,7 @@ class NonLinearQuantizer(nn.Module):
         # [n, h, w, k]
         sample = F.one_hot(code, self._k).float()
         codebook = self._wv(self._codebook)
-        codebookShadow = self._wvShadow(self._codebook)
+        codebookShadow = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
         quantized = (sample @ codebook).permute(0, 3, 1, 2)
         soft = (soft @ codebookShadow).permute(0, 3, 1, 2)
@@ -143,15 +149,120 @@ class NonLinearQuantizer(nn.Module):
         hard = sample @ target
         hard = hard.permute(0, 3, 1, 2)
 
-        if self._wvShadow is not None:
-            softSample = (logit / temperature).softmax(-1)
-            soft = softSample @ self._wvShadow(self._codebook)
-            soft = soft.permute(0, 3, 1, 2)
-        else:
-            soft = hard
+        # if self._wvShadow is not None:
+        #     softSample = (logit / temperature).softmax(-1)
+        #     soft = softSample @ self._wvShadow(self._codebook)
+        #     soft = soft.permute(0, 3, 1, 2)
+        # else:
+        #     soft = hard
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, c, h, w], [k, c]
-        return soft, trueCode, logit, hard
+        return hard, trueCode, logit
+
+
+class L2Quantizer(nn.Module):
+    def __init__(self, k: int, d: int):
+        super().__init__()
+        self._k = k
+        # dHidden = int(math.sqrt(k * d))
+        # self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(dHidden, dHidden)))
+        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, d)))
+        # self._wk = Mapper(dHidden, k, d)
+        # self._wv = Mapper(dHidden, k, d)
+        # self._wv = _resLinear(d, d)
+        # self._wk = _resLinear(d, d)
+        # self._wv = nn.Linear(d, d, False)
+        # self._wk = nn.Linear(d, d, False)
+        # if doubling:
+        #     # self._wvShadow = Mapper(dHidden, k, d)
+        #     self._wvShadow = nn.Linear(d, d, False)
+        # else:
+        #     self._wvShadow = None
+        self._temperature1 = nn.Parameter(torch.ones(()))
+        # self._temperature2 = nn.Parameter(torch.ones(()))
+        self._scale = math.sqrt(d)
+
+    @torch.no_grad()
+    def EMAUpdate(self):
+        pass
+
+    def getLogit(self, x, c):
+        # [n, h, w, 1]
+        x2 = ((x ** 2).sum(-1))[..., None]
+        # [k]
+        c2 = (c ** 2).sum(-1)
+        # [n, h, w, k]
+        inter = x @ c.permute(1, 0)
+
+        distance = -(x2 + c2 - 2 * inter) #.sqrt()
+
+        return distance * self._temperature1
+
+    def encode(self, latent):
+        # [n, h, w, c]
+        q = latent.permute(0, 2, 3, 1)
+        # [k, c]
+        k = self._codebook
+
+        # [k, c]
+        # k = self._wk(k)
+
+        # [n, h, w, k]
+        logit = self.getLogit(q, k)
+
+        # sample = F.gumbel_softmax(logit, 1.0, True)
+        return logit.argmax(-1)
+
+    def softEncode(self, latent):
+        # [n, h, w, c]
+        q = latent.permute(0, 2, 3, 1)
+        # [k, c]
+        k = self._codebook
+
+        # [n, h, w, k]
+        logit = self.getLogit(q, k)
+
+        # sample = F.gumbel_softmax(logit, 1.0, True)
+        return logit.argmax(-1), logit.softmax(-1)
+
+    def decode(self, code):
+        # [n, h, w, k]
+        sample = F.one_hot(code, self._k).float()
+        # codebook = self._wv(self._codebook)
+        # [n, h, w, c] -> [n, c, h, w]
+        quantized = (sample @ self._codebook).permute(0, 3, 1, 2)
+        return quantized
+
+    def softDecode(self, code, soft):
+        # [n, h, w, k]
+        sample = F.one_hot(code, self._k).float()
+        # codebook = self._wv(self._codebook)
+        # codebookShadow = self._wv(self._codebook)
+        # [n, h, w, c] -> [n, c, h, w]
+        quantized = (sample @ self._codebook).permute(0, 3, 1, 2)
+        soft = (soft @ self._codebook).permute(0, 3, 1, 2)
+        return quantized, soft
+
+    def forward(self, latent, temperature):
+        q = latent.permute(0, 2, 3, 1)
+        k = self._codebook
+        # [n, h, w, k]
+        logit = self.getLogit(q, k)
+        trueCode = logit.argmax(-1)
+        sample = F.gumbel_softmax(logit, temperature, True)
+        target = self._codebook
+        hard = sample @ target
+        hard = hard.permute(0, 3, 1, 2)
+
+        # if self._wvShadow is not None:
+        #     softSample = (logit / temperature).softmax(-1)
+        #     soft = softSample @ self._wvShadow(self._codebook)
+        #     soft = soft.permute(0, 3, 1, 2)
+        # else:
+        #     soft = hard
+
+        # [n, c, h, w], [n, h, w], [n, h, w, k], [n, c, h, w], [k, c]
+        return hard, trueCode, logit
 
 
 class AttentiveQuantizer(nn.Module):

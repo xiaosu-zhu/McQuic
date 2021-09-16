@@ -65,6 +65,23 @@ class ResidualAttDecoder(nn.Module):
         # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
         return self._net(x)
 
+class ResidualBaseDecoder(nn.Module):
+    def __init__(self, channel, groups):
+        super().__init__()
+        self._net = nn.Sequential(
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            subPixelConv3x3(channel, 3, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
 
 class UpSampler(nn.Module):
     def __init__(self, channel, groups, outChannel=None):
@@ -73,9 +90,8 @@ class UpSampler(nn.Module):
             outChannel = channel
         self._net = nn.Sequential(
             AttentionBlock(channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
-            conv3x3(channel, outChannel, stride=1, groups=groups)
+            ResidualBlockUpsample(channel, channel, 2, groups=groups),
         )
 
     def forward(self, x: torch.Tensor):

@@ -134,34 +134,28 @@ class CompressionLossBig(nn.Module):
         super().__init__()
         self._msssim = MsSSIM(data_range=2.0, sizeAverage=True)
 
-    def forward(self, images, restored, c1, c2, predict, l1, l2):
-        device = images.device
-
-        _, _, h, w = c1.shape
-
+    def forward(self, images, restored, allLogits):
         l2Loss = 0.0 # F.mse_loss(restored, images)
         l1Loss = 0.0 # F.l1_loss(restored, images)
         ssimLoss = 1 - self._msssim(restored + 1, images + 1)
         # [N, K, M, H, W], [N, M, H, W]
-        contextLoss = F.cross_entropy(predict, c1)
+        contextLoss = 0.0 # F.cross_entropy(predict, c1)
         # [n, m, h, w, k] -> [n, k, m, h, w]
         # l1, l2 = l1.permute(0, 4, 1, 2, 3), l2.permute(0, 4, 1, 2, 3)
         # [N, K, M, H, W], [N, M, H, W]
         # sum(-logP) / ()
         # bppLoss = (F.cross_entropy(l1, c1, reduction="mean") + F.cross_entropy(l2, c2, reduction="mean")) / math.log(2)
 
-        l1 = l1.mean((2,3))
-        l2 = l2.mean((2,3))
+        # l1 = l1.mean((2,3))
+        # l2 = l2.mean((2,3))
+        regs = list()
+        for l in allLogits:
+            posterior = torch.distributions.Categorical(logits=l)
+            prior = torch.distributions.Categorical(logits=torch.zeros_like(l))
+            reg = torch.distributions.kl_divergence(posterior, prior).mean()
+            regs.append(reg)
 
-        posterior1 = torch.distributions.Categorical(logits=l1)
-        posterior2 = torch.distributions.Categorical(logits=l2)
-
-        prior1 = torch.distributions.Categorical(logits=torch.zeros_like(l1))
-        prior2 = torch.distributions.Categorical(logits=torch.zeros_like(l2))
-
-        reg = torch.distributions.kl_divergence(posterior1, prior1).mean() + torch.distributions.kl_divergence(posterior2, prior2).mean()
-
-        return ssimLoss, contextLoss, reg
+        return ssimLoss, contextLoss, sum(regs)
 
 
 class CompressionLossQ(nn.Module):

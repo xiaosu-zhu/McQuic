@@ -14,7 +14,7 @@ class Coef:
 @dataclass
 class ModelSpec:
     type: str
-    k: int = 256
+    k: List[int] = [1024, 1024, 1024]
     m: int = 4
     withGroup: bool = True
     channel: int = 256

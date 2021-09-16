@@ -7,19 +7,19 @@ wantsMore: false
 dataset: compression
 repeat: 10 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 8
+batchSize: 10
 coef:
     ssim: 1.0
-    l1l2: 1.0
+    l1l2: 0.0
 model:
     type: Big
     channel: 192
-    k: 2048
-    m: 3
-    withGroup: false
+    k: [4096, 1024, 256]
+    m: 4
+    withGroup: true
     withAtt: true
     withDropout: false
-    alias: false
+    alias: true
     ema: -1.0
 optim:
     type: Adam
@@ -41,7 +41,7 @@ schdr:
 regSchdr:
     type: MultiStep
     params:
-        initValue: 1.e-5
+        initValue: 0.0
         gamma: 1.e-3
         stepInterval: 600 # manually divided by repeat
 # regSchdr:
@@ -59,6 +59,6 @@ regSchdr:
 #         gamma: 0.6683439175686146 # 1.0 * (gamma ^ 30) = 1.e-7
 #         stepInterval: 1
 #         milestone: 600
-#         valueAfterMilestone: 1.e-5
+#         valueAfterMilestone: 1.e-6
 warmStart: "" # ckpt/big.ckpt
 method: New

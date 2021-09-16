@@ -32,12 +32,12 @@ class WholePQBig(nn.Module):
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, (q1, q2), latent, (c1, c2), (l1, l2), predict = self._compressor(image, temp, True)
+        restored, allHards, latent, allCodes, allLogits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, c1, c2, predict, l1, l2)
+        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, allLogits)
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, (c1, c2), (l1, l2), predict.argmax(1))
+        return (ssimLoss, l1l2Loss, reg), (restored, allCodes, allLogits)
 
 
 class WholePQQ(nn.Module):
