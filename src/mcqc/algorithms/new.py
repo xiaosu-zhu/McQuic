@@ -23,7 +23,7 @@ from mcqc.utils.training import _ValueTuner
 _logMapping = {
     "ssim": "Loss/MS-SSIM",
     "predict": "Loss/Context",
-    "bpp": "Loss/BPP",
+    "bpp": "Loss/Reg",
     "lr": "Stat/LR",
     "regCoeff": "Stat/Reg",
     "temperature": "Stat/T"
@@ -100,32 +100,33 @@ class New(Algorithm):
     def _mediumHook(self, **kwArgs):
         images, restored, step, logits, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["codes"]
         evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
-        prediction = kwArgs["prediction"]
+        # prediction = kwArgs["prediction"]
         self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
-        self._saver.add_histogram("Stat/Code", codes[0, ..., 0].flatten(), global_step=step)
-        self._visualizeIntermediate(prediction, codes, step)
+        for i, c in enumerate(codes):
+            self._saver.add_histogram(f"Stat/Code{i}", c[0, ..., 0].flatten(), global_step=step)
+            self._visualizeIntermediate(i, c, step)
         self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
         self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
 
     @torch.inference_mode()
-    def _visualizeIntermediate(self, prediction, code, step):
+    def _visualizeIntermediate(self, i, code, step):
         # img = latent[0][:, None, ...]
         # fMin, fMax = img.min(), img.max()
         # img = (img - fMin) / (fMax - fMin)
         # img = F.interpolate(img, scale_factor=4, mode="nearest")
         # self._saver.add_images("Train/Feature", img, step)
 
-        img = prediction[0][:, None, ...].float()
-        img = F.interpolate(img, scale_factor=4, mode="nearest")
-        self._saver.add_images("Train/Predict", img, step)
+        # img = prediction[0][:, None, ...].float()
+        # img = F.interpolate(img, scale_factor=4, mode="nearest")
+        # self._saver.add_images("Train/Predict", img, step)
 
-        code = (code.float() / self._config.Model.k * 255).byte()
+        code = (code.float() / self._config.Model.k[i] * 255).byte()
 
         n, m, h, w = code.shape
 
         code = code.reshape(n * m, 1, h, w)[:32]
         code = F.interpolate(code, scale_factor=4, mode="nearest")
-        self._saver.add_images("Train/Code", code, step)
+        self._saver.add_images(f"Train/Code{i}", code, step)
 
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
@@ -173,7 +174,7 @@ class New(Algorithm):
             bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                (ssimLoss, predictLoss, bppLoss), (restored, (c1, c2), (l1, l2), prediction) = self._model(images, temperature)
+                (ssimLoss, predictLoss, bppLoss), (restored, allHards, allLogits) = self._model(images, temperature)
                 (ssimCoef * ssimLoss + contextCoef * predictLoss + bppCoef * bppLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
@@ -183,7 +184,7 @@ class New(Algorithm):
                 if self._loggingHook is not None:
                     with torch.inference_mode():
                         ssim = ssimLoss
-                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=l1, codes=c1, ssim=ssim, predict=predictLoss, bpp=bppLoss, prediction=(c1 == prediction))
+                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, ssim=ssim, predict=predictLoss, bpp=bppLoss)
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
@@ -195,65 +196,25 @@ class New(Algorithm):
         model = self._model.module._compressor
         ssims = list()
         psnrs = list()
-        bs1 = [list() for _ in range(self._config.Model.m)]
-        bs2 = [list() for _ in range(self._config.Model.m)]
-        zs = list()
-        qs = list()
+        bs = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
         totalPixels = 0
 
-        contextPrediction = list()
+        numImages = 0
+
+        # contextPrediction = list()
 
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
 
-            latent = model._encoder(raw)
-            # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, self._config.Model.m, 1)
-            code1 = list()
-            hards = list()
-            softs = list()
-            for i in range(self._config.Model.m):
-                b1, soft = model._quantizer1[i].softEncode(splits[i])
-                q, qSoft = model._quantizer1[i].softDecode(b1, soft)
-                softs.append(qSoft)
-                hards.append(q)
-                bs1[i].extend(x[None, ...] for x in b1.int().detach().cpu())
-                code1.append(b1)
-            softs = torch.cat(softs, 1)
-            hards = torch.cat(hards, 1)
-            # [n, m, h, w]
-            code1 = torch.stack(code1, 1)
-            q1Mapped = model._mapperQ(softs)
-            zMapped = model._mapperZ(latent)
-            residual = zMapped - q1Mapped
-            splits = torch.chunk(residual, self._config.Model.m, 1)
+            numImages += n
 
-            lHat = list()
-            for i in range(self._config.Model.m):
-                b2 = model._quantizer2[i].encode(splits[i])
-                q = model._quantizer2[i].decode(b2)
-                lHat.append(q)
-                bs2[i].extend(x[None, ...] for x in b2.int().detach().cpu())
-            q2 = torch.cat(lHat, 1)
+            restored, allCodes = model.test(raw)
 
-            # [n, m, h, w]
-            predict = model._context(q2).argmax(1)
-
-            correct = (predict == code1)
-
-            contextPrediction.append(correct)
-
-            rHat = model._scatterQ(q2)
-            zHat = model._scatterZ(hards)
-
-            quantized = zHat + rHat
-
-            restored = torch.tanh(model._decoder(quantized))
-
-            zs.append(latent.detach().cpu())
-            qs.append(quantized.detach().cpu())
+            for i, codesAtLeveli in enumerate(allCodes):
+                for m, codeAtPartM in enumerate(codesAtLeveli.permute(1, 0, 2, 3)):
+                    bs[i][m].extend(codeAtPartM)
 
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
@@ -263,12 +224,10 @@ class New(Algorithm):
             ssims.append(-10 * (1.0 - ssim).log10())
             psnrs.append(self._evalPSNR(restored.detach(), raw.detach()))
 
-        contextPrediction = torch.cat(contextPrediction)
+        # contextPrediction = torch.cat(contextPrediction)
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
-        zs = torch.cat(zs, 0)
-        qs = torch.cat(qs, 0)
         ssimScore = ssims.mean().item()
         psnrScore = psnrs.mean().item()
         self._logger.info("MS-SSIM: %2.2fdB", ssimScore)
@@ -277,40 +236,24 @@ class New(Algorithm):
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
         self._saver.add_images("Eval/Res", restored, global_step=step)
 
-        self._logger.info("Context prediction: %.2f%%", contextPrediction.float().mean() * 100.0)
-
-        n, h, w = b1.shape
-        code = (b1.reshape(n, 1, h, w).float() / self._config.Model.k * 255).byte()
-        code = F.interpolate(code, scale_factor=4, mode="nearest")
-        self._saver.add_images("Eval/Code1", code, step)
-
-        n, h, w = b2.shape
-        code = (b2.reshape(n, 1, h, w).float() / self._config.Model.k * 255).byte()
-        code = F.interpolate(code, scale_factor=4, mode="nearest")
-        self._saver.add_images("Eval/Code2", code, step)
+        # self._logger.info("Context prediction: %.2f%%", contextPrediction.float().mean() * 100.0)
 
 
-        img = quantized[0][:, None, ...]
-        fMin, fMax = img.min(), img.max()
-        img = (img - fMin) / (fMax - fMin)
-        img = F.interpolate(img, scale_factor=4, mode="nearest")
-        self._saver.add_images("Eval/Feature", img, step)
+        # img = restored[0][:, None, ...]
+        # fMin, fMax = img.min(), img.max()
+        # img = (img - fMin) / (fMax - fMin)
+        # img = F.interpolate(img, scale_factor=4, mode="nearest")
+        # self._saver.add_images("Eval/Feature", img, step)
         # [N, h, w] codes
-        bs10 = torch.cat(bs1[0])
-        uniqueCounts = list()
-        for bs0i in bs10:
-            uniqueCode = torch.unique(bs0i)
-            uniqueCounts.append(len(uniqueCode))
-        self._saver.add_scalar("Eval/UniqueCodes", sum(uniqueCounts) / len(uniqueCounts), global_step=step)
+        self._saver.add_scalar("Eval/UniqueCodes", len(torch.unique(allCodes[0])), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         # self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()
 
-        encoded1, bpp1 = self._compress(bs1, totalPixels)
-        encoded2, bpp2 = self._compress(bs2, totalPixels)
-        total = 8 * sum(len(binary) for binary in encoded1 + encoded2)
-        self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, len(bs1[0]), bpp1 + bpp2)
-        self._saver.add_scalar("Eval/BPP", bpp1 + bpp2, global_step=step)
+        encoded, bpp = self._compress(bs, totalPixels)
+        total = 8 * sum(len(binary) for binary in encoded)
+        self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, numImages, bpp)
+        self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
         return ssimScore, psnrScore
 
     @torch.inference_mode()
@@ -381,47 +324,36 @@ class New(Algorithm):
         # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
         return ssimScore, psnrScore
 
-    def _compress(self, codes: List[List[torch.Tensor]], totalPixels):
-        # list of N binaries, each binary contains [M, h, w] codes.
-        compressed = list()
-        cdfs = list()
-
-        entropy = list()
-        # b: Tensor of [N, 32, 32]
-        for b in codes:
-            b = [x.flatten() for x in b]
-            # list of 256 probs
-            prob = self._calculateFreq(torch.cat(b), self._config.Model.k)
-            estimateEntropy = prob.log2()
-            estimateEntropy[estimateEntropy == float("-inf")] = 0
-            estimateEntropy = -(prob * estimateEntropy).sum().item()
-            entropy.append(estimateEntropy)
-            cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
-            # M * [cdf]
-            cdfs.append(cdf)
-        entropy = sum(entropy)
-        # self._logger.info("Estimate \"perfect\" BPP: %.4f", entropy / 256.0)
+    def _compress(self, codes: List[List[List[torch.Tensor]]], totalPixels):
         encoder = ans.RansEncoder()
-        rawCodes = list()
-        # numTokens = 32 * 32
-        # codePerImage: M * [Tensor of [h * w]]
-        for codePerImage in zip(*codes):
-            # [M, h, w]
-            codePerImage = torch.cat(codePerImage, 0)
-            rawCodes.append(codePerImage)
-            indices = torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist()
-            cdfSizes = [self._config.Model.k + 2] * self._config.Model.m
-            offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
-            # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
-            # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
-            # [M, h, w] binary
-            compressed.append(binary)
+        compressed = list()
+        for lv, levels in enumerate(codes):
+            images = list()
+            cdfs = list()
+            for part in levels:
+                # [N, h, w] all code of images at level i, group m
+                c = torch.stack(part, 0)
+                prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
+                cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
+                cdfs.append(cdf)
+                images.append(c)
+            # codePerImage: M * [Tensor of [h * w]]
+            for codePerImage in zip(*images):
+                # [M, h, w]
+                codePerImage = torch.stack(codePerImage, 0)
+                indices = torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist()
+                cdfSizes = [self._config.Model.k[lv] + 2] * self._config.Model.m
+                offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
+                # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
+                # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
+                binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
+                # [M, h, w] binary
+                compressed.append(binary)
         # binary: 1 byte per word
         # N * [binaries]
         total = 8 * sum(len(binary) for binary in compressed)
         bpp = float(total) / totalPixels
-        # self._decompressAndCheck(rawCodes, compressed, cdfs)
+
         return compressed, bpp
 
     def _decompressAndCheck(self, rawCodes: List[torch.Tensor], binaries: List[str], cdfs: List[List[float]]):

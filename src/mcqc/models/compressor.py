@@ -1,11 +1,14 @@
+from typing import List
 import storch
 from storch.wrappers import deterministic
 import torch
 from torch import nn
+from torch.nn.modules.activation import ReLU
 from mcqc.layers.dropout import AQMasking, PointwiseDropout
-from mcqc.models.quantizer import NonLinearQuantizer
+from mcqc.models.decoder import ResidualBaseDecoder
+from mcqc.models.quantizer import L2Quantizer, NonLinearQuantizer
 
-from .encoder import Director, DownSampler, ResidualAttEncoderNew, ResidualEncoder, ResidualAttEncoder
+from .encoder import Director, DownSampler, EncoderHead, ResidualAttEncoderNew, ResidualBaseEncoder, ResidualEncoder, ResidualAttEncoder
 from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder, UpSampler
 from .contextModel import ContextModel
 from .quantizer import AttentiveQuantizer, Quantizer, RelaxQuantizer
@@ -51,7 +54,7 @@ class PQCompressor(nn.Module):
 
 
 class PQCompressorBig(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
+    def __init__(self, m: int, k: List[int], channel, withGroup, withAtt, withDropout, alias, ema):
         super().__init__()
         self._k = k
         self._m = m
@@ -59,67 +62,146 @@ class PQCompressorBig(nn.Module):
             groups = self._m
         else:
             groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer1 = nn.ModuleList(NonLinearQuantizer(k, channel // m, doubling=True) for _ in range(m))
-        self._mapperZ = DownSampler(channel, 1, alias)
-        self._mapperQ = DownSampler(channel, 1, alias)
-        self._quantizer2 = nn.ModuleList(NonLinearQuantizer(k, channel // m, doubling=False) for _ in range(m))
-        self._scatterZ = Director(channel, 1)
-        self._scatterQ = UpSampler(channel, 1)
-        # self._conditionQ = nn.ModuleList(UpSampler(channel, 1, k) for _ in range(m))
+
+        self._levels = len(k)
+
+        self._encoder = ResidualBaseEncoder(channel, groups, alias)
+
+        self._heads = nn.ModuleList(EncoderHead(channel, 1, alias) for _ in range(self._levels))
+        self._mappers = nn.ModuleList(DownSampler(channel, 1, alias) for _ in range(self._levels - 1))
+        self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m) for _ in range(m)) for ki in k)
+
+        self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels))
+        self._scatters = nn.ModuleList(Director(channel, 1, alias) for _ in range(self._levels - 1))
+
         self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, 1)
-        self._context = ContextModel(m, k, channel)
+        self._decoder = ResidualBaseDecoder(channel, 1)
+        # self._context = ContextModel(m, k, channel)
+
+    def quantize(self, latent, level, temp):
+        splits = torch.chunk(latent, self._m, 1)
+        codes = list()
+        logits = list()
+        hards = list()
+        for quantizer, split in zip(self._quantizers[level], splits):
+            hard, c, l = quantizer(split, temp)
+            codes.append(c)
+            logits.append(l)
+            hards.append(hard)
+
+        codes = torch.stack(codes, 1)
+        hards = torch.cat(hards, 1)
+        logits = torch.stack(logits, 1)
+
+        return hards, codes, logits
+
+    def encode(self, latent, level):
+        splits = torch.chunk(latent, self._m, 1)
+        codes = list()
+        for quantizer, split in zip(self._quantizers[level], splits):
+            c = quantizer.encode(split)
+            codes.append(c)
+
+        codes = torch.stack(codes, 1)
+        return codes
+
+    def decode(self, code, level):
+        qs = list()
+        for quantizer, c in zip(self._quantizers[level], code.permute(1, 0, 2, 3)):
+            q = quantizer.decode(c)
+            qs.append(q)
+
+        return torch.cat(qs, 1)
+
+    def nextLevelDown(self, x, level, temp):
+        mapper = self._mappers[level] if level < self._levels - 1 else None
+        head = self._heads[level]
+        z = head(x)
+        if mapper is not None:
+            latent = mapper(x)
+        else:
+            latent = None
+        hards, c, l = self.quantize(z, level, temp)
+        return latent, hards, c, l
+
+    def deQuantize(self, q, level):
+        reverse = self._reverses[level]
+        return reverse(q)
+
+    def nextLevelUp(self, q, upperQ, level):
+        latent = self.deQuantize(q, level)
+        if upperQ is not None:
+            scatter = self._scatters[level]
+            return latent + scatter(upperQ)
+        return latent
+
+    def nextLevelEncode(self, x, level):
+        mapper = self._mappers[level] if level < self._levels - 1 else None
+        head = self._heads[level]
+        z = head(x)
+        if mapper is not None:
+            latent = mapper(x)
+        else:
+            latent = None
+        hards, c, l = self.encode(z, level)
+        return latent, hards, c, l
+
+    def test(self, x:torch.Tensor):
+        latent = self._encoder(x)
+
+        allHards = list()
+        allCodes = list()
+
+        allHards.append(None)
+
+        for i in range(self._levels):
+            mapper = self._mappers[i] if i < self._levels - 1 else None
+            head = self._heads[i]
+            z = head(latent)
+            if mapper is not None:
+                latent = mapper(latent)
+            else:
+                latent = None
+            c = self.encode(z, i + 1)
+            allCodes.append(c)
+            hard = self.decode(c, i + 1)
+            allHards.append(hard)
+
+        quantizeds = list()
+        quantizeds.extend(allHards)
+
+        for i in range(self._levels, 0, -1):
+            quantized = self.nextLevelUp(quantizeds[i], allHards[i - 1], i)
+            quantizeds[i - 1] = quantized
+
+        restored = torch.tanh(self._decoder(quantizeds[0]))
+        return restored, allCodes
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
-        # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, self._m, 1)
-        softs = list()
-        c1 = list()
-        l1 = list()
-        hards = list()
-        for quantizer, split in zip(self._quantizer1, splits):
-            soft, c, l, hard = quantizer(split, temp)
-            softs.append(soft)
-            c1.append(c)
-            l1.append(l)
-            hards.append(hard)
-        softs = torch.cat(softs, 1)
-        # [n, m, h, w]
-        c1 = torch.stack(c1, 1)
-        hards = torch.cat(hards, 1)
-        # [n, m, h, w, k]
-        l1 = torch.stack(l1, 1)
-        # [N, c, h/2, w/2]
-        q1Mapped = self._mapperQ(softs)
-        zMapped = self._mapperZ(latent)
-        residual = zMapped - q1Mapped
-        splits = torch.chunk(residual, self._m, 1)
-        q2 = list()
-        c2 = list()
-        l2 = list()
-        for quantizer, split in zip(self._quantizer2, splits):
-            _, c, l, q = quantizer(split, temp)
-            q2.append(q)
-            c2.append(c)
-            l2.append(l)
-        q2 = torch.cat(q2, 1)
-        # [n, m, h, w]
-        c2 = torch.stack(c2, 1)
-        # [n, m, h, w, k]
-        l2 = torch.stack(l2, 1)
 
-        rHat = self._scatterQ(q2)
+        allHards = list()
+        allCodes = list()
+        allLogits = list()
 
-        zHat = self._scatterZ(hards)
+        allHards.append(None)
 
-        quantized = zHat + rHat
+        for i in range(self._levels):
+            latent, hards, c, l = self.nextLevelDown(latent, i, temp)
+            allHards.append(hards)
+            allCodes.append(c)
+            allLogits.append(l)
 
-        predict = self._context(q2.detach())
+        quantizeds = list()
+        quantizeds.extend(allHards)
 
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, (hards, q2), latent, (c1, c2), (l1, l2), predict
+        for i in range(self._levels, 0, -1):
+            quantized = self.nextLevelUp(quantizeds[i], allHards[i - 1], i - 1)
+            quantizeds[i - 1] = quantized
+
+
+        restored = torch.tanh(self._decoder(quantizeds[0]))
+        return restored, allHards, latent, allCodes, allLogits
 
 class PQCompressorQ(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
