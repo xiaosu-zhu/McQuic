@@ -7,7 +7,7 @@ wantsMore: false
 dataset: compression
 repeat: 10 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 10
+batchSize: 9
 coef:
     ssim: 1.0
     l1l2: 0.0
@@ -15,7 +15,7 @@ model:
     type: Big
     channel: 192
     k: [4096, 1024, 256]
-    m: 4
+    m: 3
     withGroup: true
     withAtt: true
     withDropout: false
@@ -24,7 +24,7 @@ model:
 optim:
     type: Adam
     params:
-        lr: 5.e-6
+        lr: 7.e-6
 schdr:
     type: MultiStepWarmUp
     params:

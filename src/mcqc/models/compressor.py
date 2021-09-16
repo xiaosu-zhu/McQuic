@@ -131,7 +131,7 @@ class PQCompressorBig(nn.Module):
     def nextLevelUp(self, q, upperQ, level):
         latent = self.deQuantize(q, level)
         if upperQ is not None:
-            scatter = self._scatters[level]
+            scatter = self._scatters[level - 1]
             return latent + scatter(upperQ)
         return latent
 
@@ -162,16 +162,16 @@ class PQCompressorBig(nn.Module):
                 latent = mapper(latent)
             else:
                 latent = None
-            c = self.encode(z, i + 1)
+            c = self.encode(z, i)
             allCodes.append(c)
-            hard = self.decode(c, i + 1)
+            hard = self.decode(c, i)
             allHards.append(hard)
 
         quantizeds = list()
         quantizeds.extend(allHards)
 
         for i in range(self._levels, 0, -1):
-            quantized = self.nextLevelUp(quantizeds[i], allHards[i - 1], i)
+            quantized = self.nextLevelUp(quantizeds[i], allHards[i - 1], i - 1)
             quantizeds[i - 1] = quantized
 
         restored = torch.tanh(self._decoder(quantizeds[0]))
