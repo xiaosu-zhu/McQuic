@@ -15,6 +15,7 @@ saved*/
 *.synctex.gz
 BUILD
 test/
+tmp/
 temp/
 
 # Byte-compiled / optimized / DLL files

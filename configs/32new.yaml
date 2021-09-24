@@ -14,17 +14,17 @@ coef:
 model:
     type: Big
     channel: 192
-    k: [4096, 1024, 256]
-    m: 3
-    withGroup: true
+    k: [8192, 2048, 512]
+    m: 2
+    withGroup: false
     withAtt: true
     withDropout: false
-    alias: true
+    alias: false
     ema: -1.0
 optim:
     type: Adam
     params:
-        lr: 7.e-6
+        lr: 2.e-5
 schdr:
     type: MultiStepWarmUp
     params:
