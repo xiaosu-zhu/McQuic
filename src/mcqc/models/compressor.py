@@ -121,8 +121,10 @@ class PQCompressorBig(nn.Module):
             latent = mapper(x)
         else:
             latent = None
-        hards, c, l = self.quantize(z, level, temp)
-        return latent, hards, c, l
+        hard, c, l = self.quantize(z, level, temp)
+        if latent is not None:
+            latent = latent - hard
+        return latent, hard, c, l
 
     def deQuantize(self, q, level):
         reverse = self._reverses[level]
@@ -135,16 +137,6 @@ class PQCompressorBig(nn.Module):
             return latent + scatter(upperQ)
         return latent
 
-    def nextLevelEncode(self, x, level):
-        mapper = self._mappers[level] if level < self._levels - 1 else None
-        head = self._heads[level]
-        z = head(x)
-        if mapper is not None:
-            latent = mapper(x)
-        else:
-            latent = None
-        hards, c, l = self.encode(z, level)
-        return latent, hards, c, l
 
     def test(self, x:torch.Tensor):
         latent = self._encoder(x)
@@ -165,6 +157,8 @@ class PQCompressorBig(nn.Module):
             c = self.encode(z, i)
             allCodes.append(c)
             hard = self.decode(c, i)
+            if latent is not None:
+                latent = latent - hard
             allHards.append(hard)
 
         quantizeds = list()
