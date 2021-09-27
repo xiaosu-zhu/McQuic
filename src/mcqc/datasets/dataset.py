@@ -1,6 +1,7 @@
 from typing import Callable, Any, Optional, Tuple, Callable, List, cast
 import os
 import json
+import sys
 
 import lmdb
 import torch
@@ -79,10 +80,10 @@ class BasicLMDB(VisionDataset):
     def __init__(self, root: str, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
         super().__init__(root, transform=transform)
         self._maxTxns = maxTxns
-        # env and txn is delay-loaded in ddp. They can't pickle
+        # env and txn is lazy-loaded in ddp. They can't be pickled
         self._env = None
         self._txn = None
-        # Length is needed for DistributedSampler, but we can't use env to get it, env can't pickle.
+        # Length is needed for DistributedSampler, but we can't use env to get it, env can't be pickled.
         # So we decide to read from metadata placed in the same folder --- see src/misc/datasetCreate.py
         with open(os.path.join(root, "metadata.json"), "r") as fp:
             metadata = json.load(fp)
@@ -113,7 +114,7 @@ class BasicLMDB(VisionDataset):
         index = index % self._length
         if self._env is None:
             self._initEnv()
-        sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, "big")))))
+        sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, sys.byteorder)))))
         sample = decode_image(sample, ImageReadMode.UNCHANGED)
         if sample.shape[0] == 1:
             sample = sample.repeat((3, 1, 1))

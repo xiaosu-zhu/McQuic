@@ -148,14 +148,14 @@ class CompressionLossBig(nn.Module):
 
         # l1 = l1.mean((2,3))
         # l2 = l2.mean((2,3))
-        regs = list()
-        for l in allLogits:
-            posterior = torch.distributions.Categorical(logits=l)
-            prior = torch.distributions.Categorical(logits=torch.zeros_like(l))
-            reg = torch.distributions.kl_divergence(posterior, prior).mean()
-            regs.append(reg)
+        # regs = list()
+        # for l in allLogits:
+        #     posterior = torch.distributions.Categorical(logits=l)
+        #     prior = torch.distributions.Categorical(logits=torch.zeros_like(l))
+        #     reg = torch.distributions.kl_divergence(posterior, prior).mean()
+        #     regs.append(reg)
 
-        return ssimLoss, contextLoss, sum(regs)
+        return ssimLoss, contextLoss, 0.0
 
 
 class CompressionLossQ(nn.Module):
