@@ -196,7 +196,7 @@ class L2Quantizer(nn.Module):
 
         distance = -(x2 + c2 - 2 * inter) #.sqrt()
 
-        return distance * self._temperature1
+        return distance / self._scale * self._temperature1
 
     def encode(self, latent):
         # [n, h, w, c]

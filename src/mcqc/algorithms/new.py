@@ -203,6 +203,8 @@ class New(Algorithm):
 
         # contextPrediction = list()
 
+        countUnique = list()
+
         for raw in dataLoader:
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
@@ -211,6 +213,7 @@ class New(Algorithm):
             numImages += n
 
             restored, allCodes = model.test(raw)
+            countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):
                 for m, codeAtPartM in enumerate(codesAtLeveli.permute(1, 0, 2, 3)):
@@ -245,7 +248,7 @@ class New(Algorithm):
         # img = F.interpolate(img, scale_factor=4, mode="nearest")
         # self._saver.add_images("Eval/Feature", img, step)
         # [N, h, w] codes
-        self._saver.add_scalar("Eval/UniqueCodes", len(torch.unique(allCodes[0])), global_step=step)
+        self._saver.add_scalar("Eval/UniqueCodes", len(torch.unique(torch.cat(countUnique))), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         # self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
         self._model.train()

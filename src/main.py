@@ -63,10 +63,10 @@ def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_PORT"] = "19936"
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
-    torch.manual_seed(rank)
-    random.seed(rank)
+    torch.manual_seed(3407)
+    random.seed(3407)
     torch.cuda.set_device(rank)
-    np.random.seed(rank)
+    np.random.seed(3407)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
     # dist.barrier(device_ids=[rank])
 

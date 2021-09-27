@@ -2,6 +2,7 @@ import json
 import os
 from random import shuffle
 import shutil
+import sys
 
 import tqdm
 import lmdb
@@ -50,13 +51,13 @@ def main(targetDir):
     env = lmdb.Environment(targetDir, subdir=True, map_size=1073741824 * 20)
     with env.begin(write=True) as txn:
         for i, f in enumerate(tqdm.tqdm(allFiles)):
-            write(txn, i.to_bytes(32, "big"), f)
+            write(txn, i.to_bytes(32, sys.byteorder), f)
     env.close()
 
     # Create metadata needed for dataset
     with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
         json.dump({
-            "length": i,
+            "length": i + 1,
         }, fp)
 
 

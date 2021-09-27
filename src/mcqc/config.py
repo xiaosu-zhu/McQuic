@@ -1,8 +1,5 @@
-from typing import List, Union
+from typing import List
 from dataclasses import dataclass
-import typing
-
-from torch.nn.modules.activation import ReLU
 
 
 @dataclass
