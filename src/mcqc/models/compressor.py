@@ -78,6 +78,29 @@ class PQCompressorBig(nn.Module):
         self._decoder = ResidualBaseDecoder(channel, 1)
         # self._context = ContextModel(m, k, channel)
 
+    def prepare(self, x):
+        latent = self._encoder(x)
+        allOriginal = list()
+
+        for i in range(self._levels):
+            mapper = self._mappers[i] if i < self._levels - 1 else None
+            head = self._heads[i]
+            z = head(latent)
+            if mapper is not None:
+                latent = mapper(latent)
+            else:
+                latent = None
+            c = self.encode(z, i)
+            hard = self.decode(c, i)
+            # n, c, h, w = hard.shape
+            if latent is not None:
+                latent = latent - hard
+            # [n, m, h, w, c//m]
+            # z = z.reshape(n, self._m, -1, h, w).permute(0, 1, 3, 4, 2)
+            allOriginal.append(c)
+        # list of [n, m, h, w]
+        return allOriginal
+
     def quantize(self, latent, level, temp):
         splits = torch.chunk(latent, self._m, 1)
         codes = list()

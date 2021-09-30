@@ -2,6 +2,8 @@ import os
 from typing import List, Tuple, Type
 from logging import Logger
 
+from sklearn.cluster import MiniBatchKMeans
+from tqdm import tqdm
 import torch
 from torch.types import Number
 from torch.utils.data import DataLoader, DistributedSampler
@@ -14,10 +16,12 @@ from cfmUtils.saver import Saver
 from cfmUtils.base import FrequecyHook
 
 from mcqc.algorithms.algorithm import Algorithm
+from mcqc.datasets.dataset import BasicLMDB
 from mcqc.evaluation.metrics import MsSSIM, PSNR
 from mcqc.models.whole import WholePQ
 from mcqc import Config
 from mcqc.utils.training import _ValueTuner
+from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess
 
 
 _logMapping = {
@@ -101,7 +105,11 @@ class New(Algorithm):
         images, restored, step, logits, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["codes"]
         evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
         # prediction = kwArgs["prediction"]
-        self._saver.add_histogram("Stat/Logit", logits[0], global_step=step)
+        # [n, m, h, w, k]
+        # print(logits.shape)
+        self._saver.add_scalar("Stat/MaxProb", logits[0, 0].softmax(-1).max(), global_step=step)
+        self._saver.add_scalar("Stat/MinProb", logits[0, 0].softmax(-1).min(), global_step=step)
+        self._saver.add_histogram("Stat/Logit", logits[0, 0], global_step=step)
         for i, c in enumerate(codes):
             self._saver.add_histogram(f"Stat/Code{i}", c[0, ..., 0].flatten(), global_step=step)
             self._visualizeIntermediate(i, c, step)
@@ -163,6 +171,7 @@ class New(Algorithm):
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
+        self._reSpreadAll()
 
         for i in range(initEpoch, self._config.Epoch):
             if self._saver is not None:
@@ -185,10 +194,60 @@ class New(Algorithm):
                     with torch.inference_mode():
                         ssim = ssimLoss
                         self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, ssim=ssim, predict=predictLoss, bpp=bppLoss)
+                        if step % (self._config.TestStep * 10) == 0:
+                            self._reSpreadAll()
             temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
+
+    def _reSpreadAll(self):
+        if self._rank == 0:
+            self._logger.info("Begin re-assigning...")
+            self._reSpread()
+        dist.barrier()
+        for i in range(len(self._config.Model.k)):
+            for j in range(self._config.Model.m):
+                codebook = self._model.module._compressor._quantizers[i][j]._codebook.clone().detach()
+                dist.broadcast(codebook, 0)
+                self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
+
+    @torch.inference_mode()
+    def _reSpread(self):
+        self._model.eval()
+        trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
+        dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
+        model = self._model.module._compressor
+        quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
+        for image in tqdm(dataLoader, ncols=50):
+            image = image.to(self._rank, non_blocking=True)
+            # list of [n, m, h, w]
+            allOriginal = model.prepare(image)
+            for ori, levelQs in zip(allOriginal, quantizeds):
+                # [n, h, w, c]
+                for part, partQs in zip(ori.permute(1, 0, 2, 3), levelQs):
+                    partQs.append(part.flatten().cpu())
+
+        for i, (k, levelQs) in enumerate(zip(self._config.Model.k, quantizeds)):
+            for j, partQs in enumerate(levelQs):
+                # kmeans = kmeans_core(k, torch.cat(partQs), all_cuda=False, batch_size=3 * k)
+                # kmeans.run()
+                # codebook = kmeans.cent
+                # kmeans = MiniBatchKMeans(n_clusters=k, init="random", compute_labels=False, tol=1e-6)
+                # kmeans.fit(torch.cat(partQs).cpu().numpy())
+                # codebook = kmeans.cluster_centers_
+                codebook = model._quantizers[i][j]._codebook.data
+                partQs = torch.cat(partQs)
+                # some of the entry is 0
+                counts = torch.bincount(partQs, minlength=k)
+                neverAssigned = codebook[counts < 1]
+                argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
+                fullyAssigned = codebook[argIdx]
+                selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
+                codebook[counts < 1] = fullyAssigned[selectedIdx]
+                self._logger.info("Re-assign on %d:%d, %d%% are never assigned.", i, j, int(len(neverAssigned) / float(k) * 100))
+                # model._quantizers[i][j]._codebook.data.copy_(torch.from_numpy(codebook))
+        self._model.train()
 
     @torch.inference_mode()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
@@ -330,13 +389,19 @@ class New(Algorithm):
     def _compress(self, codes: List[List[List[torch.Tensor]]], totalPixels):
         encoder = ans.RansEncoder()
         compressed = list()
+        bits = list()
         for lv, levels in enumerate(codes):
             images = list()
             cdfs = list()
             for part in levels:
                 # [N, h, w] all code of images at level i, group m
                 c = torch.stack(part, 0)
+                n, h, w = c.shape
                 prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
+                estimateEntropy = prob.log2()
+                estimateEntropy[estimateEntropy == float("-inf")] = 0
+                estimateEntropy = -(prob * estimateEntropy).sum().item()
+                bits.append(estimateEntropy * n * h * w)
                 cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
                 cdfs.append(cdf)
                 images.append(c)
@@ -357,6 +422,8 @@ class New(Algorithm):
         total = 8 * sum(len(binary) for binary in compressed)
         bpp = float(total) / totalPixels
 
+        perfect = sum(bits) / totalPixels
+        self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
         return compressed, bpp
 
     def _decompressAndCheck(self, rawCodes: List[torch.Tensor], binaries: List[str], cdfs: List[List[float]]):
