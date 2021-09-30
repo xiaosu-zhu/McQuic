@@ -24,7 +24,7 @@ model:
 optim:
     type: Adam
     params:
-        lr: 3.e-5
+        lr: 3.e-6
 schdr:
     type: MultiStepWarmUp
     params:
@@ -60,5 +60,5 @@ regSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: "" # ckpt/big.ckpt
+warmStart: ckpt/newPQ.ckpt
 method: New
