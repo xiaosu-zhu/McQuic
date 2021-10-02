@@ -24,20 +24,20 @@ class WholePQ(nn.Module):
         return (ssimLoss, l1l2Loss, reg), (restored, trueCodes, quantized, logits)
 
 class WholePQBig(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
+    def __init__(self, m, k, channel, withGroup, withAtt, target, alias, ema):
         super().__init__()
-        self._compressor = PQCompressorBig(m, k, channel, withGroup, withAtt, withDropout, alias, ema)
-        self._cLoss = CompressionLossBig()
+        self._compressor = PQCompressorBig(m, k, channel, withGroup, withAtt, False, alias, ema)
+        self._cLoss = CompressionLossBig(target)
         # self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
         restored, allHards, latent, allCodes, allLogits = self._compressor(image, temp, True)
 
-        ssimLoss, l1l2Loss, reg = self._cLoss(image, restored, allLogits)
+        dLoss = self._cLoss(image, restored)
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return (ssimLoss, l1l2Loss, reg), (restored, allCodes, allLogits)
+        return dLoss, (restored, allCodes, allLogits)
 
 
 class WholePQQ(nn.Module):

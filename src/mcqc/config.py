@@ -12,11 +12,11 @@ class Coef:
 class ModelSpec:
     type: str
     k: List[int]
+    target: str
     m: int = 4
     withGroup: bool = True
     channel: int = 256
     withAtt: bool = True
-    withDropout: bool = True
     alias: bool = True
     ema: float = 0.8
 
@@ -42,7 +42,7 @@ class RegSchdrSpec:
 @dataclass
 class Config:
     coef: Coef = Coef()
-    model: ModelSpec = ModelSpec(type="Base", m=8, k=[2048, 512, 128])
+    model: ModelSpec = ModelSpec(type="Base", target="ssim", m=8, k=[2048, 512, 128])
     optim: OptimSpec = OptimSpec(type="Adam", params={})
     schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
     regSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
