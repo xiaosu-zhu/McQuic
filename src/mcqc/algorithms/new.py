@@ -1,6 +1,7 @@
 import os
 from typing import List, Tuple, Type
 from logging import Logger
+import math
 
 from sklearn.cluster import MiniBatchKMeans
 from tqdm import tqdm
@@ -25,7 +26,7 @@ from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess
 
 
 _logMapping = {
-    "ssim": "Loss/MS-SSIM",
+    "distortion": "Loss/Distortion",
     "predict": "Loss/Context",
     "bpp": "Loss/Reg",
     "lr": "Stat/LR",
@@ -80,12 +81,12 @@ class New(Algorithm):
     @torch.inference_mode()
     def _fastHook(self, **kwArgs):
         step = kwArgs["now"]
-        self._saver.add_scalar(_logMapping["ssim"], -10 * kwArgs["ssim"].log10(), global_step=step)
-        self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
-        self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
+        self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
+        # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
+        # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
-        self._saver.add_scalar(_logMapping["regCoeff"], self._regScheduler.Value, global_step=step)
-        self._saver.add_scalar(_logMapping["temperature"], kwArgs["temperature"], global_step=step)
+        # self._saver.add_scalar(_logMapping["regCoeff"], self._regScheduler.Value, global_step=step)
+        # self._saver.add_scalar(_logMapping["temperature"], kwArgs["temperature"], global_step=step)
 
     @torch.inference_mode()
     def _slowHook(self, **kwArgs):
@@ -142,8 +143,8 @@ class New(Algorithm):
         images = None
 
         temperature = 1.0
-        finalTemp = 0.001
-        annealRate = 0.9999
+        # finalTemp = 0.001 / math.sqrt(self._config.Model.k[0])
+        # annealRate = 0.9
         initEpoch = 0
         lastEpoch = 0
 
@@ -154,7 +155,7 @@ class New(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature) # , regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -171,20 +172,20 @@ class New(Algorithm):
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
-        self._reSpreadAll()
+        # self._reSpreadAll()
 
         for i in range(initEpoch, self._config.Epoch):
             if self._saver is not None:
                 self._saver.add_scalar("Stat/Epoch", i + lastEpoch, step)
 
             sampler.set_epoch(i + lastEpoch)
-            ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
+            # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
+            # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
+            # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             for images in trainLoader:
                 self._optimizer.zero_grad(True)
-                (ssimLoss, predictLoss, bppLoss), (restored, allHards, allLogits) = self._model(images, temperature)
-                (ssimCoef * ssimLoss + contextCoef * predictLoss + bppCoef * bppLoss).backward()
+                dLoss, (restored, allHards, allLogits) = self._model(images, temperature)
+                dLoss.backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
@@ -192,11 +193,11 @@ class New(Algorithm):
                 step += 1
                 if self._loggingHook is not None:
                     with torch.inference_mode():
-                        ssim = ssimLoss
-                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, ssim=ssim, predict=predictLoss, bpp=bppLoss)
+                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, distortion=dLoss)
                         if step % (self._config.TestStep * 10) == 0:
                             self._reSpreadAll()
-            temperature = max(finalTemp, temperature * annealRate)
+                dist.barrier()
+            # temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
@@ -204,7 +205,7 @@ class New(Algorithm):
     def _reSpreadAll(self):
         if self._rank == 0:
             self._logger.info("Begin re-assigning...")
-            self._reSpread()
+            self._reSpread(self._model.module._compressor)
         dist.barrier()
         for i in range(len(self._config.Model.k)):
             for j in range(self._config.Model.m):
@@ -213,11 +214,10 @@ class New(Algorithm):
                 self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
 
     @torch.inference_mode()
-    def _reSpread(self):
-        self._model.eval()
+    def _reSpread(self, model):
+        model.eval()
         trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
         dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
-        model = self._model.module._compressor
         quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
         for image in tqdm(dataLoader, ncols=50):
             image = image.to(self._rank, non_blocking=True)
@@ -247,12 +247,12 @@ class New(Algorithm):
                 codebook[counts < 1] = fullyAssigned[selectedIdx]
                 self._logger.info("Re-assign on %d:%d, %d%% are never assigned.", i, j, int(len(neverAssigned) / float(k) * 100))
                 # model._quantizers[i][j]._codebook.data.copy_(torch.from_numpy(codebook))
-        self._model.train()
+        model.train()
 
     @torch.inference_mode()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
-        self._model.eval()
         model = self._model.module._compressor
+        model.eval()
         ssims = list()
         psnrs = list()
         bs = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
@@ -310,7 +310,7 @@ class New(Algorithm):
         self._saver.add_scalar("Eval/UniqueCodes", len(torch.unique(torch.cat(countUnique))), global_step=step)
         # [N, C, H, W] -> mean of [N, H, W]
         # self._saver.add_scalar("Eval/QError", ((qs - zs) ** 2).sum(1).mean(), global_step=step)
-        self._model.train()
+        model.train()
 
         encoded, bpp = self._compress(bs, totalPixels)
         total = 8 * sum(len(binary) for binary in encoded)
@@ -320,8 +320,8 @@ class New(Algorithm):
 
     @torch.inference_mode()
     def _evalFull(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
-        self._model.eval()
         model = self._model.module._compressor
+        model.eval()
         ssims = list()
         psnrs = list()
         bs1 = [list() for _ in range(self._config.Model.m)]
@@ -381,7 +381,7 @@ class New(Algorithm):
         self._logger.info("         PSNR: %2.2fdB", psnrScore)
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
-        self._model.train()
+        model.train()
         # encoded, bpp = self._compress(bs, totalPixels)
         # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
         return ssimScore, psnrScore
