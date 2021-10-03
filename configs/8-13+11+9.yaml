@@ -7,12 +7,12 @@ wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 5
+batchSize: 6
 model:
     type: Big
     channel: 192
     k: [8192, 2048, 512] # 12 * (14 / 256 + 12 / 1024 + 10 / 4096) = 0.826171875
-    m: 12
+    m: 8 
     withGroup: false
     withAtt: true
     target: psnr

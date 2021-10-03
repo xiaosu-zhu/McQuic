@@ -177,6 +177,7 @@ class New(Algorithm):
 
         if self._rank == 0:
             ssim, _ = self._eval(evalLoader, step)
+            # ssim, _ = self._evalFull(testLoader, step)
             self._best = ssim
         # self._reSpreadAll()
 
@@ -351,26 +352,38 @@ class New(Algorithm):
 
         countUnique = list()
 
-        minLength = 32 * (2 ** len(self._config.Model.k))
+        minLength = float(32 * (2 ** len(self._config.Model.k)))
 
-        for raw in tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Test..."):
+        datasetLength = len(dataLoader.dataset)
+
+        for i, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Test...")):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
+
+            wCrop = w - math.floor(w / minLength) * minLength
+            hCrop = h - math.floor(h / minLength) * minLength
+            cropLeft = wCrop // 2
+            cropRight = wCrop - cropLeft
+            cropTop = hCrop // 2
+            cropBottom = hCrop - cropTop
+
+            if cropBottom == 0:
+                cropBottom = -h
+            if cropRight == 0:
+                cropRight = -w
+
+            raw = raw[:, :, cropTop:(-cropBottom), cropLeft:(-cropRight)]
+
+            n, _, h, w = raw.shape
+
+            if h % minLength != 0 or w % minLength != 0:
+                raise RuntimeError(f"Cropping not correct, the cropped image is {raw.shape}.")
+
             totalPixels += n * h * w
 
             numImages += n
 
-            wPadded = math.ceil((w / minLength)) * minLength - w
-            hPadded = math.ceil((h / minLength)) * minLength - h
-
-            padLeft = wPadded // 2
-            padRight = wPadded - padLeft
-            padTop = hPadded // 2
-            padBottom = hPadded - padTop
-
-            padded = torchvision.transforms.Pad((padLeft, padTop, padRight, padBottom), padding_mode="reflect")(raw)
-
-            restored, allCodes = model.test(padded)
+            restored, allCodes = model.test(raw)
             countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):
@@ -381,14 +394,10 @@ class New(Algorithm):
 
             raw = self._deTrans(raw)
 
-            if padBottom == 0:
-                padBottom = -h
-            if padRight == 0:
-                padRight = -w
-
-            restored = restored[:, :, padTop:(-padBottom), padLeft:(-padRight)]
-
             restored = self._deTrans(restored)
+
+            if i % (datasetLength // 5) == 0:
+                self._saver.add_images(f"Test/Res_{i % (datasetLength // 5)}", restored, global_step=step)
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
@@ -405,7 +414,6 @@ class New(Algorithm):
         self._logger.info("Test    PSNR: %2.2fdB", psnrScore)
         self._saver.add_scalar("Test/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Test/PSNR", psnrScore, global_step=step)
-        self._saver.add_images("Test/Res", restored, global_step=step)
 
         model.train()
 
