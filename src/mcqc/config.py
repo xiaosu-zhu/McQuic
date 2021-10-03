@@ -41,7 +41,6 @@ class RegSchdrSpec:
 
 @dataclass
 class Config:
-    coef: Coef = Coef()
     model: ModelSpec = ModelSpec(type="Base", target="ssim", m=8, k=[2048, 512, 128])
     optim: OptimSpec = OptimSpec(type="Adam", params={})
     schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
@@ -90,10 +89,6 @@ class Config:
     @property
     def Model(self) -> ModelSpec:
         return self.model
-
-    @property
-    def Coef(self) -> Coef:
-        return self.coef
 
     @property
     def BatchSize(self) -> int:

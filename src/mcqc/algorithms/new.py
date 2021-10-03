@@ -4,6 +4,7 @@ from logging import Logger
 import math
 
 from sklearn.cluster import MiniBatchKMeans
+import torchvision
 from tqdm import tqdm
 import torch
 from torch.types import Number
@@ -69,7 +70,7 @@ class New(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({2: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook})
+            self._loggingHook = FrequecyHook({2: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook, self._config.TestStep * 10: self._testHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -100,6 +101,11 @@ class New(Algorithm):
             self._saver._savePath = path
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
+
+    @torch.inference_mode()
+    def _testHook(self, **kwArgs):
+        testLoader, step = kwArgs["testLoader"], kwArgs["now"]
+        self._evalFull(testLoader, step)
 
     @torch.inference_mode()
     def _mediumHook(self, **kwArgs):
@@ -189,13 +195,14 @@ class New(Algorithm):
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
-                # updateOp()
                 step += 1
+                # updateOp()
                 if self._loggingHook is not None:
                     with torch.inference_mode():
                         self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, distortion=dLoss)
-                        if step % (self._config.TestStep * 10) == 0:
-                            self._reSpreadAll()
+                if step % (self._config.TestStep * 10) == 0:
+                    self._optimizer.zero_grad(True)
+                    self._reSpreadAll()
                 dist.barrier()
             # temperature = max(finalTemp, temperature * annealRate)
             if self._scheduler is not None:
@@ -204,14 +211,18 @@ class New(Algorithm):
 
     def _reSpreadAll(self):
         if self._rank == 0:
-            self._logger.info("Begin re-assigning...")
+            self._logger.debug("Begin re-assigning...")
             self._reSpread(self._model.module._compressor)
         dist.barrier()
+        if self._rank == 0:
+            self._logger.debug("Begin broadcast...")
         for i in range(len(self._config.Model.k)):
             for j in range(self._config.Model.m):
                 codebook = self._model.module._compressor._quantizers[i][j]._codebook.clone().detach()
                 dist.broadcast(codebook, 0)
                 self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
+        if self._rank == 0:
+            self._logger.debug("End broadcast...")
 
     @torch.inference_mode()
     def _reSpread(self, model):
@@ -219,7 +230,7 @@ class New(Algorithm):
         trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
         dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
         quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
-        for image in tqdm(dataLoader, ncols=50):
+        for image in tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Ragn..."):
             image = image.to(self._rank, non_blocking=True)
             # list of [n, m, h, w]
             allOriginal = model.prepare(image)
@@ -227,6 +238,8 @@ class New(Algorithm):
                 # [n, h, w, c]
                 for part, partQs in zip(ori.permute(1, 0, 2, 3), levelQs):
                     partQs.append(part.flatten().cpu())
+
+        numNeverAssigned, numAll = 0, 0
 
         for i, (k, levelQs) in enumerate(zip(self._config.Model.k, quantizeds)):
             for j, partQs in enumerate(levelQs):
@@ -245,8 +258,11 @@ class New(Algorithm):
                 fullyAssigned = codebook[argIdx]
                 selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
                 codebook[counts < 1] = fullyAssigned[selectedIdx]
-                self._logger.info("Re-assign on %d:%d, %d%% are never assigned.", i, j, int(len(neverAssigned) / float(k) * 100))
+                self._logger.debug("Re-assign on %d:%d, %d%% are never assigned.", i, j, int(len(neverAssigned) / float(k) * 100))
+                numNeverAssigned += len(neverAssigned)
+                numAll += k
                 # model._quantizers[i][j]._codebook.data.copy_(torch.from_numpy(codebook))
+        self._logger.info("Re-assign of %d%% codewords completed.", int(numNeverAssigned / float(numAll) * 100))
         model.train()
 
     @torch.inference_mode()
@@ -275,8 +291,10 @@ class New(Algorithm):
             countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):
+                # enumerate on m, n, h, w
                 for m, codeAtPartM in enumerate(codesAtLeveli.permute(1, 0, 2, 3)):
-                    bs[i][m].extend(codeAtPartM)
+                    # [n, h, w] -> [n, -1] -> extend() n tensors
+                    bs[i][m].extend(codeAtPartM.reshape(len(codeAtPartM), -1))
 
             raw = self._deTrans(raw)
             restored = self._deTrans(restored)
@@ -324,66 +342,77 @@ class New(Algorithm):
         model.eval()
         ssims = list()
         psnrs = list()
-        bs1 = [list() for _ in range(self._config.Model.m)]
-        bs2 = [list() for _ in range(self._config.Model.m)]
+        bs = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
         totalPixels = 0
-        for k, raw in enumerate(dataLoader):
+
+        numImages = 0
+
+        # contextPrediction = list()
+
+        countUnique = list()
+
+        minLength = 32 * (2 ** len(self._config.Model.k))
+
+        for raw in tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Test..."):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
 
-            latent = model._encoder(raw)
-            # M * [n, c // M, h, w]
-            splits = torch.chunk(latent, self._config.Model.m, 1)
-            lHat = list()
-            for i in range(self._config.Model.m):
-                b = model._quantizer1[i].encode(splits[i])
-                q = model._quantizer1[i].decode(b)
-                lHat.append(q)
-                bs1[i].append(b.int().detach().cpu())
-            q1 = torch.cat(lHat, 1)
-            q1Mapped = model._mapperQ(q1)
-            zMapped = model._mapperZ(latent)
-            residual = zMapped - q1Mapped
-            splits = torch.chunk(residual, self._config.Model.m, 1)
+            numImages += n
 
-            lHat = list()
-            for i in range(self._config.Model.m):
-                b = model._quantizer2[i].encode(splits[i])
-                q = model._quantizer2[i].decode(b)
-                lHat.append(q)
-                bs2[i].append(b.int().detach().cpu())
-            q2 = torch.cat(lHat, 1)
-            rHat = model._scatterQ(q2)
-            zHat = model._scatterZ(q1)
+            wPadded = math.ceil((w / minLength)) * minLength - w
+            hPadded = math.ceil((h / minLength)) * minLength - h
 
-            quantized = zHat + rHat
+            padLeft = wPadded // 2
+            padRight = wPadded - padLeft
+            padTop = hPadded // 2
+            padBottom = hPadded - padTop
 
-            restored = torch.tanh(model._decoder(quantized))
+            padded = torchvision.transforms.Pad((padLeft, padTop, padRight, padBottom), padding_mode="reflect")(raw)
 
-            restored = restored[:, :, :h, :w]
+            restored, allCodes = model.test(padded)
+            countUnique.append(allCodes[0][:, 0].flatten())
+
+            for i, codesAtLeveli in enumerate(allCodes):
+                # enumerate on m, n, h, w
+                for m, codeAtPartM in enumerate(codesAtLeveli.permute(1, 0, 2, 3)):
+                    # [n, h, w] -> [n, -1] -> extend() n tensors
+                    bs[i][m].extend(codeAtPartM.reshape(len(codeAtPartM), -1))
 
             raw = self._deTrans(raw)
+
+            if padBottom == 0:
+                padBottom = -h
+            if padRight == 0:
+                padRight = -w
+
+            restored = restored[:, :, padTop:(-padBottom), padLeft:(-padRight)]
+
             restored = self._deTrans(restored)
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
             ssims.append(-10 * (1.0 - ssim).log10())
-            if k < 10:
-                self._saver.add_image(f"Test/{k}", restored[0], step)
             psnrs.append(self._evalPSNR(restored.detach(), raw.detach()))
+
+        # contextPrediction = torch.cat(contextPrediction)
 
         ssims = torch.cat(ssims, 0)
         psnrs = torch.cat(psnrs, 0)
         ssimScore = ssims.mean().item()
         psnrScore = psnrs.mean().item()
-        self._logger.info("Test: MS-SSIM: %2.2fdB", ssimScore)
-        self._logger.info("         PSNR: %2.2fdB", psnrScore)
-        self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
-        self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
+        self._logger.info("Test MS-SSIM: %2.2fdB", ssimScore)
+        self._logger.info("Test    PSNR: %2.2fdB", psnrScore)
+        self._saver.add_scalar("Test/MS-SSIM", ssimScore, global_step=step)
+        self._saver.add_scalar("Test/PSNR", psnrScore, global_step=step)
+        self._saver.add_images("Test/Res", restored, global_step=step)
+
         model.train()
-        # encoded, bpp = self._compress(bs, totalPixels)
-        # self._saver.add_scalar("Eval/BPP", bpp, global_step=step)
+
+        encoded, bpp = self._compress(bs, totalPixels)
+        total = 8 * sum(len(binary) for binary in encoded)
+        self._logger.info("%.2fMB for %d images, BPP: %.4f", total / 1048576, numImages, bpp)
+        self._saver.add_scalar("Test/BPP", bpp, global_step=step)
         return ssimScore, psnrScore
 
     def _compress(self, codes: List[List[List[torch.Tensor]]], totalPixels):
@@ -394,22 +423,22 @@ class New(Algorithm):
             images = list()
             cdfs = list()
             for part in levels:
-                # [N, h, w] all code of images at level i, group m
-                c = torch.stack(part, 0)
-                n, h, w = c.shape
+                # N * [-1] all code of images at level i, group m
+                c = torch.cat(part)
+                pixels = len(c)
                 prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
                 estimateEntropy = prob.log2()
                 estimateEntropy[estimateEntropy == float("-inf")] = 0
                 estimateEntropy = -(prob * estimateEntropy).sum().item()
-                bits.append(estimateEntropy * n * h * w)
+                bits.append(estimateEntropy * pixels)
                 cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
                 cdfs.append(cdf)
-                images.append(c)
+                images.append(part)
             # codePerImage: M * [Tensor of [h * w]]
             for codePerImage in zip(*images):
-                # [M, h, w]
+                # [M, h * w]
                 codePerImage = torch.stack(codePerImage, 0)
-                indices = torch.arange(codePerImage.shape[0])[:, None, None].expand_as(codePerImage).flatten().int().tolist()
+                indices = torch.arange(codePerImage.shape[0])[:, None].expand_as(codePerImage).flatten().int().tolist()
                 cdfSizes = [self._config.Model.k[lv] + 2] * self._config.Model.m
                 offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
                 # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets

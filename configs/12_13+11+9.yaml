@@ -4,17 +4,14 @@ testStep: 5000
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: compression
-repeat: 10 # duplicate images in one epoch
+dataset: fullDataset
+repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
 batchSize: 5
-coef:
-    ssim: 0.0
-    l1l2: 1.0
 model:
     type: Big
     channel: 192
-    k: [8192, 2048, 512]
+    k: [8192, 2048, 512] # 12 * (14 / 256 + 12 / 1024 + 10 / 4096) = 0.826171875
     m: 12
     withGroup: false
     withAtt: true
@@ -24,11 +21,11 @@ model:
 optim:
     type: Adam
     params:
-        lr: 1.e-5
+        lr: 2.e-5
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [10, 400, 800] # manually divided by repeat
+        milestones: [10, 200, 300] # manually divided by repeat
         gamma: 0.1
 # regSchdr:
 #     type: Cyclic
