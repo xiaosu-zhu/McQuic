@@ -15,7 +15,7 @@ model:
     m: 12
     withGroup: false
     withAtt: true
-    target: mse
+    target: psnr
     alias: false
     ema: -1.0
 optim:

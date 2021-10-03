@@ -132,13 +132,13 @@ class CompressionLoss(nn.Module):
 class CompressionLossBig(nn.Module):
     def __init__(self, target):
         super().__init__()
+        if target not in ["ssim", "psnr"]:
+            raise ValueError(f"The argument `target` not in (\"ssim\", \"psnr\"), got \"{target}\".")
         if target == "ssim":
             self._ssim = MsSSIM(data_range=2.0, sizeAverage=True)
             self._distortion = self._dSsim
-            print("ssim")
         else:
             self._distortion = self._dPsnr
-            print("mse")
 
     def _dPsnr(self, image, restored):
         return F.mse_loss(restored, image) + F.l1_loss(restored, image)
