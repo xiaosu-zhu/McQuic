@@ -28,18 +28,19 @@ def findAllWithSize(dirPath, ext):
 def getFilesFromDir(root, strict: bool = False):
     files = findAllWithSize(root, _EXT)
     newFile = list()
-    for f in tqdm.tqdm(files):
+    for f in tqdm.tqdm(files, ncols=60, bar_format="{l_bar}{bar}| Search in %d images" % len(files)):
         a = Image.open(f[0])
         h, w = a.size
         if strict and (h < 512 or w < 512):
             continue
         newFile.append(f)
+    print(f"{len(newFile)} images meets requirement.")
     return [x[0] for x in newFile]
 
 def main(targetDir):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
-    listA = [] # ["data/ImageNet/test", "data/ImageNet/val", "data/coco/train2014", "data/nus"]
+    listA = ["data/ImageNet/test", "data/ImageNet/val", "data/COCO/train2017"] #, "data/nus" <- no images larget than 512]
     listB = ["data/clic/train", "data/DIV2K/train", "data/urban100", "data/manga109"]
     allFiles = list()
     for path in listA:
@@ -50,7 +51,7 @@ def main(targetDir):
     shuffle(allFiles)
     env = lmdb.Environment(targetDir, subdir=True, map_size=1073741824 * 20)
     with env.begin(write=True) as txn:
-        for i, f in enumerate(tqdm.tqdm(allFiles)):
+        for i, f in enumerate(tqdm.tqdm(allFiles, ncols=60, bar_format="{l_bar}{bar}| Write %d images..." % len(allFiles))):
             write(txn, i.to_bytes(32, sys.byteorder), f)
     env.close()
 
@@ -62,4 +63,4 @@ def main(targetDir):
 
 
 if __name__ == "__main__":
-    main("data/compression")
+    main("data/fullDataset")
