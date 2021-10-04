@@ -27,9 +27,9 @@ from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess
 
 
 _logMapping = {
-    "distortion": "Loss/Distortion",
-    "predict": "Loss/Context",
-    "bpp": "Loss/Reg",
+    "distortion": "Stat/Distortion",
+    "predict": "Stat/Context",
+    "bpp": "Stat/Reg",
     "lr": "Stat/LR",
     "regCoeff": "Stat/Reg",
     "temperature": "Stat/T"
@@ -109,13 +109,12 @@ class New(Algorithm):
 
     @torch.inference_mode()
     def _mediumHook(self, **kwArgs):
-        images, restored, step, logits, codes = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["codes"]
-        evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
+        images, restored, step, logits, codes, step = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["codes"], kwArgs["now"]
         # prediction = kwArgs["prediction"]
         # [n, m, h, w, k]
         # print(logits.shape)
-        self._saver.add_scalar("Stat/MaxProb", logits[0, 0].softmax(-1).max(), global_step=step)
-        self._saver.add_scalar("Stat/MinProb", logits[0, 0].softmax(-1).min(), global_step=step)
+        # self._saver.add_scalar("Stat/MaxProb", logits[0, 0].softmax(-1).max(), global_step=step)
+        # self._saver.add_scalar("Stat/MinProb", logits[0, 0].softmax(-1).min(), global_step=step)
         self._saver.add_histogram("Stat/Logit", logits[0, 0], global_step=step)
         for i, c in enumerate(codes):
             self._saver.add_histogram(f"Stat/Code{i}", c[0, ..., 0].flatten(), global_step=step)
@@ -161,7 +160,7 @@ class New(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature) # , regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             temperature = loaded["temperature"]
@@ -176,8 +175,10 @@ class New(Algorithm):
         # self._scheduler.step()
 
         if self._rank == 0:
-            # ssim, _ = self._eval(evalLoader, step)
-            ssim, _ = self._evalFull(testLoader, step)
+            if self._continue:
+                ssim, _ = self._eval(evalLoader, step)
+            else:
+                ssim, _ = self._evalFull(testLoader, step)
             self._best = ssim
         # self._reSpreadAll()
 
@@ -315,7 +316,7 @@ class New(Algorithm):
         self._logger.info("   PSNR: %2.2fdB", psnrScore)
         self._saver.add_scalar("Eval/MS-SSIM", ssimScore, global_step=step)
         self._saver.add_scalar("Eval/PSNR", psnrScore, global_step=step)
-        self._saver.add_images("Eval/Res", restored, global_step=step)
+        self._saver.add_images("Res/Eval", restored, global_step=step)
 
         # self._logger.info("Context prediction: %.2f%%", contextPrediction.float().mean() * 100.0)
 
@@ -397,7 +398,7 @@ class New(Algorithm):
             restored = self._deTrans(restored)
 
             if j % (datasetLength // 5) == 0:
-                self._saver.add_images(f"Test/Res_{j // (datasetLength // 5)}", restored, global_step=step)
+                self._saver.add_images(f"Res/Test_{j // (datasetLength // 5)}", restored, global_step=step)
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
