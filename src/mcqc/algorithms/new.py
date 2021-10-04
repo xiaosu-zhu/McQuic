@@ -176,8 +176,8 @@ class New(Algorithm):
         # self._scheduler.step()
 
         if self._rank == 0:
-            ssim, _ = self._eval(evalLoader, step)
-            # ssim, _ = self._evalFull(testLoader, step)
+            # ssim, _ = self._eval(evalLoader, step)
+            ssim, _ = self._evalFull(testLoader, step)
             self._best = ssim
         # self._reSpreadAll()
 
@@ -352,11 +352,11 @@ class New(Algorithm):
 
         countUnique = list()
 
-        minLength = float(32 * (2 ** len(self._config.Model.k)))
+        minLength = int(32 * (2 ** len(self._config.Model.k)))
 
         datasetLength = len(dataLoader.dataset)
 
-        for i, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Test...")):
+        for j, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Test...")):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
 
@@ -396,8 +396,8 @@ class New(Algorithm):
 
             restored = self._deTrans(restored)
 
-            if i % (datasetLength // 5) == 0:
-                self._saver.add_images(f"Test/Res_{i % (datasetLength // 5)}", restored, global_step=step)
+            if j % (datasetLength // 5) == 0:
+                self._saver.add_images(f"Test/Res_{j // (datasetLength // 5)}", restored, global_step=step)
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
