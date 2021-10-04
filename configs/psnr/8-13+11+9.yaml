@@ -1,32 +1,31 @@
 epoch: 10000000000
 evalStep: 500
 testStep: 5000
-gpus: 1
+gpus: 4
 vRam: -1
 wantsMore: false
-dataset: compression
-repeat: 10 # duplicate images in one epoch
+dataset: fullDataset
+repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 10
+batchSize: 6
 model:
     type: Big
-    target: ssim
-    channel: 128
-    k: [16384, 4096, 1024]
-    m: 2
+    channel: 192
+    k: [8192, 2048, 512] # 12 * (14 / 256 + 12 / 1024 + 10 / 4096) = 0.826171875
+    m: 8 
     withGroup: false
     withAtt: true
-    withDropout: false
+    target: psnr
     alias: false
     ema: -1.0
 optim:
     type: Adam
     params:
-        lr: 3.e-5
+        lr: 6.e-6
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [100, 400, 800] # manually divided by repeat
+        milestones: [10, 300, 900] # manually divided by repeat
         gamma: 0.1
 # regSchdr:
 #     type: Cyclic

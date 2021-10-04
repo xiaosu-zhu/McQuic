@@ -7,25 +7,26 @@ wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 6
+batchSize: 14
 model:
     type: Big
-    channel: 192
-    k: [8192, 2048, 512] # 12 * (14 / 256 + 12 / 1024 + 10 / 4096) = 0.826171875
-    m: 8 
+    target: psnr 
+    channel: 128
+    k: [8192, 2048, 512]
+    m: 2 
     withGroup: false
     withAtt: true
-    target: psnr
+    withDropout: false
     alias: false
     ema: -1.0
 optim:
     type: Adam
     params:
-        lr: 2.e-5
+        lr: 1.e-5
 schdr:
     type: MultiStepWarmUp
     params:
-        milestones: [10, 200, 300] # manually divided by repeat
+        milestones: [10, 300, 900] # manually divided by repeat
         gamma: 0.1
 # regSchdr:
 #     type: Cyclic
@@ -57,5 +58,5 @@ regSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: "" # ckpt/newPQ.ckpt
+warmStart: "" # ckpt/3-14+12+10.ckpt
 method: New
