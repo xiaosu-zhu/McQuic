@@ -19,6 +19,7 @@ from cfmUtils.base import FrequecyHook
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.datasets.dataset import BasicLMDB
+from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.evaluation.metrics import MsSSIM, PSNR
 from mcqc.models.whole import WholePQ
 from mcqc import Config
@@ -143,7 +144,7 @@ class New(Algorithm):
         self._saver.add_images(f"Train/Code{i}", code, step)
 
     # pylint: disable=too-many-locals,arguments-differ
-    def run(self, trainLoader: DataLoader, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
+    def run(self, trainLoader: Prefetcher, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
         images = None
 
@@ -182,6 +183,8 @@ class New(Algorithm):
             self._best = ssim
         # self._reSpreadAll()
 
+        totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize)
+
         for i in range(initEpoch, self._config.Epoch):
             if self._saver is not None:
                 self._saver.add_scalar("Stat/Epoch", i + lastEpoch, step)
@@ -190,7 +193,7 @@ class New(Algorithm):
             # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            for images in trainLoader:
+            for images in tqdm(trainLoader, ncols=50, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}" % i, total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad(True)
                 dLoss, (restored, allHards, allLogits) = self._model(images, temperature)
                 dLoss.backward()
@@ -232,7 +235,7 @@ class New(Algorithm):
         trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
         dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
         quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
-        for image in tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Ragn..."):
+        for image in tqdm(dataLoader, ncols=50, bar_format="Re-assign: {n_fmt}/{total_fmt} |{bar}", leave=False):
             image = image.to(self._rank, non_blocking=True)
             # list of [n, m, h, w]
             allOriginal = model.prepare(image)
@@ -256,6 +259,12 @@ class New(Algorithm):
                 # some of the entry is 0
                 counts = torch.bincount(partQs, minlength=k)
                 neverAssigned = codebook[counts < 1]
+                if len(neverAssigned) > k // 2:
+                    mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
+                    maskIdx = torch.randperm(len(mask))[:k // 2]
+                    mask[maskIdx] = 1
+                    counts[counts < 1] = mask
+                    neverAssigned = codebook[counts < 1]
                 argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
                 fullyAssigned = codebook[argIdx]
                 selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
@@ -282,7 +291,7 @@ class New(Algorithm):
 
         countUnique = list()
 
-        for raw in dataLoader:
+        for raw in tqdm(dataLoader, ncols=50, bar_format="Validating: {n_fmt}/{total_fmt} |{bar}", leave=False):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
@@ -357,7 +366,7 @@ class New(Algorithm):
 
         datasetLength = len(dataLoader.dataset)
 
-        for j, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="{l_bar}{bar}| Test...")):
+        for j, raw in enumerate(tqdm(dataLoader, ncols=50, bar_format="Testing: {n_fmt}/{total_fmt} |{bar}", leave=False)):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
 
@@ -397,8 +406,8 @@ class New(Algorithm):
 
             restored = self._deTrans(restored)
 
-            if j % (datasetLength // 5) == 0:
-                self._saver.add_images(f"Res/Test_{j // (datasetLength // 5)}", restored, global_step=step)
+            if (j + 1) % (datasetLength // 5) == 0:
+                self._saver.add_images(f"Res/Test_{j // (datasetLength // 5) + 1}", restored, global_step=step)
 
             ssim = self._evalSSIM(restored.detach().float(), raw.detach().float())
 
