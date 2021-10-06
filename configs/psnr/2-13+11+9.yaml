@@ -22,7 +22,7 @@ model:
 optim:
     type: Adam
     params:
-        lr: 8.e-6
+        lr: 1.6e-5
 schdr:
     type: MultiStepWarmUp
     params:

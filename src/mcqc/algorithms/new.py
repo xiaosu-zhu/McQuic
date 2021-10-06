@@ -1,3 +1,4 @@
+import collections
 import os
 from typing import List, Tuple, Type
 from logging import Logger
@@ -57,6 +58,7 @@ class New(Algorithm):
         self._optimizer = optimizer(self._model.parameters(), **config.Optim.params)
         if scheduler is not None:
             self._scheduler = scheduler(self._optimizer, **config.Schdr.params)
+            self._schdrFn = scheduler
         else:
             self._scheduler = None
 
@@ -193,7 +195,7 @@ class New(Algorithm):
             # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            for images in tqdm(trainLoader, ncols=50, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}" % i, total=totalBatches, leave=False, disable=self._rank != 0):
+            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}" % i, total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad(True)
                 dLoss, (restored, allHards, allLogits) = self._model(images, temperature)
                 dLoss.backward()
@@ -226,6 +228,10 @@ class New(Algorithm):
                 codebook = self._model.module._compressor._quantizers[i][j]._codebook.clone().detach()
                 dist.broadcast(codebook, 0)
                 self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
+        # self._optimizer.state = collections.defaultdict(dict)
+        # if self._scheduler is not None:
+        #     lastEpoch = self._scheduler.last_epoch
+        #     self._scheduler = self._schdrFn(self._optimizer, **config.Schdr.params)
         if self._rank == 0:
             self._logger.debug("End broadcast...")
 
@@ -235,7 +241,7 @@ class New(Algorithm):
         trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
         dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
         quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
-        for image in tqdm(dataLoader, ncols=50, bar_format="Re-assign: {n_fmt}/{total_fmt} |{bar}", leave=False):
+        for image in tqdm(dataLoader, ncols=40, bar_format="Assign: {n_fmt}/{total_fmt} |{bar}", leave=False):
             image = image.to(self._rank, non_blocking=True)
             # list of [n, m, h, w]
             allOriginal = model.prepare(image)
@@ -291,7 +297,7 @@ class New(Algorithm):
 
         countUnique = list()
 
-        for raw in tqdm(dataLoader, ncols=50, bar_format="Validating: {n_fmt}/{total_fmt} |{bar}", leave=False):
+        for raw in tqdm(dataLoader, ncols=40, bar_format="Val: {n_fmt}/{total_fmt} |{bar}", leave=False):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
@@ -366,7 +372,7 @@ class New(Algorithm):
 
         datasetLength = len(dataLoader.dataset)
 
-        for j, raw in enumerate(tqdm(dataLoader, ncols=50, bar_format="Testing: {n_fmt}/{total_fmt} |{bar}", leave=False)):
+        for j, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="Test: {n_fmt}/{total_fmt} |{bar}", leave=False)):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
 
