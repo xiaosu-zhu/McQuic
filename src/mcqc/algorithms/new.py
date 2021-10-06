@@ -56,6 +56,7 @@ class New(Algorithm):
             self._evalPSNR = PSNR(sizeAverage=False).to(self._rank)
 
         self._optimizer = optimizer(self._model.parameters(), **config.Optim.params)
+        self._optimFn = optimizer
         if scheduler is not None:
             self._scheduler = scheduler(self._optimizer, **config.Schdr.params)
             self._schdrFn = scheduler
@@ -195,7 +196,7 @@ class New(Algorithm):
             # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}" % i, total=totalBatches, leave=False, disable=self._rank != 0):
+            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % i, total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad(True)
                 dLoss, (restored, allHards, allLogits) = self._model(images, temperature)
                 dLoss.backward()
@@ -228,10 +229,17 @@ class New(Algorithm):
                 codebook = self._model.module._compressor._quantizers[i][j]._codebook.clone().detach()
                 dist.broadcast(codebook, 0)
                 self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
-        # self._optimizer.state = collections.defaultdict(dict)
-        # if self._scheduler is not None:
-        #     lastEpoch = self._scheduler.last_epoch
-        #     self._scheduler = self._schdrFn(self._optimizer, **config.Schdr.params)
+        del self._optimizer
+        # reset optimizer's moments
+        self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
+        # restore learning rate
+        lr = self._scheduler.get_last_lr()[0]
+        for g in self._optimizer.param_groups:
+            g['lr'] = lr
+        # replace scheduler's optimizer
+        if self._scheduler is not None:
+            self._scheduler.optimizer = self._optimizer
+            self._scheduler.step()
         if self._rank == 0:
             self._logger.debug("End broadcast...")
 
@@ -241,7 +249,7 @@ class New(Algorithm):
         trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
         dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
         quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
-        for image in tqdm(dataLoader, ncols=40, bar_format="Assign: {n_fmt}/{total_fmt} |{bar}", leave=False):
+        for image in tqdm(dataLoader, ncols=40, bar_format="Assign: {n_fmt}/{total_fmt} |{bar}|", leave=False):
             image = image.to(self._rank, non_blocking=True)
             # list of [n, m, h, w]
             allOriginal = model.prepare(image)
@@ -267,7 +275,7 @@ class New(Algorithm):
                 neverAssigned = codebook[counts < 1]
                 if len(neverAssigned) > k // 2:
                     mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
-                    maskIdx = torch.randperm(len(mask))[:k // 2]
+                    maskIdx = torch.randperm(len(mask))[k // 2:]
                     mask[maskIdx] = 1
                     counts[counts < 1] = mask
                     neverAssigned = codebook[counts < 1]
@@ -297,7 +305,7 @@ class New(Algorithm):
 
         countUnique = list()
 
-        for raw in tqdm(dataLoader, ncols=40, bar_format="Val: {n_fmt}/{total_fmt} |{bar}", leave=False):
+        for raw in tqdm(dataLoader, ncols=40, bar_format="Val: {n_fmt}/{total_fmt} |{bar}|", leave=False):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
             totalPixels += n * h * w
@@ -372,7 +380,7 @@ class New(Algorithm):
 
         datasetLength = len(dataLoader.dataset)
 
-        for j, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="Test: {n_fmt}/{total_fmt} |{bar}", leave=False)):
+        for j, raw in enumerate(tqdm(dataLoader, ncols=40, bar_format="Test: {n_fmt}/{total_fmt} |{bar}|", leave=False)):
             raw = raw.to(self._rank, non_blocking=True)
             n, _, h, w = raw.shape
 

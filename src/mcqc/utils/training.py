@@ -75,7 +75,7 @@ class MultiStepLRWithWarmUp(torch.optim.lr_scheduler._LRScheduler):
 
         if self.last_epoch not in self.milestones:
             return [group['lr'] for group in self.optimizer.param_groups]
-        return [group['lr'] * self.gamma ** self.milestones[self.last_epoch]
+        return [group['lr'] * self.gamma
                 for group in self.optimizer.param_groups]
 
 
