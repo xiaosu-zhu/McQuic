@@ -2,6 +2,8 @@ import os
 import math
 import random
 
+
+from tqdm.contrib.logging import logging_redirect_tqdm
 import torch
 import torch.multiprocessing as mp
 import torch.distributed as dist
@@ -140,6 +142,9 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         testDataset = Basic(os.path.join("data", config.ValDataset), transform=getTestTransform())
         valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
         testLoader = DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    if logger is not None:
+        context = logging_redirect_tqdm([logger])
+        context.__enter__()
     method.run(prefetcher, trainSampler, valLoader, testLoader)
 
 
