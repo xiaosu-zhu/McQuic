@@ -12,10 +12,10 @@ dependencies:
   - matplotlib=3.4
   - pip:
     - pyyaml
-    - cfmUtils=0.1.2
-    - pyro-ppl=1.7.0
-    - storchastic=0.3.5
+    - cfmUtils==0.1.2
+    - pyro-ppl==1.7.0
+    - storchastic==0.3.5
     - lmdb
     # need gcc > 8, nvcc
-    - compressai=1.1.6
+    - compressai==1.1.6
     - packaging

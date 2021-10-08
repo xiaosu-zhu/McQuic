@@ -1,7 +1,9 @@
+import functools
 import os
 import math
 import random
 
+import apex
 
 from tqdm.contrib.logging import logging_redirect_tqdm
 import torch
@@ -22,7 +24,7 @@ from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, FineTune, TwoPass, New
 from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
-from mcqc.utils.training import CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
+from mcqc.utils.training import CosineAnnealingWarmupRestarts, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
@@ -91,7 +93,8 @@ methods = {
 
 optims = {
     "Adam": torch.optim.Adam,
-    "SGD": torch.optim.SGD
+    "SGD": torch.optim.SGD,
+    "Lamb": functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True)
 }
 
 schdrs = {
@@ -100,7 +103,8 @@ schdrs = {
     "MultiStep": torch.optim.lr_scheduler.MultiStepLR,
     "MultiStepWarmUp": MultiStepLRWithWarmUp,
     "Cyclic": CyclicLR,
-    "OneCycle": torch.optim.lr_scheduler.OneCycleLR
+    "OneCycle": torch.optim.lr_scheduler.OneCycleLR,
+    "CosineWarmRestart": CosineAnnealingWarmupRestarts
 }
 
 regSchdrs = {

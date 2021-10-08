@@ -1,5 +1,5 @@
 # Tested under this image, try newer images on your own risk
-FROM nvcr.io/nvidia/pytorch:21.07-py3
+FROM nvcr.io/nvidia/pytorch:21.09-py3
 
 COPY environment.yaml ./
 

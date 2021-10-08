@@ -250,6 +250,7 @@ class L2Quantizer(nn.Module):
         logit = self.getLogit(q, k)
         trueCode = logit.argmax(-1)
         sample = F.gumbel_softmax(logit, temperature, True)
+        code = sample.argmax(-1)
         target = self._codebook
         hard = sample @ target
         hard = hard.permute(0, 3, 1, 2)
@@ -262,7 +263,7 @@ class L2Quantizer(nn.Module):
         #     soft = hard
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, c, h, w], [k, c]
-        return hard, trueCode, logit
+        return hard, code, trueCode, logit
 
 
 class AttentiveQuantizer(nn.Module):

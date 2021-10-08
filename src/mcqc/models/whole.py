@@ -28,16 +28,23 @@ class WholePQBig(nn.Module):
         super().__init__()
         self._compressor = PQCompressorBig(m, k, channel, withGroup, withAtt, False, alias, ema)
         self._cLoss = CompressionLossBig(target)
+        self._auxLoss = nn.CrossEntropyLoss()
         # self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, allHards, latent, allCodes, allLogits = self._compressor(image, temp, True)
+        restored, allHards, latent, allCodes, allTrues, allLogits = self._compressor(image, temp, True)
 
         dLoss = self._cLoss(image, restored)
+
+        # auxLoss = list()
+
+        # for logits, codes in zip(allLogits, allTrues):
+        #     auxLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), codes))
+
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return dLoss, (restored, allCodes, allLogits)
+        return dLoss, 0.0, (restored, allTrues, allLogits)
 
 
 class WholePQQ(nn.Module):
