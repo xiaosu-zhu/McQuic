@@ -188,7 +188,7 @@ class L2Quantizer(nn.Module):
 
     def getLogit(self, x, c):
         # [n, h, w, 1]
-        x2 = ((x ** 2).sum(-1))[..., None]
+        x2 = (x ** 2).sum(-1, keepdim=True)
         # [k]
         c2 = (c ** 2).sum(-1)
         # [n, h, w, k]

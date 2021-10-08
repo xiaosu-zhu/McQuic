@@ -37,14 +37,14 @@ class WholePQBig(nn.Module):
 
         dLoss = self._cLoss(image, restored)
 
-        # auxLoss = list()
+        auxLoss = list()
 
-        # for logits, codes in zip(allLogits, allTrues):
-        #     auxLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), codes))
+        for logits, codes in zip(allLogits, allTrues):
+            auxLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), codes))
 
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return dLoss, 0.0, (restored, allTrues, allLogits)
+        return dLoss, sum(auxLoss), (restored, allTrues, allLogits)
 
 
 class WholePQQ(nn.Module):

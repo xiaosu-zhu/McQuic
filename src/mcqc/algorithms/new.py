@@ -201,7 +201,7 @@ class New(Algorithm):
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
                 dLoss, auxLoss, (restored, allHards, allLogits) = self._model(images, temperature)
-                (dLoss + 1e-3 * auxLoss).backward()
+                (dLoss + 2e-3 * auxLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
@@ -235,9 +235,9 @@ class New(Algorithm):
         # reset optimizer's moments
         self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
         # restore learning rate
-        lr = self._scheduler.get_last_lr()[0]
-        for g in self._optimizer.param_groups:
-            g['lr'] = lr
+        # lr = self._scheduler.get_last_lr()[0]
+        # for g in self._optimizer.param_groups:
+        #    g['lr'] = lr
         # replace scheduler's optimizer
         if self._scheduler is not None:
             self._scheduler = self._schdrFn(self._optimizer, **self._config.Schdr.params)
