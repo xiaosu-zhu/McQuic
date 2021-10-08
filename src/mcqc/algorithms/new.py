@@ -30,6 +30,7 @@ from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess
 
 _logMapping = {
     "distortion": "Stat/Distortion",
+    "auxiliary": "Stat/Auxiliary",
     "predict": "Stat/Context",
     "bpp": "Stat/Reg",
     "lr": "Stat/LR",
@@ -87,6 +88,7 @@ class New(Algorithm):
     def _fastHook(self, **kwArgs):
         step = kwArgs["now"]
         self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
+        self._saver.add_scalar(_logMapping["auxiliary"], kwArgs["auxiliary"], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
@@ -184,7 +186,7 @@ class New(Algorithm):
             else:
                 ssim, _ = self._evalFull(testLoader, step)
             self._best = ssim
-        # self._reSpreadAll()
+        self._reSpreadAll()
 
         totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize)
 
@@ -196,10 +198,10 @@ class New(Algorithm):
             # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % i, total=totalBatches, leave=False, disable=self._rank != 0):
-                self._optimizer.zero_grad(True)
-                dLoss, (restored, allHards, allLogits) = self._model(images, temperature)
-                dLoss.backward()
+            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + 1), total=totalBatches, leave=False, disable=self._rank != 0):
+                self._optimizer.zero_grad()
+                dLoss, auxLoss, (restored, allHards, allLogits) = self._model(images, temperature)
+                (dLoss + 1e-3 * auxLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
@@ -207,9 +209,9 @@ class New(Algorithm):
                 # updateOp()
                 if self._loggingHook is not None:
                     with torch.inference_mode():
-                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, distortion=dLoss)
+                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, distortion=dLoss, auxiliary=auxLoss)
                 if step % (self._config.TestStep * 10) == 0:
-                    self._optimizer.zero_grad(True)
+                    self._optimizer.zero_grad()
                     self._reSpreadAll()
                 dist.barrier()
             # temperature = max(finalTemp, temperature * annealRate)
@@ -238,8 +240,9 @@ class New(Algorithm):
             g['lr'] = lr
         # replace scheduler's optimizer
         if self._scheduler is not None:
-            self._scheduler.optimizer = self._optimizer
-            self._scheduler.step()
+            self._scheduler = self._schdrFn(self._optimizer, **self._config.Schdr.params)
+            # self._scheduler.optimizer = self._optimizer
+            # self._scheduler.step()
         if self._rank == 0:
             self._logger.debug("End broadcast...")
 

@@ -141,7 +141,7 @@ class CompressionLossBig(nn.Module):
             self._distortion = self._dPsnr
 
     def _dPsnr(self, image, restored):
-        return F.mse_loss(restored, image) # + F.l1_loss(restored, image)
+        return F.mse_loss(restored, image) + F.l1_loss(restored, image)
 
     def _dSsim(self, image, restored):
         return 1 - self._ssim(restored + 1, image + 1)

@@ -312,6 +312,128 @@ class CyclicLR(torch.optim.lr_scheduler._LRScheduler):
         return lrs
 
 
+
+class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
+    """
+        optimizer (Optimizer): Wrapped optimizer.
+        first_cycle_steps (int): First cycle step size.
+        cycle_mult(float): Cycle steps magnification. Default: -1.
+        max_lr(float): First cycle's max learning rate. Default: 0.1.
+        min_lr(float): Min learning rate. Default: 0.001.
+        warmup_steps(int): Linear warmup step size. Default: 0.
+        gamma(float): Decrease rate of max learning rate by cycle. Default: 1.
+        last_epoch (int): The index of last epoch. Default: -1.
+    """
+
+    def __init__(self,
+                 optimizer : torch.optim.Optimizer,
+                 first_cycle_steps : int,
+                 cycle_mult : float = 1.,
+                 lrScaleRatio: float = 0.01,
+                 warmup_steps : int = 0,
+                 gamma : float = 1.,
+                 last_epoch : int = -1,
+                 cycle_momentum: bool = False,
+                 max_momentum: float = 0.9,
+                 base_momentum: float = 0.8,
+                 verbose: bool = False
+        ):
+        assert warmup_steps < first_cycle_steps
+
+        self.optimizer = optimizer
+
+        self.first_cycle_steps = first_cycle_steps # first cycle step size
+        self.cycle_mult = cycle_mult # cycle steps magnification
+        self.max_lrs = []
+        for param_group in optimizer.param_groups:
+            self.max_lrs.append(param_group['lr'])
+        self.min_lrs = [lr * lrScaleRatio for lr in self.max_lrs] # min learning rate
+        self.warmup_steps = warmup_steps # warmup step size
+        self.gamma = gamma # decrease rate of max learning rate by cycle
+
+        self.cur_cycle_steps = first_cycle_steps # first cycle step size
+        self.cycle = 0 # cycle count
+        self.step_in_cycle = last_epoch # step size of the current cycle
+
+        # self.cycle_momentum = cycle_momentum
+        # if self.cycle_momentum:
+        #     if 'momentum' not in self.optimizer.defaults and 'betas' not in self.optimizer.defaults:
+        #         raise ValueError('optimizer must support momentum with `cycle_momentum` option enabled')
+        #     self.use_beta1 = 'betas' in self.optimizer.defaults
+        #     max_momentums = self._format_param('max_momentum', optimizer, max_momentum)
+        #     base_momentums = self._format_param('base_momentum', optimizer, base_momentum)
+        #     if last_epoch == -1:
+        #         for m_momentum, b_momentum, group in zip(max_momentums, base_momentums, optimizer.param_groups):
+        #             if self.use_beta1:
+        #                 _, beta2 = group['betas']
+        #                 group['betas'] = (m_momentum, beta2)
+        #             else:
+        #                 group['momentum'] = m_momentum
+        #             group['max_momentum'] = m_momentum
+        #             group['base_momentum'] = b_momentum
+
+        super(CosineAnnealingWarmupRestarts, self).__init__(optimizer, last_epoch, verbose)
+
+    def _format_param(self, name, optimizer, param):
+        """Return correctly formatted lr/momentum for each param group."""
+        if isinstance(param, (list, tuple)):
+            if len(param) != len(optimizer.param_groups):
+                raise ValueError("expected {} values for {}, got {}".format(
+                    len(optimizer.param_groups), name, len(param)))
+            return param
+        else:
+            return [param] * len(optimizer.param_groups)
+
+    def get_lr(self):
+        if self.step_in_cycle == -1:
+            return self.min_lrs
+        elif self.step_in_cycle < self.warmup_steps:
+
+            # if self.cycle_momentum:
+            #     for group in self.optimizer.param_groups:
+            #         base_momentum, max_momentum = group["base_momentum"], group["max_momentum"]
+            #         base_height = (max_momentum - base_momentum) * scale_factor
+            #         if self.scale_mode == 'cycle':
+            #             momentum = max_momentum - base_height * self.scale_fn(cycle)
+            #         else:
+            #             momentum = max_momentum - base_height * self.scale_fn(self.last_epoch)
+            #         if self.use_beta1:
+            #             _, beta2 = group['betas']
+            #             group['betas'] = (momentum, beta2)
+            #         else:
+            #             group['momentum'] = momentum
+
+            return [(max_lr - min_lr)*self.step_in_cycle / self.warmup_steps + min_lr for min_lr, max_lr in zip(self.min_lrs, self.max_lrs)]
+        else:
+            return [min_lr + (max_lr - min_lr) \
+                    * (1 + math.cos(math.pi * (self.step_in_cycle-self.warmup_steps) \
+                                    / (self.cur_cycle_steps - self.warmup_steps))) / 2
+                    for min_lr, max_lr in zip(self.min_lrs, self.max_lrs)]
+
+    def step(self, epoch=None):
+        if epoch is None:
+            epoch = self.last_epoch + 1
+            self.step_in_cycle = self.step_in_cycle + 1
+            if self.step_in_cycle >= self.cur_cycle_steps:
+                self.cycle += 1
+                self.step_in_cycle = self.step_in_cycle - self.cur_cycle_steps
+                self.cur_cycle_steps = int((self.cur_cycle_steps - self.warmup_steps) * self.cycle_mult) + self.warmup_steps
+        else:
+            if epoch >= self.first_cycle_steps:
+                if self.cycle_mult == 1.:
+                    self.step_in_cycle = epoch % self.first_cycle_steps
+                    self.cycle = epoch // self.first_cycle_steps
+                else:
+                    n = int(math.log((epoch / self.first_cycle_steps * (self.cycle_mult - 1) + 1), self.cycle_mult))
+                    self.cycle = n
+                    self.step_in_cycle = epoch - int(self.first_cycle_steps * (self.cycle_mult ** n - 1) / (self.cycle_mult - 1))
+                    self.cur_cycle_steps = self.first_cycle_steps * self.cycle_mult ** (n)
+            else:
+                self.cur_cycle_steps = self.first_cycle_steps
+                self.step_in_cycle = epoch
+
+        super().step()
+
 class _ValueTuner(Restorable):
     def __init__(self, initValue: float = 2e-2):
         super().__init__()

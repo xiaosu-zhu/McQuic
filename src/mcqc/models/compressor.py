@@ -104,19 +104,22 @@ class PQCompressorBig(nn.Module):
     def quantize(self, latent, level, temp):
         splits = torch.chunk(latent, self._m, 1)
         codes = list()
+        trueCodes = list()
         logits = list()
         hards = list()
         for quantizer, split in zip(self._quantizers[level], splits):
-            hard, c, l = quantizer(split, temp)
+            hard, c, tc, l = quantizer(split, temp)
             codes.append(c)
+            trueCodes.append(tc)
             logits.append(l)
             hards.append(hard)
 
         codes = torch.stack(codes, 1)
+        trueCodes = torch.stack(trueCodes, 1)
         hards = torch.cat(hards, 1)
         logits = torch.stack(logits, 1)
 
-        return hards, codes, logits
+        return hards, codes, trueCodes, logits
 
     def encode(self, latent, level):
         splits = torch.chunk(latent, self._m, 1)
@@ -144,10 +147,10 @@ class PQCompressorBig(nn.Module):
             latent = mapper(x)
         else:
             latent = None
-        hard, c, l = self.quantize(z, level, temp)
+        hard, c, tc, l = self.quantize(z, level, temp)
         if latent is not None:
             latent = latent - hard
-        return latent, hard, c, l
+        return latent, hard, c, tc, l
 
     def deQuantize(self, q, level):
         reverse = self._reverses[level]
@@ -199,14 +202,16 @@ class PQCompressorBig(nn.Module):
 
         allHards = list()
         allCodes = list()
+        allTrues = list()
         allLogits = list()
 
         allHards.append(None)
 
         for i in range(self._levels):
-            latent, hards, c, l = self.nextLevelDown(latent, i, temp)
+            latent, hards, c, tc, l = self.nextLevelDown(latent, i, temp)
             allHards.append(hards)
             allCodes.append(c)
+            allTrues.append(tc)
             allLogits.append(l)
 
         quantizeds = list()
@@ -218,7 +223,7 @@ class PQCompressorBig(nn.Module):
 
 
         restored = torch.tanh(self._decoder(quantizeds[0]))
-        return restored, allHards, latent, allCodes, allLogits
+        return restored, allHards, latent, allCodes, allTrues, allLogits
 
 class PQCompressorQ(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):

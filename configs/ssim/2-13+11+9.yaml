@@ -1,18 +1,18 @@
 epoch: 10000000000
 evalStep: 500
 testStep: 5000
-gpus: 1
+gpus: 4
 vRam: -1
 wantsMore: false
-dataset: compression
-repeat: 10 # duplicate images in one epoch
+dataset: fullDataset
+repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 10
+batchSize: 12
 model:
     type: Big
     target: ssim
     channel: 128
-    k: [16384, 4096, 1024]
+    k: [8192, 2048, 512]
     m: 2
     withGroup: false
     withAtt: true
@@ -20,14 +20,21 @@ model:
     alias: false
     ema: -1.0
 optim:
-    type: Adam
+    type: Lamb
     params:
-        lr: 3.e-5
+        lr: 3.e-4
+        # weight_decay: 0.0
+        # use_nvlamb: true
+# schdr:
+#     type: MultiStepWarmUp
+#     params:
+#         milestones: [100, 800, 900] # manually divided by repeat
+#         gamma: 0.1
 schdr:
-    type: MultiStepWarmUp
+    type: CosineWarmRestart
     params:
-        milestones: [100, 400, 800] # manually divided by repeat
-        gamma: 0.1
+        first_cycle_steps: 150
+        warmup_steps: 30
 # regSchdr:
 #     type: Cyclic
 #     params:
@@ -58,5 +65,5 @@ regSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: ckpt/3-14+12+10.ckpt
+warmStart: "" # ckpt/3-14+12+10.ckpt
 method: New
