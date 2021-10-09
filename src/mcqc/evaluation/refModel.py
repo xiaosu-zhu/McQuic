@@ -3,11 +3,11 @@ import math
 
 import torch
 from torch import nn
+from torch.functional import Tensor
 import torch.nn.functional as F
-import torchvision
 
-from mcqc.models.encoder import Director, DownSampler, EncoderHead, ResidualAttEncoder, ResidualBaseEncoder, ResidualEncoder
-from mcqc.models.decoder import ResidualAttDecoder, ResidualBaseDecoder, ResidualDecoder, UpSampler
+from mcqc.models.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder
+from mcqc.models.decoder import ResidualBaseDecoder, UpSampler
 
 
 
@@ -16,7 +16,7 @@ class Preprocess(nn.Module):
         super().__init__()
         self._base = base
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         n, c, h, w = x.shape
         x = (x - 0.5) / 0.5
         wPad = math.ceil(w / self._base) * self._base - w
@@ -26,19 +26,24 @@ class Preprocess(nn.Module):
         padTop = hPad // 2
         padBottom = hPad - padTop
 
-        x = F.pad(x, (padLeft, padRight, padTop, padBottom), mode="reflect")
+        x = F.pad(x, (padLeft, padRight, padTop, padBottom))
         if c == 1:
             n, c, h, w = x.shape
             x = x.expand(n, 3, h, w)
-        return x, torch.tensor([padLeft, padRight, padTop, padBottom])
+
+        if padRight == 0:
+            padRight = -w
+        if padBottom == 0:
+            padBottom = -h
+        return x, torch.tensor([c, padLeft, padRight, padTop, padBottom])
 
 
 class PostProcess(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, padding):
-        pass
+    def forward(self, x: torch.Tensor, cAndPadding: torch.Tensor) -> torch.Tensor:
+        x = x[:, :, cAndPadding[3]:(-cAndPadding[4]), cAndPadding[1]:(-cAndPadding[2])]
+        if cAndPadding[0] == 1:
+            x = x.mean(1, keepdim=True)
+        return (x + 1) / 2
 
 
 class QuantizerEncoder(nn.Module):
@@ -70,7 +75,7 @@ class QuantizerEncoder(nn.Module):
         for i, c in enumerate(codebooks):
             self._codebook[i] = c
 
-    def forward(self, latent):
+    def forward(self, latent: torch.Tensor) -> torch.Tensor:
         # [n, h, w, m]
         return self.encode(latent)
 
@@ -82,13 +87,13 @@ class QuantizerDecoder(nn.Module):
         self._codebook = nn.Parameter(torch.empty(m, k, d))
         self.register_buffer("_ix", torch.arange(m))
 
-    def decode(self, codes: torch.Tensor):
-        # codes: [n, h, w, m]
-        n, h, w, _ = codes.shape
-        # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
-        ix = self._ix.expand_as(codes)
-        return self._codebook[[ix, codes]].reshape(n, h, w, -1).permute(0, 3, 1, 2)
-
+    # def decode(self, codes):
+    #     n, h, w, m = codes.shape
+    #     k = self._codebook.shape[1]
+    #     # [n, h, w, m, k]
+    #     oneHot = F.one_hot(codes.long(), k).float()
+    #     # [n, c, h, w]
+    #     return torch.einsum("nhwmk,mkc->nhwmc", oneHot, self._codebook).reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     @torch.jit.unused
     def load_state_dict(self, state_dict: OrderedDict[str, torch.Tensor], strict: bool = True):
@@ -98,9 +103,14 @@ class QuantizerDecoder(nn.Module):
         for i, c in enumerate(codebooks):
             self._codebook[i] = c
 
-    def forward(self, codes):
-        # [n, c, h, w]
-        return self.decode(codes)
+    def forward(self, codes: torch.Tensor) -> torch.Tensor:
+        # codes: [n, h, w, m]
+        n, h, w, _ = codes.shape
+        # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
+        # ix = torch.arange(self._m, device=codes.device).expand_as(codes)
+        ix = self._ix.expand_as(codes)
+        return self._codebook[ix, codes].reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        # return self.decode(codes)
 
 
 class RefEncoder(nn.Module):
@@ -108,46 +118,53 @@ class RefEncoder(nn.Module):
         super().__init__()
         self._levels = len(k)
 
+        self._keys = tuple({
+            "_encoder",
+            "_heads",
+            "_mappers",
+            "_quantizers"
+        })
+
         self._encoder = ResidualBaseEncoder(channel, groups, alias)
 
         self._heads = nn.ModuleList(EncoderHead(channel, 1, alias) for _ in range(self._levels))
         self._mappers = nn.ModuleList(DownSampler(channel, 1, alias) for _ in range(self._levels - 1))
-        self._quantizers = nn.ModuleList(QuantizerEncoder(m, k, channel // m) for _ in k)
-        self._deQuantizers = nn.ModuleList(QuantizerDecoder(m, k, channel // m) for _ in k)
+        self._quantizers = nn.ModuleList(QuantizerEncoder(m, ki, channel // m) for ki in k)
+        self._deQuantizers = nn.ModuleList(QuantizerDecoder(m, ki, channel // m) for ki in k)
 
     @torch.jit.unused
     def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
         encoderDict = {k[len("_encoder."):]: v for k, v in state_dict.items() if k.startswith("_encoder.")}
         headsDict = {k[len("_heads."):]: v for k, v in state_dict.items() if k.startswith("_heads.")}
         mappersDict = {k[len("_mappers."):]: v for k, v in state_dict.items() if k.startswith("_mappers.")}
-        quantizerDict = {k[len("_quantizer."):]: v for k, v in state_dict.items() if k.startswith("_quantizer.")}
+        quantizerDict = {k[len("_quantizers."):]: v for k, v in state_dict.items() if k.startswith("_quantizers.")}
         self._encoder.load_state_dict(encoderDict)
         self._heads.load_state_dict(headsDict)
         self._mappers.load_state_dict(mappersDict)
-        self._quantizers.load_state_dict(quantizerDict)
-        self._deQuantizers.load_state_dict(quantizerDict)
+        for i, q in enumerate(self._quantizers):
+            q.load_state_dict({k[len("1."):]: v for k, v in quantizerDict.items() if k.startswith(f"{i}.")})
+        for i, q in enumerate(self._deQuantizers):
+            q.load_state_dict({k[len("1."):]: v for k, v in quantizerDict.items() if k.startswith(f"{i}.")})
 
     @property
     @torch.jit.unused
     def keys(self):
-        return "_encoder", "_quantizer"
+        return self._keys
 
-    def forward(self, x: torch.Tensor) -> List[torch.LongTensor]:
+    def forward(self, x: torch.Tensor, cAndPadding: torch.Tensor) -> Tuple[List[torch.LongTensor], torch.Tensor]:
         codes = list()
         latent = self._encoder(x)
-        for i in range(self._levels):
-            head = self._heads[i]
+        for head, mapper, quantizer, deQuantizer in zip(self._heads, self._mappers, self._quantizers, self._deQuantizers):
             z = head(latent)
-            if i < self._levels - 1:
-                mapper = self._mappers[i]
-                latent = mapper(latent)
-                code = self._quantizers[i](z)
-                hard = self._deQuantizers[i](code)
-                latent = latent - hard
-            else:
-                code = self._quantizers[i](z)
+            latent = mapper(latent)
+            code = quantizer(z)
+            hard = deQuantizer(code)
+            latent = latent - hard
             codes.append(code)
-        return codes
+        z = self._heads[-1](latent)
+        codes.append(self._quantizers[-1](z))
+        # codes from small to big
+        return codes[::-1], cAndPadding
 
 
 class RefDecoder(nn.Module):
@@ -155,31 +172,53 @@ class RefDecoder(nn.Module):
         super().__init__()
         self._levels = len(k)
 
+        self._keys = tuple({
+            "_decoder",
+            "_reverses",
+            "_scatters",
+            "_quantizers"
+        })
+
         self._decoder = ResidualBaseDecoder(channel, 1)
 
-        self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels))
+        self._reverses0 = UpSampler(channel, 1, alias)
+        self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels - 1))
         self._scatters = nn.ModuleList(Director(channel, 1, alias) for _ in range(self._levels - 1))
-        self._quantizers = nn.ModuleList(QuantizerDecoder(m, k, channel // m) for _ in k)
+        ################### REVERSE THE QUANTIZER ###################
+        self._quantizers0 = QuantizerDecoder(m, k[-1], channel // m)
+        self._quantizers = nn.ModuleList(QuantizerDecoder(m, ki, channel // m) for ki in k[-2::-1])
 
     @torch.jit.unused
     def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
         encoderDict = {k[len("_decoder."):]: v for k, v in state_dict.items() if k.startswith("_decoder.")}
+        self._decoder.load_state_dict(encoderDict)
+        ############################### IMPORTANT: LOAD IN REVERSE ORDER ###############################
         reversesDict = {k[len("_reverses."):]: v for k, v in state_dict.items() if k.startswith("_reverses.")}
         scattersDict = {k[len("_scatters."):]: v for k, v in state_dict.items() if k.startswith("_scatters.")}
-        quantizerDict = {k[len("_quantizer."):]: v for k, v in state_dict.items() if k.startswith("_quantizer.")}
-        self._decoder.load_state_dict(encoderDict)
-        self._quantizers.load_state_dict(quantizerDict)
-        self._reverses.load_state_dict(reversesDict)
-        self._scatters.load_state_dict(scattersDict)
+        quantizerDict = {k[len("_quantizers."):]: v for k, v in state_dict.items() if k.startswith("_quantizers.")}
+
+        self._reverses0.load_state_dict({k[len("1."):]: v for k, v in reversesDict.items() if k.startswith(f"{self._levels - 1}.")})
+        for i, r in enumerate(self._reverses):
+            r.load_state_dict({k[len("1."):]: v for k, v in reversesDict.items() if k.startswith(f"{self._levels - i - 2}.")})
+
+        for i, s in enumerate(self._scatters):
+            s.load_state_dict({k[len("1."):]: v for k, v in scattersDict.items() if k.startswith(f"{self._levels - i - 2}.")})
+
+        self._quantizers0.load_state_dict({k[len("1."):]: v for k, v in quantizerDict.items() if k.startswith(f"{self._levels - 1}.")})
+        for i, q in enumerate(self._quantizers):
+            q.load_state_dict({k[len("1."):]: v for k, v in quantizerDict.items() if k.startswith(f"{self._levels - i - 2}.")})
+        ############################### IMPORTANT: LOAD IN REVERSE ORDER ###############################
 
     @property
     @torch.jit.unused
     def keys(self):
-        return "_decoder", "_quantizer"
+        return self._keys
 
-    def forward(self, codes: torch.ByteTensor) -> torch.Tensor:
-        smallQ = self._reverses[-1](self._quantizers[-1](codes[-1]))
-        for i in range(self._levels - 1, -1, -1):
-            q = self._scatters[i](self._quantizers[i](codes[i]))
-            smallQ = self._reverses[i](q + smallQ)
-        return self._decoder(smallQ).tanh()
+    def forward(self, codes: List[torch.LongTensor], cAndPadding: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        smallQ = self._reverses0(self._quantizers0(codes[0]))
+        for i, (scatter, quantizer, reverse) in enumerate(zip(self._scatters, self._quantizers, self._reverses)):
+            code = codes[i + 1]
+            q = scatter(quantizer(code))
+            smallQ = reverse(q + smallQ)
+
+        return self._decoder(smallQ).tanh(), cAndPadding
