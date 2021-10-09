@@ -1,10 +1,23 @@
 import os
 from typing import Dict
 
+from cfmUtils.config import read
+from mcqc import Config
+
+from absl import app
+from absl import flags
+
 import torch
 from torch import nn
 
-from mcqc.evaluation.refModel import RefEncoder, RefDecoder
+from mcqc.evaluation.refModel import PostProcess, Preprocess, RefEncoder, RefDecoder
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string("cfg", "", "The config.json path.")
+flags.DEFINE_string("path", "", "The .ckpt file path.")
+flags.DEFINE_string("target", "", "The saving path.")
+flags.DEFINE_boolean("gpu", False, "Whether the model should be on GPU.")
 
 
 def migrate(model: nn.Module, prefix: str, stateDict: Dict[str, torch.Tensor]):
@@ -15,12 +28,14 @@ def migrate(model: nn.Module, prefix: str, stateDict: Dict[str, torch.Tensor]):
     return model
 
 
-def convert(encoder: nn.Module, decoder: nn.Module, path: str):
+def convert(preProcess: nn.Module, encoder: nn.Module, decoder: nn.Module, postProcess: nn.Module, path: str):
+    preProcess.eval()
     encoder.eval()
     decoder.eval()
+    postProcess.eval()
     testInput = torch.rand([1, 3, 1357, 2468])
     try:
-        testOutput = decoder(*encoder(testInput))
+        testOutput = postProcess(*decoder(*encoder(*preProcess(testInput))))
         if testInput.shape != testOutput.shape:
             raise RuntimeError(f"Input-output shape mismatch, expected {testInput.shape}, got {testOutput.shape}, please check model.")
         if torch.any(testOutput < 0) or torch.any(testOutput > 1):
@@ -29,28 +44,48 @@ def convert(encoder: nn.Module, decoder: nn.Module, path: str):
         raise RuntimeError(f"Model error with input {testInput.shape}.") from e
     testInput = torch.rand([1, 3, 2, 2])
     try:
-        testOutput = decoder(*encoder(testInput))
+        testOutput = postProcess(*decoder(*encoder(*preProcess(testInput))))
         if testInput.shape != testOutput.shape:
             raise RuntimeError(f"Input-output shape mismatch, expected {testInput.shape}, got {testOutput.shape}, please check model.")
         if torch.any(testOutput < 0) or torch.any(testOutput > 1):
             raise RuntimeError("Find result out of range 0~1, please check model.")
     except Exception as e:
         raise RuntimeError(f"Model error with input {testInput.shape}.") from e
-    scriptedEncoder = torch.jit.script(encoder)
-    scriptedEncoder.save(os.path.join(path, "encoder.pt"))
-    scriptedDecoder = torch.jit.script(decoder)
-    scriptedDecoder.save(os.path.join(path, "decoder.pt"))
+    testInput = torch.rand([1, 3, 768, 512])
+
+    x, cAndPadding = preProcess(testInput)
+    codes, cAndPadding = encoder(x, cAndPadding)
+    if FLAGS.gpu:
+        encoder = encoder.cuda()
+        decoder = decoder.cuda()
+        x = x.cuda()
+        cAndPadding = cAndPadding.cuda()
+        codes = codes.cuda()
+    with torch.jit.optimized_execution(True):
+        scriptedEncoder = torch.jit.script(encoder)
+        scriptedEncoder.save(os.path.join(path, "encoder.pt"))
+        del scriptedEncoder
+        scriptedDecoder = torch.jit.script(decoder)
+        scriptedDecoder.save(os.path.join(path, "decoder.pt"))
 
 
-def main(encoder, decoder, prefix, ckptPath, targetDir):
+def _main(encoder, decoder, prefix, ckptPath, targetDir):
     torch.autograd.set_grad_enabled(False)
     stateDict = torch.load(ckptPath, map_location={"cuda:0": "cpu"})["model"]
 
     encoder = migrate(encoder, prefix, stateDict)
     decoder = migrate(decoder, prefix, stateDict)
 
-    convert(encoder, decoder, targetDir)
+    convert(Preprocess(128), encoder, decoder, PostProcess(), targetDir)
+
+def main(_):
+    config = read(FLAGS.cfg, None, Config)
+    if not os.path.isfile(FLAGS.path):
+        raise FileNotFoundError(f"The given path: {FLAGS.path} is not a valid file or doesn't exist.")
+    if not os.path.isdir(FLAGS.target):
+        raise FileNotFoundError(f"The given target: {FLAGS.target} is not a valid dir or doesn't exist.")
+    _main(RefEncoder(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), RefDecoder(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", FLAGS.path, FLAGS.target)
 
 
 if __name__ == "__main__":
-    main(RefEncoder(32, 256, 256), RefDecoder(32, 256, 256), "module._compressor.", "ckpt/global.ckpt", "ckpt")
+    app.run(main)

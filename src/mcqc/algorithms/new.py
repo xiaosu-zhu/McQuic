@@ -201,7 +201,7 @@ class New(Algorithm):
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
                 dLoss, auxLoss, (restored, allHards, allLogits) = self._model(images, temperature)
-                (dLoss + 2e-3 * auxLoss).backward()
+                (dLoss + 1e-3 * auxLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
