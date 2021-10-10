@@ -118,7 +118,6 @@ class Performance(Test):
             _, _, h, w = x.shape
             xPadded, cAndPadding = self._preProcess(x)
             # list of [1, ?, ?, m]
-            # IMPORTANT: ACCORDING TO REF_MODEL, THE B IS STORED FROM SMALL TO BIG
             b, cAndPadding = self._encoder(xPadded, cAndPadding)
             y, cAndPadding = self._decoder(b, cAndPadding)
             y = self._postProcess(y, cAndPadding)
@@ -127,11 +126,9 @@ class Performance(Test):
             ssims.append(float(-10 * (1.0 - self._ssim(x, y)).log10()))
             psnrs.append(float(psnr(x, y)))
             # list of [m, ?]
-            # IMPORTANT: ACCORDING TO REF_MODEL, THE B IS STORED FROM SMALL TO BIG
-            # REVERSE IT BACK
-            bs.append(b[::-1])
+            bs.append(b)
             pixels.append(h * w)
-            torchvision.io.write_png(y[0].byte().cpu(), f"ckpt/images/test{i}_SSIM_{ssims[-1]}_PSNR_{psnrs[-1]}.png")
+            torchvision.io.write_png(y[0].byte().cpu(), f"ckpt/images/test_SSIM_{ssims[-1]}_PSNR_{psnrs[-1]}_{i}.png")
 
         cdfs = self._getCDFs(bs)
 
