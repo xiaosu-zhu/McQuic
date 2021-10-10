@@ -1,4 +1,6 @@
 import abc
+import enum
+import math
 import os
 from typing import Dict, List
 import torchvision
@@ -44,11 +46,13 @@ class Speed(Test):
         super().__init__(**kwArgs)
         # same as kodak
         self._testInput = torch.rand(24, 3, 768, 512).cuda()
+        self._warmupStep = 10
+        self._evalStep = 100
 
     def test(self):
         x, cAndPadding = self._preProcess(self._testInput)
         # warmup
-        for _ in trange(10):
+        for _ in trange(self._warmupStep):
             b, cAndPadding = self._encoder(x, cAndPadding)
             self._decoder(b, cAndPadding)
         torch.cuda.synchronize()
@@ -59,22 +63,22 @@ class Speed(Test):
 
         startEvent.record()
         # test encoder
-        for _ in trange(100):
+        for _ in trange(self._evalStep):
             self._encoder(x, cAndPadding)
         endEvent.record()
         torch.cuda.synchronize()
-        encoderMs = startEvent.elapsed_time(endEvent) / (100 * len(self._testInput))
+        encoderMs = startEvent.elapsed_time(endEvent) / (self._evalStep * len(self._testInput))
 
         startEvent = torch.cuda.Event(enable_timing=True)
         endEvent = torch.cuda.Event(enable_timing=True)
 
         startEvent.record()
         # test encoder
-        for _ in trange(100):
+        for _ in trange(self._evalStep):
             self._decoder(b, cAndPadding)
         endEvent.record()
         torch.cuda.synchronize()
-        decoderMs = startEvent.elapsed_time(endEvent) / (100 * len(self._testInput))
+        decoderMs = startEvent.elapsed_time(endEvent) / (self._evalStep * len(self._testInput))
 
         return {"encoderForwardTime": encoderMs, "decoderForwardTime": decoderMs}
 
@@ -90,11 +94,28 @@ class Performance(Test):
         os.makedirs("ckpt/images", exist_ok=True)
         ssims = list()
         psnrs = list()
-        bs = [[list() for _ in range(self._config.Model.m)] for _ in range(len(self._config.Model.k))]
+        bs = list()
         pixels = list()
         for i, x in enumerate(tqdm(self._dataLoader)):
             x = x.cuda(non_blocking=True)
+            minLength = 128
             _, _, h, w = x.shape
+
+            # wCrop = w - math.floor(w / minLength) * minLength
+            # hCrop = h - math.floor(h / minLength) * minLength
+            # cropLeft = wCrop // 2
+            # cropRight = wCrop - cropLeft
+            # cropTop = hCrop // 2
+            # cropBottom = hCrop - cropTop
+
+            # if cropBottom == 0:
+            #     cropBottom = -h
+            # if cropRight == 0:
+            #     cropRight = -w
+
+            # x = x[:, :, cropTop:(-cropBottom), cropLeft:(-cropRight)]
+
+            # n, _, h, w = x.shape
             xPadded, cAndPadding = self._preProcess(x)
             # list of [1, ?, ?, m]
             b, cAndPadding = self._encoder(xPadded, cAndPadding)
@@ -105,23 +126,76 @@ class Performance(Test):
             ssims.append(float(-10 * (1.0 - self._ssim(x, y)).log10()))
             psnrs.append(float(psnr(x, y)))
             # list of [m, ?]
-            for i, codesAtLeveli in enumerate(b):
-                # enumerate on m, n, h, w <- n, h, w, m
-                for m, codeAtPartM in enumerate(codesAtLeveli.permute(3, 0, 1, 2)):
-                    # [n, h, w] -> [n, -1] -> extend() n tensors
-                    bs[i][m].extend(codeAtPartM.reshape(len(codeAtPartM), -1))
+            bs.append(b)
             pixels.append(h * w)
             torchvision.io.write_png(y[0].byte().cpu(), f"ckpt/images/test{i}_SSIM_{ssims[-1]}_PSNR_{psnrs[-1]}.png")
 
-        encodeds, bpps = self._compress(bs, pixels)
+        cdfs = self._getCDFs(bs)
+
+        binaries = list()
+        bpps = list()
+
+        for b, pixel in zip(bs, pixels):
+            binary, bpp = self._compress(cdfs, b, pixels)
+            binaries.append(binary)
+            bpps.append(bpp)
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}
 
-    def _compress(self, codes: List[List[List[torch.Tensor]]], totalPixels: List[int]):
+    def _getCDFs(self, bs: List[List[torch.Tensor]]):
+        eachLevelEachPartCode = list(list(list() for _ in range(self._config.Model.m)) for _ in range(len(self._config.Model.k)))
+
+        cdfs = list(list(None for _ in range(self._config.Model.m)) for _ in range(len(self._config.Model.k)))
+
+        for b in bs:
+            #       [n, h, w, m]
+            for lv, level in enumerate(b):
+                #      [n, h, w]
+                for m, part in enumerate(level.permute(3, 0, 1, 2)):
+                    # n * [variable length] code
+                    eachLevelEachPartCode[lv][m].extend(part.reshape(len(part), -1))
+        for lv, levels in enumerate(eachLevelEachPartCode):
+            for m, part in levels:
+                # [n * varLength] codes in level l part m.
+                allCodes = torch.cat(part)
+                prob = self._calculateFreq(allCodes.flatten(), self._config.Model.k[lv])
+                cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
+                cdfs[lv][m] = cdf
+        return cdfs
+
+
+    def _compress(self, cdfs: List[List[object]], codes: List[List[torch.Tensor]], totalPixels: int):
         encoder = ans.RansEncoder()
-        compressed = list()
-        bits = list()
-        bpps = list()
-        for lv, levels in enumerate(codes):
+
+        for i, codePerImage in enumerate(zip(*images)):
+            # [M, h * w]
+            codePerImage = torch.stack(codePerImage, 0)
+            indices = torch.arange(codePerImage.shape[0])[:, None].expand_as(codePerImage).flatten().int().tolist()
+            cdfSizes = [self._config.Model.k[lv] + 2] * self._config.Model.m
+            offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
+            # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
+            # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
+            binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
+            # [M, h, w] binary
+            compresseds.append(binary)
+            bpps.append(8 * len(binary) / totalPixels[i])
+        # # binary: 1 byte per word
+        # # N * [binaries]
+        total = 8 * sum(len(binary) for binary in compresseds)
+        bpp = float(total) / sum(totalPixels)
+        print(bpp)
+
+        # perfect = sum(bits) / sum(totalPixels)
+        # self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
+        return compresseds, bpps
+
+
+    def _decompressAndCheck(self, rawCodes: List[List[List[torch.Tensor]]], binaries: List[str], cdfs: List[List[float]]):
+        decoder = ans32.RansDecoder()
+
+        for lv, levels in enumerate(rawCodes):
+            images = list()
+
+        for lv, levels in enumerate(rawCodes):
             images = list()
             cdfs = list()
             for part in levels:
@@ -149,14 +223,17 @@ class Performance(Test):
                 # [M, h, w] binary
                 compressed.append(binary)
                 bpps.append(8 * len(binary) / totalPixels[i])
-        # # binary: 1 byte per word
-        # # N * [binaries]
-        # total = 8 * sum(len(binary) for binary in compressed)
-        # bpp = float(total) / sum(totalPixels)
+        for binary, raw in zip(binaries, rawCodes):
+            m, h, w = raw.shape
+            code: List[int] = decoder.decode_with_indexes(binary, torch.arange(m)[:, None, None].expand(m, h, w).flatten().int().tolist(), cdfs, [self._config.Model.k] * m, torch.zeros(m, h, w).flatten().int().tolist())
+            code = torch.tensor(code, dtype=torch.long).reshape(m, h, w)
+            print(code)
+            print(raw)
+            input()
+            if torch.any(raw != code):
+                raise ValueError("Decompress failed, decoded b not equals to raw b.")
 
-        # perfect = sum(bits) / sum(totalPixels)
-        # self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
-        return compressed, bpps
+
 
     def _calculateFreq(self, code: torch.Tensor, k):
         count = torch.bincount(code.long(), minlength=k)

@@ -75,7 +75,7 @@ class New(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({2: self._fastHook, self._config.EvalStep: self._mediumHook, self._config.TestStep: self._slowHook, self._config.TestStep * 10: self._testHook})
+            self._loggingHook = FrequecyHook({self._config.EvalFreq: self._mediumHook, self._config.TestFreq: self._slowHook, self._config.TestFreq * 10: self._testHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -85,7 +85,7 @@ class New(Algorithm):
         return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
 
     @torch.inference_mode()
-    def _fastHook(self, **kwArgs):
+    def _trainingStat(self, **kwArgs):
         step = kwArgs["now"]
         self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
         self._saver.add_scalar(_logMapping["auxiliary"], kwArgs["auxiliary"], global_step=step)
@@ -151,7 +151,6 @@ class New(Algorithm):
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: Prefetcher, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
-        images = None
 
         temperature = 1.0
         # finalTemp = 0.001 / math.sqrt(self._config.Model.k[0])
@@ -181,12 +180,9 @@ class New(Algorithm):
         # self._scheduler.step()
 
         if self._rank == 0:
-            if self._continue:
-                ssim, _ = self._eval(evalLoader, step)
-            else:
-                ssim, _ = self._evalFull(testLoader, step)
+            ssim, _ = self._eval(evalLoader, step)
             self._best = ssim
-        self._reSpreadAll()
+        # self._reSpreadAll()
 
         totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize)
 
@@ -207,14 +203,14 @@ class New(Algorithm):
                 self._optimizer.step()
                 step += 1
                 # updateOp()
-                if self._loggingHook is not None:
-                    with torch.inference_mode():
-                        self._loggingHook(step, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards, distortion=dLoss, auxiliary=auxLoss)
-                if step % (self._config.TestStep * 10) == 0:
-                    self._optimizer.zero_grad()
-                    self._reSpreadAll()
+                if step % 2 == 0 and self._loggingHook is not None:
+                    self._trainingStat(now=step, epoch=i, distortion=dLoss, auxiliary=auxLoss)
                 dist.barrier()
-            # temperature = max(finalTemp, temperature * annealRate)
+            if self._loggingHook is not None:
+                self._loggingHook(i, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards)
+            if step % (self._config.TestFreq * 10) == 0:
+                self._optimizer.zero_grad()
+                self._reSpreadAll()
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()

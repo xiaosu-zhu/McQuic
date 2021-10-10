@@ -372,7 +372,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
         #             group['max_momentum'] = m_momentum
         #             group['base_momentum'] = b_momentum
 
-        super(CosineAnnealingWarmupRestarts, self).__init__(optimizer, last_epoch, verbose)
+        super().__init__(optimizer, last_epoch, verbose)
 
     def _format_param(self, name, optimizer, param):
         """Return correctly formatted lr/momentum for each param group."""
@@ -418,6 +418,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
                 self.cycle += 1
                 self.step_in_cycle = self.step_in_cycle - self.cur_cycle_steps
                 self.cur_cycle_steps = int((self.cur_cycle_steps - self.warmup_steps) * self.cycle_mult) + self.warmup_steps
+                self.max_lrs = [lr * (self.gamma ** self.cycle) for lr in self.base_lrs]
         else:
             if epoch >= self.first_cycle_steps:
                 if self.cycle_mult == 1.:
@@ -428,6 +429,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
                     self.cycle = n
                     self.step_in_cycle = epoch - int(self.first_cycle_steps * (self.cycle_mult ** n - 1) / (self.cycle_mult - 1))
                     self.cur_cycle_steps = self.first_cycle_steps * self.cycle_mult ** (n)
+                    self.max_lrs = [lr * (self.gamma ** self.cycle) for lr in self.base_lrs]
             else:
                 self.cur_cycle_steps = self.first_cycle_steps
                 self.step_in_cycle = epoch
