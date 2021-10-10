@@ -35,7 +35,8 @@ class Eval:
             "postProcess": self._postProcess
         }
 
-        self._tests: List[Test] = [Performance(dataset, **generalArgs), Speed(**generalArgs)]
+        self._tests: List[Test] = [Performance(dataset, **generalArgs),
+        Speed(**generalArgs)]
 
     def __call__(self):
         results = dict(ChainMap(*[x.test() for x in self._tests]))
