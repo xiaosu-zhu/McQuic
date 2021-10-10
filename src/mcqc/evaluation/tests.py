@@ -45,7 +45,7 @@ class Speed(Test):
     def __init__(self, **kwArgs) -> None:
         super().__init__(**kwArgs)
         # same as kodak
-        self._testInput = torch.rand(24, 3, 768, 512).cuda()
+        self._testInput = torch.rand(6, 3, 768, 512).cuda()
         self._warmupStep = 10
         self._evalStep = 100
 

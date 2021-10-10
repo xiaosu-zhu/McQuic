@@ -14,9 +14,9 @@ from mcqc.evaluation.refModel import PostProcess, Preprocess, RefEncoder, RefDec
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("cfg", "", "The config.json path.")
-flags.DEFINE_string("path", "", "The .ckpt file path.")
-flags.DEFINE_string("target", "", "The saving path.")
+flags.DEFINE_string("cfg", None, "The config.json path.")
+flags.DEFINE_string("path", None, "The .ckpt file path.")
+flags.DEFINE_string("target", None, "The saving path.")
 flags.DEFINE_boolean("gpu", True, "Whether the model should be on GPU.")
 
 
@@ -64,19 +64,19 @@ def convert(preProcess: nn.Module, encoder: nn.Module, decoder: nn.Module, postP
 
 def _main(encoder, decoder, prefix, ckptPath, targetDir):
     torch.autograd.set_grad_enabled(False)
-    stateDict = torch.load(ckptPath, map_location={"cuda:0": "cpu"})["model"]
-
-    encoder = migrate(encoder, prefix, stateDict)
-    decoder = migrate(decoder, prefix, stateDict)
+    if ckptPath is not None:
+        stateDict = torch.load(ckptPath, map_location={"cuda:0": "cpu"})["model"]
+        encoder = migrate(encoder, prefix, stateDict)
+        decoder = migrate(decoder, prefix, stateDict)
 
     convert(Preprocess(128), encoder, decoder, PostProcess(), targetDir)
 
 def main(_):
     config = read(FLAGS.cfg, None, Config)
-    if not os.path.isfile(FLAGS.path):
-        raise FileNotFoundError(f"The given path: {FLAGS.path} is not a valid file or doesn't exist.")
-    if not os.path.isdir(FLAGS.target):
+    if not FLAGS.target or not os.path.isdir(FLAGS.target):
         raise FileNotFoundError(f"The given target: {FLAGS.target} is not a valid dir or doesn't exist.")
+    if not FLAGS.path or not os.path.isfile(FLAGS.path):
+        _main(RefEncoder(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), RefDecoder(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", None, FLAGS.target)
     _main(RefEncoder(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), RefDecoder(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", FLAGS.path, FLAGS.target)
 
 
