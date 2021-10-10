@@ -17,7 +17,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("cfg", "", "The config.json path.")
 flags.DEFINE_string("path", "", "The .ckpt file path.")
 flags.DEFINE_string("target", "", "The saving path.")
-flags.DEFINE_boolean("gpu", False, "Whether the model should be on GPU.")
+flags.DEFINE_boolean("gpu", True, "Whether the model should be on GPU.")
 
 
 def migrate(model: nn.Module, prefix: str, stateDict: Dict[str, torch.Tensor]):
@@ -51,16 +51,9 @@ def convert(preProcess: nn.Module, encoder: nn.Module, decoder: nn.Module, postP
             raise RuntimeError("Find result out of range 0~1, please check model.")
     except Exception as e:
         raise RuntimeError(f"Model error with input {testInput.shape}.") from e
-    testInput = torch.rand([1, 3, 768, 512])
-
-    x, cAndPadding = preProcess(testInput)
-    codes, cAndPadding = encoder(x, cAndPadding)
     if FLAGS.gpu:
         encoder = encoder.cuda()
         decoder = decoder.cuda()
-        x = x.cuda()
-        cAndPadding = cAndPadding.cuda()
-        codes = codes.cuda()
     with torch.jit.optimized_execution(True):
         scriptedEncoder = torch.jit.script(encoder)
         scriptedEncoder.save(os.path.join(path, "encoder.pt"))

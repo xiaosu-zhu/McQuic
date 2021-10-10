@@ -1,6 +1,6 @@
 epoch: 10000000000
-evalStep: 500
-testStep: 5000
+evalFreq: 2
+testFreq: 20
 gpus: 4
 vRam: -1
 wantsMore: false
@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 3.e-4
+        lr: 4.e-4
         # weight_decay: 0.0
         # use_nvlamb: true
 # schdr:
@@ -33,8 +33,9 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 150
-        warmup_steps: 30
+        first_cycle_steps: 200 # match 10 * testFreq
+        warmup_steps: 40
+        gamma: 0.9
 # regSchdr:
 #     type: Cyclic
 #     params:

@@ -46,15 +46,15 @@ class Config:
     schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
     regSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
     batchSize: int = 4
-    epoch: int = 10
+    epoch: int = 10000
     gpus: int = 1
     vRam: int = -1
     wantsMore: bool = False
     dataset: str = "clic/train"
     valDataset: str = "clic/valid"
     method: str = "Plain"
-    evalStep: int = 1000
-    testStep: int = 10000
+    evalFreq: int = 1
+    testFreq: int = 10
     warmStart: str = "ckpt/global.ckpt"
     repeat: int = 1
 
@@ -79,12 +79,12 @@ class Config:
         return self.warmStart
 
     @property
-    def EvalStep(self) -> int:
-        return self.evalStep
+    def EvalFreq(self) -> int:
+        return self.evalFreq
 
     @property
-    def TestStep(self) -> int:
-        return self.testStep
+    def TestFreq(self) -> int:
+        return self.testFreq
 
     @property
     def Model(self) -> ModelSpec:
