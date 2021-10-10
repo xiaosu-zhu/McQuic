@@ -164,7 +164,7 @@ class RefEncoder(nn.Module):
         z = self._heads[-1](latent)
         codes.append(self._quantizers[-1](z))
         # codes from small to big
-        return codes[::-1], cAndPadding
+        return codes, cAndPadding
 
 
 class RefDecoder(nn.Module):
@@ -215,9 +215,9 @@ class RefDecoder(nn.Module):
         return self._keys
 
     def forward(self, codes: List[torch.LongTensor], cAndPadding: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        smallQ = self._reverses0(self._quantizers0(codes[0]))
+        smallQ = self._reverses0(self._quantizers0(codes[-1]))
         for i, (scatter, quantizer, reverse) in enumerate(zip(self._scatters, self._quantizers, self._reverses)):
-            code = codes[i + 1]
+            code = codes[-(i + 2)]
             q = scatter(quantizer(code))
             smallQ = reverse(q + smallQ)
 

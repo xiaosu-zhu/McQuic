@@ -3,7 +3,7 @@ FROM nvcr.io/nvidia/pytorch:21.09-py3
 
 COPY environment.yaml ./
 
-RUN conda env update --name base --file environment.yaml --prune
+RUN conda env update --name base --file environment.yml --prune
 
 COPY ../../mcqc ./
 
