@@ -212,9 +212,9 @@ class New(Algorithm):
                 dist.barrier()
             if self._loggingHook is not None:
                 self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + 1, temperature=temperature, logits=allLogits[0], codes=allHards)
-            # if (i + 1) % (self._config.TestFreq * 10) == 0:
-            #     self._optimizer.zero_grad()
-            #     self._reSpreadAll()
+            if (i + 1) % (self._config.TestFreq * 10) == 0:
+                self._optimizer.zero_grad()
+                self._reSpreadAll()
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
@@ -232,18 +232,18 @@ class New(Algorithm):
                 codebook = self._model.module._compressor._quantizers[i][j]._codebook.clone().detach()
                 dist.broadcast(codebook, 0)
                 self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
-        del self._optimizer
-        # reset optimizer's moments
-        self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
-        # restore learning rate
-        # lr = self._scheduler.get_last_lr()[0]
-        # for g in self._optimizer.param_groups:
-        #    g['lr'] = lr
-        # replace scheduler's optimizer
-        if self._scheduler is not None:
-            self._scheduler = self._schdrFn(self._optimizer, **self._config.Schdr.params)
-            # self._scheduler.optimizer = self._optimizer
-            # self._scheduler.step()
+        # del self._optimizer
+        # # reset optimizer's moments
+        # self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
+        # # restore learning rate
+        # # lr = self._scheduler.get_last_lr()[0]
+        # # for g in self._optimizer.param_groups:
+        # #    g['lr'] = lr
+        # # replace scheduler's optimizer
+        # if self._scheduler is not None:
+        #     self._scheduler = self._schdrFn(self._optimizer, **self._config.Schdr.params)
+        #     # self._scheduler.optimizer = self._optimizer
+        #     # self._scheduler.step()
         if self._rank == 0:
             self._logger.debug("End broadcast...")
 
