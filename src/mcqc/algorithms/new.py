@@ -207,8 +207,8 @@ class New(Algorithm):
                     self._trainingStat(now=step, epoch=i, distortion=dLoss, auxiliary=auxLoss)
                 dist.barrier()
             if self._loggingHook is not None:
-                self._loggingHook(i, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i, temperature=temperature, logits=allLogits[0], codes=allHards)
-            if step % (self._config.TestFreq * 10) == 0:
+                self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + 1, temperature=temperature, logits=allLogits[0], codes=allHards)
+            if (i + 1) % (self._config.TestFreq * 10) == 0:
                 self._optimizer.zero_grad()
                 self._reSpreadAll()
             if self._scheduler is not None:
