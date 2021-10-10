@@ -218,7 +218,7 @@ class New(Algorithm):
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
-            mle = 1.e-4 * (1 + math.sin(math.pi * i / self._config.Epoch)) / 2
+            mle = 1.e-4 * max((1 - math.cos(math.pi * i / self._config.Epoch)) / 2 - 0.25, 0.0)
 
     def _reSpreadAll(self):
         if self._rank == 0:
