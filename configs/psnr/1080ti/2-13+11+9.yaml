@@ -7,7 +7,7 @@ wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 12
+batchSize: 3
 model:
     type: Big
     target: psnr
