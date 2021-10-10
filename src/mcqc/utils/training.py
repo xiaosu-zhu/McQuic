@@ -348,6 +348,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
         for param_group in optimizer.param_groups:
             self.max_lrs.append(param_group['lr'])
         self.min_lrs = [lr * lrScaleRatio for lr in self.max_lrs] # min learning rate
+        self.min_base_lrs = [lr * lrScaleRatio for lr in self.max_lrs] # min learning rate
         self.warmup_steps = warmup_steps # warmup step size
         self.gamma = gamma # decrease rate of max learning rate by cycle
 
@@ -419,6 +420,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
                 self.step_in_cycle = self.step_in_cycle - self.cur_cycle_steps
                 self.cur_cycle_steps = int((self.cur_cycle_steps - self.warmup_steps) * self.cycle_mult) + self.warmup_steps
                 self.max_lrs = [lr * (self.gamma ** self.cycle) for lr in self.base_lrs]
+                self.min_lrs = [lr * (self.gamma ** self.cycle) for lr in self.min_base_lrs]
         else:
             if epoch >= self.first_cycle_steps:
                 if self.cycle_mult == 1.:
@@ -430,6 +432,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
                     self.step_in_cycle = epoch - int(self.first_cycle_steps * (self.cycle_mult ** n - 1) / (self.cycle_mult - 1))
                     self.cur_cycle_steps = self.first_cycle_steps * self.cycle_mult ** (n)
                     self.max_lrs = [lr * (self.gamma ** self.cycle) for lr in self.base_lrs]
+                    self.min_lrs = [lr * (self.gamma ** self.cycle) for lr in self.min_base_lrs]
             else:
                 self.cur_cycle_steps = self.first_cycle_steps
                 self.step_in_cycle = epoch
