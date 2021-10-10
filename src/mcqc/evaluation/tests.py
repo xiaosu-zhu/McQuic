@@ -101,23 +101,24 @@ class Performance(Test):
             minLength = 128
             _, _, h, w = x.shape
 
-            # wCrop = w - math.floor(w / minLength) * minLength
-            # hCrop = h - math.floor(h / minLength) * minLength
-            # cropLeft = wCrop // 2
-            # cropRight = wCrop - cropLeft
-            # cropTop = hCrop // 2
-            # cropBottom = hCrop - cropTop
+            wCrop = w - math.floor(w / minLength) * minLength
+            hCrop = h - math.floor(h / minLength) * minLength
+            cropLeft = wCrop // 2
+            cropRight = wCrop - cropLeft
+            cropTop = hCrop // 2
+            cropBottom = hCrop - cropTop
 
-            # if cropBottom == 0:
-            #     cropBottom = -h
-            # if cropRight == 0:
-            #     cropRight = -w
+            if cropBottom == 0:
+                cropBottom = -h
+            if cropRight == 0:
+                cropRight = -w
 
-            # x = x[:, :, cropTop:(-cropBottom), cropLeft:(-cropRight)]
+            x = x[:, :, cropTop:(-cropBottom), cropLeft:(-cropRight)]
 
-            # n, _, h, w = x.shape
+            _, _, h, w = x.shape
             xPadded, cAndPadding = self._preProcess(x)
             # list of [1, ?, ?, m]
+            # IMPORTANT: ACCORDING TO REF_MODEL, THE B IS STORED FROM SMALL TO BIG
             b, cAndPadding = self._encoder(xPadded, cAndPadding)
             y, cAndPadding = self._decoder(b, cAndPadding)
             y = self._postProcess(y, cAndPadding)
@@ -126,7 +127,9 @@ class Performance(Test):
             ssims.append(float(-10 * (1.0 - self._ssim(x, y)).log10()))
             psnrs.append(float(psnr(x, y)))
             # list of [m, ?]
-            bs.append(b)
+            # IMPORTANT: ACCORDING TO REF_MODEL, THE B IS STORED FROM SMALL TO BIG
+            # REVERSE IT BACK
+            bs.append(b[::-1])
             pixels.append(h * w)
             torchvision.io.write_png(y[0].byte().cpu(), f"ckpt/images/test{i}_SSIM_{ssims[-1]}_PSNR_{psnrs[-1]}.png")
 
@@ -136,7 +139,7 @@ class Performance(Test):
         bpps = list()
 
         for b, pixel in zip(bs, pixels):
-            binary, bpp = self._compress(cdfs, b, pixels)
+            binary, bpp = self._compress(cdfs, b, pixel)
             binaries.append(binary)
             bpps.append(bpp)
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}
@@ -144,7 +147,7 @@ class Performance(Test):
     def _getCDFs(self, bs: List[List[torch.Tensor]]):
         eachLevelEachPartCode = list(list(list() for _ in range(self._config.Model.m)) for _ in range(len(self._config.Model.k)))
 
-        cdfs = list(list(None for _ in range(self._config.Model.m)) for _ in range(len(self._config.Model.k)))
+        cdfs = list(list(object() for _ in range(self._config.Model.m)) for _ in range(len(self._config.Model.k)))
 
         for b in bs:
             #       [n, h, w, m]
@@ -154,7 +157,7 @@ class Performance(Test):
                     # n * [variable length] code
                     eachLevelEachPartCode[lv][m].extend(part.reshape(len(part), -1))
         for lv, levels in enumerate(eachLevelEachPartCode):
-            for m, part in levels:
+            for m, part in enumerate(levels):
                 # [n * varLength] codes in level l part m.
                 allCodes = torch.cat(part)
                 prob = self._calculateFreq(allCodes.flatten(), self._config.Model.k[lv])
@@ -163,30 +166,34 @@ class Performance(Test):
         return cdfs
 
 
-    def _compress(self, cdfs: List[List[object]], codes: List[List[torch.Tensor]], totalPixels: int):
+    def _compress(self, cdfs: List[List[object]], codes: List[torch.Tensor], totalPixels: int):
         encoder = ans.RansEncoder()
 
-        for i, codePerImage in enumerate(zip(*images)):
-            # [M, h * w]
-            codePerImage = torch.stack(codePerImage, 0)
-            indices = torch.arange(codePerImage.shape[0])[:, None].expand_as(codePerImage).flatten().int().tolist()
-            cdfSizes = [self._config.Model.k[lv] + 2] * self._config.Model.m
-            offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
+        binaries = list()
+
+        for lv in range(len(self._config.Model.k)):
+            # List of m cdfs
+            cdf = cdfs[lv]
+            # [1, h, w, m]
+            code = codes[lv]
+            # [m, h*w]
+            code = code[0].permute(2, 0, 1).reshape(code.shape[-1], -1)
+            index = torch.arange(code.shape[0])[:, None].expand_as(code).flatten().int().tolist()
+            cdfSize = [self._config.Model.k[lv] + 2] * self._config.Model.m
+            offset = torch.zeros_like(code).flatten().int().tolist()
             # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
             # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-            binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
+            binary: str = encoder.encode_with_indexes(code.flatten().int().tolist(), index, cdf, cdfSize, offset)
             # [M, h, w] binary
-            compresseds.append(binary)
-            bpps.append(8 * len(binary) / totalPixels[i])
+            binaries.append(binary)
         # # binary: 1 byte per word
         # # N * [binaries]
-        total = 8 * sum(len(binary) for binary in compresseds)
-        bpp = float(total) / sum(totalPixels)
-        print(bpp)
+        total = 8 * sum(len(binary) for binary in binaries)
+        bpp = float(total) / totalPixels
 
         # perfect = sum(bits) / sum(totalPixels)
         # self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
-        return compresseds, bpps
+        return binaries, bpp
 
 
     def _decompressAndCheck(self, rawCodes: List[List[List[torch.Tensor]]], binaries: List[str], cdfs: List[List[float]]):
