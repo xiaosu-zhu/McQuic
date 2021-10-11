@@ -24,7 +24,7 @@ from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import Plain, FineTune, TwoPass, New
 from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
-from mcqc.utils.training import CosineAnnealingWarmupRestarts, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
+from mcqc.utils.training import CosineAnnealingWarmupRestarts, CosineValue, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
@@ -112,7 +112,8 @@ regSchdrs = {
     "Cyclic": CyclicValue,
     "MultiStep": StepValue,
     "Jump": JumpValue,
-    "JumpAlter": JumpAlter
+    "JumpAlter": JumpAlter,
+    "Cosine": CosineValue
 }
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
