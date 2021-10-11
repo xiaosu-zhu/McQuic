@@ -37,17 +37,17 @@ class WholePQBig(nn.Module):
 
         dLoss = self._cLoss(image, restored)
 
-        regLoss = list()
+        # regLoss = list()
         mleLoss = list()
 
         for logits, codes in zip(allLogits, allTrues):
-            rand = torch.randint_like(codes, logits.shape[-1])
-            regLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), rand))
+            # rand = torch.randint_like(codes, logits.shape[-1])
+            # regLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), rand))
             mleLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), codes))
 
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return dLoss, (sum(regLoss), sum(mleLoss)), (restored, allTrues, allLogits)
+        return dLoss, sum(mleLoss), (restored, allTrues, allLogits)
 
 
 class WholePQQ(nn.Module):

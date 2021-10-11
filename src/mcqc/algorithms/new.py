@@ -88,13 +88,11 @@ class New(Algorithm):
     def _trainingStat(self, **kwArgs):
         step = kwArgs["now"]
         self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
-        self._saver.add_scalar("Loss/Reg", kwArgs["auxiliary"][0], global_step=step)
-        self._saver.add_scalar("Loss/MLE", kwArgs["auxiliary"][1], global_step=step)
+        self._saver.add_scalar("Loss/MLE", kwArgs["auxiliary"], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar(_logMapping["regCoeff"], self._regScheduler.Value, global_step=step)
-        self._saver.add_scalar("Stat/MLE", kwArgs["mle"], global_step=step)
         # self._saver.add_scalar(_logMapping["temperature"], kwArgs["temperature"], global_step=step)
 
     @torch.inference_mode()
@@ -154,8 +152,6 @@ class New(Algorithm):
     def run(self, trainLoader: Prefetcher, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
 
-        mle = 0.0
-
         temperature = 1.0
         # finalTemp = 0.001 / math.sqrt(self._config.Model.k[0])
         # annealRate = 0.9
@@ -200,25 +196,24 @@ class New(Algorithm):
             # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
-                dLoss, (regLoss, mleLoss), (restored, allHards, allLogits) = self._model(images, temperature)
-                (dLoss + self._regScheduler.Value * regLoss + mle * mleLoss).backward()
+                dLoss, mleLoss, (restored, allHards, allLogits) = self._model(images, temperature)
+                (dLoss + self._regScheduler.Value * mleLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
                 # updateOp()
                 if step % 2 == 0 and self._loggingHook is not None:
-                    self._trainingStat(now=step, epoch=i, distortion=dLoss, auxiliary=(regLoss, mleLoss), reg=self._regScheduler.Value, mle=mle)
+                    self._trainingStat(now=step, epoch=i, distortion=dLoss, auxiliary=mleLoss, reg=self._regScheduler.Value)
                 dist.barrier()
             if self._loggingHook is not None:
                 self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + 1, temperature=temperature, logits=allLogits[0], codes=allHards)
-            if (i + 1) % (self._config.TestFreq * 10) == 0:
+            if (i + 1) % (self._config.TestFreq) == 0:
                 self._optimizer.zero_grad()
                 self._reSpreadAll()
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
-            mle = 1.e-4 * max((1 - math.cos(math.pi * i / self._config.Epoch)) / 2 - 0.25, 0.0)
 
     def _reSpreadAll(self):
         if self._rank == 0:
