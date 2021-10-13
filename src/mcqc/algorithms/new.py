@@ -282,11 +282,11 @@ class New(Algorithm):
                 fullyAssigned = codebook[argIdx]
                 selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
                 codebook[counts < 1] = fullyAssigned[selectedIdx]
-                self._logger.debug("Re-assign on %d:%d, %d%% are never assigned.", i, j, int(len(neverAssigned) / float(k) * 100))
+                self._logger.debug("Re-assign on %d:%d, %.2f%% are never assigned.", i, j, len(neverAssigned) / float(k) * 100)
                 numNeverAssigned += len(neverAssigned)
                 numAll += k
                 # model._quantizers[i][j]._codebook.data.copy_(torch.from_numpy(codebook))
-        self._logger.info("Re-assign of %d%% codewords completed.", int(numNeverAssigned / float(numAll) * 100))
+        self._logger.info("Re-assign of %.2f%% codewords completed.", numNeverAssigned / float(numAll) * 100)
         model.train()
 
     @torch.inference_mode()
