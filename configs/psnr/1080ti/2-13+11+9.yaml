@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 4.e-4
+        lr: 2.e-4
         # weight_decay: 0.0
         # use_nvlamb: true
 # schdr:
@@ -45,10 +45,12 @@ schdr:
 #         boostInterval: 2
 #         zeroOutRatio: 0.3
 regSchdr:
-    type: MultiStep
+    type: Cosine
     params:
         initValue: 1.e-3
-        gamma: 0.9885530946569389
+        totalStep: 1000
+        clip: 0.25
+        revert: true
         stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Jump
