@@ -549,10 +549,10 @@ class JumpAlter(_ValueTuner):
 
 
 if __name__ == "__main__":
-    a = JumpValue(10.0, 0.9931160484209338, 10, 0.01)
+    a = CosineValue(revert=True)
     from matplotlib import pyplot as plt
     values = list()
-    for i in range(10000):
+    for i in range(1000):
         a.step()
         values.append(float(a._value))
     plt.plot(values)
