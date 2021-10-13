@@ -45,11 +45,13 @@ schdr:
 #         boostInterval: 2
 #         zeroOutRatio: 0.3
 regSchdr:
-    type: MultiStep
+    type: Cosine
     params:
-        initValue: 0.0
-        gamma: 1.e-3
-        stepInterval: 600 # manually divided by repeat
+        initValue: 1.e-3
+        totalStep: 1000
+        clip: 0.25
+        revert: true
+        stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Jump
 #     params:
