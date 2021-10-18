@@ -82,13 +82,18 @@ class New(Algorithm):
 
     @staticmethod
     def _deTrans(image):
-        return ((image * 0.5 + 0.5) * 255).clamp(0.0, 255.0).byte()
+        eps = 1e-3
+        max_val = 255
+        # [-1, 1] to [0, 255]
+        return ((image + 1.0) / 2.0 * (max_val + 1.0 - eps)).clamp(0.0, 255.0).byte()
 
     @torch.inference_mode()
     def _trainingStat(self, **kwArgs):
         step = kwArgs["now"]
+        self._saver.add_scalar("Stat/Epoch", kwArgs["epoch"], step)
         self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
-        self._saver.add_scalar("Loss/MLE", kwArgs["auxiliary"], global_step=step)
+        self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
+        self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
@@ -187,27 +192,24 @@ class New(Algorithm):
         totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize)
 
         for i in range(initEpoch, self._config.Epoch):
-            if self._saver is not None:
-                self._saver.add_scalar("Stat/Epoch", i + lastEpoch, step)
-
             sampler.set_epoch(i + lastEpoch)
             # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + 1), total=totalBatches, leave=False, disable=self._rank != 0):
+            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + lastEpoch + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
-                dLoss, mleLoss, (restored, allHards, allLogits) = self._model(images, temperature)
-                (dLoss + self._regScheduler.Value * mleLoss).backward()
+                dLoss, (weakCodebookLoss, weakFeatureLoss), (restored, allHards, allLogits) = self._model(images, temperature)
+                (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
                 # updateOp()
                 if step % 2 == 0 and self._loggingHook is not None:
-                    self._trainingStat(now=step, epoch=i, distortion=dLoss, auxiliary=mleLoss, reg=self._regScheduler.Value)
+                    self._trainingStat(now=step, epoch=i + lastEpoch + 1, distortion=dLoss, auxiliary=(weakCodebookLoss, weakFeatureLoss), reg=self._regScheduler.Value)
                 dist.barrier()
             if self._loggingHook is not None:
-                self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + 1, temperature=temperature, logits=allLogits[0], codes=allHards)
+                self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, temperature=temperature, logits=allLogits[0], codes=allHards)
             if (i + 1) % (self._config.TestFreq) == 0:
                 self._optimizer.zero_grad()
                 self._reSpreadAll()

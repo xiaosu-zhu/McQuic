@@ -157,7 +157,7 @@ class NonLinearQuantizer(nn.Module):
         #     soft = hard
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, c, h, w], [k, c]
-        return hard, trueCode, logit
+        return hard, trueCode, logit, k, self._codebook
 
 
 class L2Quantizer(nn.Module):
@@ -167,6 +167,8 @@ class L2Quantizer(nn.Module):
         # dHidden = int(math.sqrt(k * d))
         # self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(dHidden, dHidden)))
         self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, d)))
+        self._wv = nn.Linear(d, d)
+        self._wq = nn.Linear(d, d)
         # self._wk = Mapper(dHidden, k, d)
         # self._wv = Mapper(dHidden, k, d)
         # self._wv = _resLinear(d, d)
@@ -201,6 +203,9 @@ class L2Quantizer(nn.Module):
     def encode(self, latent):
         # [n, h, w, c]
         q = latent.permute(0, 2, 3, 1)
+
+        q = self._wv(q)
+
         # [k, c]
         k = self._codebook
 
@@ -216,6 +221,9 @@ class L2Quantizer(nn.Module):
     def softEncode(self, latent):
         # [n, h, w, c]
         q = latent.permute(0, 2, 3, 1)
+
+        q = self._wv(q)
+
         # [k, c]
         k = self._codebook
 
@@ -230,7 +238,7 @@ class L2Quantizer(nn.Module):
         sample = F.one_hot(code, self._k).float()
         # codebook = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = (sample @ self._codebook).permute(0, 3, 1, 2)
+        quantized = self._wq(sample @ self._codebook).permute(0, 3, 1, 2)
         return quantized
 
     def softDecode(self, code, soft):
@@ -239,13 +247,16 @@ class L2Quantizer(nn.Module):
         # codebook = self._wv(self._codebook)
         # codebookShadow = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = (sample @ self._codebook).permute(0, 3, 1, 2)
-        soft = (soft @ self._codebook).permute(0, 3, 1, 2)
+        quantized = self._wq(sample @ self._codebook).permute(0, 3, 1, 2)
+        soft = self._wq(soft @ self._codebook).permute(0, 3, 1, 2)
         return quantized, soft
 
     def forward(self, latent, temperature):
         q = latent.permute(0, 2, 3, 1)
         k = self._codebook
+
+        q = self._wv(q)
+
         # [n, h, w, k]
         logit = self.getLogit(q, k)
         trueCode = logit.argmax(-1)
@@ -253,6 +264,9 @@ class L2Quantizer(nn.Module):
         code = sample.argmax(-1)
         target = self._codebook
         hard = sample @ target
+
+        hard = self._wq(hard)
+
         hard = hard.permute(0, 3, 1, 2)
 
         # if self._wvShadow is not None:
@@ -263,7 +277,7 @@ class L2Quantizer(nn.Module):
         #     soft = hard
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, c, h, w], [k, c]
-        return hard, code, trueCode, logit
+        return hard, code, trueCode, logit, q, self._codebook
 
 
 class AttentiveQuantizer(nn.Module):
