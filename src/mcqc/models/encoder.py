@@ -157,7 +157,11 @@ class Director(nn.Module):
         super().__init__()
         if outChannel is None:
             outChannel = channel
-        self._net = ResidualBlock(channel, channel, groups=groups)
+        self._net = nn.Sequential(
+            AttentionBlock(channel, groups=groups),
+            ResidualBlock(channel, channel, groups=groups),
+            conv3x3(channel, channel, stride=1, groups=groups)
+        )
 
     def forward(self, x: torch.Tensor):
         # [N, channel, H // 16, W // 16] <- [N, 3, H, W]

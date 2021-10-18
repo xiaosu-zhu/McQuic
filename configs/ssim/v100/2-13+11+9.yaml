@@ -22,9 +22,9 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 2.e-4
-        # weight_decay: 0.0
-        # use_nvlamb: true
+        lr: 2.5e-4
+        weight_decay: 0.0
+        use_nvlamb: true
 # schdr:
 #     type: MultiStepWarmUp
 #     params:
@@ -36,22 +36,20 @@ schdr:
         first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 20
         gamma: 0.8
-# regSchdr:
-#     type: Cyclic
-#     params:
-#         initValue: 0.0001
-#         gamma: 1.0
-#         cyclicInterval: 100
-#         boostInterval: 2
-#         zeroOutRatio: 0.3
 regSchdr:
-    type: Cosine
+    type: MultiStep
     params:
-        initValue: 1.e-3
-        totalStep: 1000
-        clip: 0.25
-        revert: true
-        stepInterval: 1 # manually divided by repeat
+        initValue: 1.e-2
+        gamma: 0.99
+        stepInterval: 1
+# regSchdr:
+#     type: Cosine
+#     params:
+#         initValue: 1.e-3
+#         totalStep: 1000
+#         clip: 0.25
+#         revert: true
+#         stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Jump
 #     params:

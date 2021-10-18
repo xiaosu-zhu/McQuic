@@ -14,12 +14,13 @@ from mcqc.config import Config
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 
-from mcqc.evaluation.metrics import MsSSIM, psnr
-
+from mcqc.evaluation.metrics import MsSSIM, psnr as validatePSNR
 
 def deTrans(image):
-    return (image * 255).clamp(0.0, 255.0)
-
+    eps = 1e-3
+    max_val = 255
+    # [-1, 1] to [0, 255]
+    return (image * (max_val + 1.0 - eps)).clamp(0.0, 255.0).byte()
 
 class Test(abc.ABC):
     def __init__(self, config: Config, encoder: nn.Module, decoder: nn.Module, preProcess: nn.Module, postProcess: nn.Module, **kwArgs):
@@ -96,6 +97,7 @@ class Performance(Test):
         psnrs = list()
         bs = list()
         pixels = list()
+        images = list()
         for i, x in enumerate(tqdm(self._dataLoader)):
             x = x.cuda(non_blocking=True)
             minLength = 128
@@ -123,22 +125,23 @@ class Performance(Test):
             y = self._postProcess(y, cAndPadding)
             x, y = deTrans(x), deTrans(y)
 
-            ssims.append(float(-10 * (1.0 - self._ssim(x, y)).log10()))
-            psnrs.append(float(psnr(x, y)))
+            ssims.append(float(-10 * (1.0 - self._ssim(x.float(), y.float())).log10()))
+            psnrs.append(float(validatePSNR(x.float(), y.float())))
             # list of [m, ?]
             bs.append(b)
             pixels.append(h * w)
-            torchvision.io.write_png(y[0].byte().cpu(), f"ckpt/images/test_SSIM_{ssims[-1]}_PSNR_{psnrs[-1]}_{i}.png")
+            images.append(y[0].byte().cpu())
 
         cdfs = self._getCDFs(bs)
 
         binaries = list()
         bpps = list()
 
-        for b, pixel in zip(bs, pixels):
+        for i, (b, pixel, ssim, psnr, image) in enumerate(zip(tqdm(bs), pixels, ssims, psnrs, images)):
             binary, bpp = self._compress(cdfs, b, pixel)
             binaries.append(binary)
             bpps.append(bpp)
+            torchvision.io.write_png(image, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}.png")
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}
 
     def _getCDFs(self, bs: List[List[torch.Tensor]]):
@@ -175,6 +178,11 @@ class Performance(Test):
             code = codes[lv]
             # [m, h*w]
             code = code[0].permute(2, 0, 1).reshape(code.shape[-1], -1)
+            # cdf = list()
+            # for c in code:
+            #     prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
+            #     cdfOfLv = pmf_to_quantized_cdf(prob.tolist(), 16)
+            #     cdf.append(cdfOfLv)
             index = torch.arange(code.shape[0])[:, None].expand_as(code).flatten().int().tolist()
             cdfSize = [self._config.Model.k[lv] + 2] * self._config.Model.m
             offset = torch.zeros_like(code).flatten().int().tolist()

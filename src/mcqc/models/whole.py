@@ -2,8 +2,9 @@ from numpy import imag
 from torch import nn
 import torch
 import storch
+from torch._C import device
 
-from mcqc.losses.quantization import CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, QError
+from mcqc.losses.quantization import CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, QError
 from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorBig, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
 
 
@@ -28,26 +29,38 @@ class WholePQBig(nn.Module):
         super().__init__()
         self._compressor = PQCompressorBig(m, k, channel, withGroup, withAtt, False, alias, ema)
         self._cLoss = CompressionLossBig(target)
-        self._auxLoss = nn.CrossEntropyLoss()
+        self._auxLoss = L1L2Loss()
         # self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, allHards, latent, allCodes, allTrues, allLogits = self._compressor(image, temp, True)
+        restored, allHards, latent, allCodes, allTrues, allLogits, allFeatures, allCodebooks = self._compressor(image, temp, True)
 
         dLoss = self._cLoss(image, restored)
 
         # regLoss = list()
-        mleLoss = list()
+        weakCodebookLoss = list()
+        weakFeatureLoss = list()
 
-        for logits, codes in zip(allLogits, allTrues):
-            # rand = torch.randint_like(codes, logits.shape[-1])
-            # regLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), rand))
-            mleLoss.append(self._auxLoss(logits.permute(0, 4, 1, 2, 3), codes))
+        for features, codebooks in zip(allFeatures, allCodebooks):
+            for codebook in codebooks:
+                # [k, k] := [k, c] @ [c, k]
+                innerProduct = codebook @ codebook.T
+                # orthogonal regularization
+                weakCodebookLoss.append(self._auxLoss(innerProduct, torch.eye(innerProduct.shape[0], device=innerProduct.device, dtype=innerProduct.dtype)))
+            m = len(features)
+            for i in range(m):
+                for j in range(i + 1, m):
+                    # [n, h, w] := ([n, c, h, w] * [n, c, h, w]).sum(1)
+                    interProduct = (features[i] * features[j]).sum(1)
+                    # feature from different group should be orthogonal
+                    weakFeatureLoss.append(2 * self._auxLoss(interProduct, torch.zeros_like(interProduct)))
+                intraProduct = (features[i] * features[i]).sum(1)
+                weakFeatureLoss.append(self._auxLoss(intraProduct, torch.ones_like(intraProduct)))
 
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return dLoss, sum(mleLoss), (restored, allTrues, allLogits)
+        return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss)), (restored, allTrues, allLogits)
 
 
 class WholePQQ(nn.Module):

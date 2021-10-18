@@ -129,6 +129,11 @@ class CompressionLoss(nn.Module):
         return ssimLoss, l1Loss + l2Loss, regs
 
 
+class L1L2Loss(nn.MSELoss):
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return (F.mse_loss(input, target, reduction=self.reduction) + F.l1_loss(input, target, reduction=self.reduction)) / 2
+
+
 class CompressionLossBig(nn.Module):
     def __init__(self, target):
         super().__init__()
@@ -141,7 +146,7 @@ class CompressionLossBig(nn.Module):
             self._distortion = self._dPsnr
 
     def _dPsnr(self, image, restored):
-        return F.mse_loss(restored, image) + F.l1_loss(restored, image)
+        return (F.mse_loss(restored, image) + F.l1_loss(restored, image)) / 2
 
     def _dSsim(self, image, restored):
         return 1 - self._ssim(restored + 1, image + 1)
