@@ -4,8 +4,6 @@ from typing import List, Tuple, Type
 from logging import Logger
 import math
 
-from sklearn.cluster import MiniBatchKMeans
-import torchvision
 from tqdm import tqdm
 import torch
 from torch.types import Number
@@ -189,7 +187,7 @@ class New(Algorithm):
             self._best = ssim
         # self._reSpreadAll()
 
-        totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize)
+        totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize) + 1
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i + lastEpoch)
@@ -216,6 +214,9 @@ class New(Algorithm):
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
+
+        if self._rank == 0:
+            self._logger.info("Train finished")
 
     def _reSpreadAll(self):
         if self._rank == 0:

@@ -50,12 +50,17 @@ class QuantizerEncoder(nn.Module):
     def __init__(self, m: int, k: int, d: int):
         super().__init__()
         self._m = m
+        self._wv = nn.Parameter(torch.empty(m, d, d))
+        self._bv = nn.Parameter(torch.empty(m, d))
+        # self._wq = nn.Parameter(torch.empty(m, d, d))
+        # self._bq = nn.Parameter(torch.empty(m, d))
         self._codebook = nn.Parameter(torch.empty(m, k, d))
 
     def encode(self, latent):
         n, _, h, w = latent.shape
         # [n, h, w, m, d]
         q = latent.permute(0, 2, 3, 1).reshape(n, h, w, self._m, -1)
+        q = torch.einsum("nhwmd,mcd->nhwmc", q, self._wv) + self._bv
         # [n, h, w, m, 1]
         q2 = (q ** 2).sum(-1, keepdim=True)
         # [m, k]
@@ -74,6 +79,11 @@ class QuantizerEncoder(nn.Module):
             raise ValueError(f"Codebook shape mismatch. m in dict: {len(codebooks)}, actually: {self._codebook.shape[0]}")
         for i, c in enumerate(codebooks):
             self._codebook[i] = c
+        wvs = [c for k, c in state_dict.items() if "_wv.weight" in k]
+        bvs = [c for k, c in state_dict.items() if "_wv.bias" in k]
+        for i, (w, b) in enumerate(zip(wvs, bvs)):
+            self._wv[i] = w
+            self._bv[i] = b
 
     def forward(self, latent: torch.Tensor) -> torch.Tensor:
         # [n, h, w, m]
@@ -84,6 +94,8 @@ class QuantizerDecoder(nn.Module):
     def __init__(self, m: int, k: int, d: int):
         super().__init__()
         self._m = m
+        self._wq = nn.Parameter(torch.empty(m, d, d))
+        self._bq = nn.Parameter(torch.empty(m, d))
         self._codebook = nn.Parameter(torch.empty(m, k, d))
         self.register_buffer("_ix", torch.arange(m))
 
@@ -102,6 +114,11 @@ class QuantizerDecoder(nn.Module):
             raise ValueError(f"Codebook shape mismatch. m in dict: {len(codebooks)}, actually: {self._codebook.shape[0]}")
         for i, c in enumerate(codebooks):
             self._codebook[i] = c
+        wqs = [c for k, c in state_dict.items() if "_wq.weight" in k]
+        bqs = [c for k, c in state_dict.items() if "_wq.bias" in k]
+        for i, (w, b) in enumerate(zip(wqs, bqs)):
+            self._wq[i] = w
+            self._bq[i] = b
 
     def forward(self, codes: torch.Tensor) -> torch.Tensor:
         # codes: [n, h, w, m]
@@ -109,7 +126,10 @@ class QuantizerDecoder(nn.Module):
         # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
         # ix = torch.arange(self._m, device=codes.device).expand_as(codes)
         ix = self._ix.expand_as(codes)
-        return self._codebook[ix, codes].reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        # [n, h, w, m, d]
+        indexed = self._codebook[ix, codes]
+        indexed = torch.einsum("nhwmd,mcd->nhwmc", indexed, self._wq) + self._bq
+        return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
         # return self.decode(codes)
 
 

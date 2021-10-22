@@ -151,7 +151,8 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         context = logging_redirect_tqdm([logger])
         context.__enter__()
     method.run(prefetcher, trainSampler, valLoader, testLoader)
-
+    if logger is not None:
+        context.__exit__(None, None, None)
 
 if __name__ == "__main__":
     app.run(main)
