@@ -57,8 +57,10 @@ def main(_):
 
 def _changeConfig(config: Config, worldSize: int):
     batchSize = config.BatchSize * worldSize
+    exponent = math.log2(batchSize)
+    scale = 3 - exponent / 2
     if "lr" in config.Optim.params:
-        config.Optim.params["lr"] *= math.sqrt(batchSize)
+        config.Optim.params["lr"] /= (2 ** scale)
 
 def _generalConfig(rank: int, worldSize: int):
     os.environ["MASTER_ADDR"] = "localhost"

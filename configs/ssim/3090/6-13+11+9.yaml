@@ -2,18 +2,18 @@ epoch: 1000
 evalFreq: 2
 testFreq: 20
 gpus: 3
-vRam: 20000
+vRam: -1
 wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 4
+batchSize: 7
 model:
     type: Big
     target: ssim
     channel: 192
-    k: [8192, 2048, 512]
-    m: 6
+    k: [1024, 256, 64]
+    m: 8
     withGroup: false
     withAtt: true
     withDropout: false
@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 2.e-4
+        lr: 2.5e-3
         # weight_decay: 0.0
         # use_nvlamb: true
 # schdr:
@@ -36,22 +36,12 @@ schdr:
         first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 20
         gamma: 0.8
-# regSchdr:
-#     type: Cyclic
-#     params:
-#         initValue: 0.0001
-#         gamma: 1.0
-#         cyclicInterval: 100
-#         boostInterval: 2
-#         zeroOutRatio: 0.3
 regSchdr:
-    type: Cosine
+    type: MultiStep
     params:
         initValue: 1.e-3
-        totalStep: 1000
-        clip: 0.25
-        revert: true
-        stepInterval: 1 # manually divided by repeat
+        gamma: 0.993
+        stepInterval: 1
 # regSchdr:
 #     type: Jump
 #     params:
