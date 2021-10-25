@@ -157,7 +157,7 @@ class New(Algorithm):
 
         temperature = 1.0
         # finalTemp = 0.001 / math.sqrt(self._config.Model.k[0])
-        # annealRate = 0.9
+        # annealRate = 0.997
         initEpoch = 0
         lastEpoch = 0
 
@@ -214,6 +214,7 @@ class New(Algorithm):
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
+            # temperature = max(finalTemp, temperature * annealRate)
 
         if self._rank == 0:
             self._logger.info("Train finished")

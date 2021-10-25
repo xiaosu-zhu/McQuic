@@ -1,4 +1,4 @@
-epoch: 1000
+epoch: 1200
 evalFreq: 2
 testFreq: 20
 gpus: 4
@@ -22,9 +22,9 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 4.e-4
-        # weight_decay: 0.0
-        # use_nvlamb: true
+        lr: 2.5e-3
+        weight_decay: 0.0
+        use_nvlamb: true
 # schdr:
 #     type: MultiStepWarmUp
 #     params:
@@ -48,8 +48,8 @@ regSchdr:
     type: MultiStep
     params:
         initValue: 1.e-3
-        gamma: 0.9885530946569389
-        stepInterval: 1 # manually divided by repeat
+        gamma: 0.992
+        stepInterval: 1
 # regSchdr:
 #     type: Jump
 #     params:

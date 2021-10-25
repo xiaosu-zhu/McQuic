@@ -43,10 +43,11 @@ class Test(abc.ABC):
 
 
 class Speed(Test):
-    def __init__(self, **kwArgs) -> None:
+    def __init__(self, device, **kwArgs) -> None:
         super().__init__(**kwArgs)
+        self._device = device
         # same as kodak
-        self._testInput = torch.rand(6, 3, 768, 512).cuda()
+        self._testInput = torch.rand(6, 3, 768, 512).to(self._device)
         self._warmupStep = 10
         self._evalStep = 100
 
@@ -88,7 +89,7 @@ class Performance(Test):
     def __init__(self, dataset: Dataset, **kwArgs):
         super().__init__(**kwArgs)
         self._dataLoader = DataLoader(dataset, pin_memory=True)
-        self._ssim = MsSSIM(sizeAverage=False).cuda()
+        self._ssim = MsSSIM(sizeAverage=False).to(self._encoder.device)
 
     def test(self):
         shutil.rmtree("ckpt/images", ignore_errors=True)
