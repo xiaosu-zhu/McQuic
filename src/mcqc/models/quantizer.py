@@ -14,6 +14,7 @@ from torch import distributed as dist
 
 from mcqc.layers.dropout import PointwiseDropout
 from mcqc.layers.gdn import GenDivNorm1D
+from mcqc.layers.convs import conv3x3
 from mcqc.layers.stochastic import gumbelRaoMCK, iGumbelSoftmax
 
 
@@ -161,14 +162,14 @@ class NonLinearQuantizer(nn.Module):
 
 
 class L2Quantizer(nn.Module):
-    def __init__(self, k: int, d: int):
+    def __init__(self, k: int, dIn: int, dHidden: int):
         super().__init__()
         self._k = k
         # dHidden = int(math.sqrt(k * d))
         # self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(dHidden, dHidden)))
-        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, d)))
-        self._wv = nn.Linear(d, d)
-        self._wq = nn.Linear(d, d)
+        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, dHidden)))
+        self._wv = conv3x3(dIn, dHidden)
+        self._wq = conv3x3(dHidden, dIn)
         # self._wk = Mapper(dHidden, k, d)
         # self._wv = Mapper(dHidden, k, d)
         # self._wv = _resLinear(d, d)
@@ -182,7 +183,7 @@ class L2Quantizer(nn.Module):
         #     self._wvShadow = None
         self._temperature1 = nn.Parameter(torch.ones(()))
         # self._temperature2 = nn.Parameter(torch.ones(()))
-        self._scale = math.sqrt(d)
+        self._scale = math.sqrt(dHidden)
 
     @torch.no_grad()
     def EMAUpdate(self):
@@ -201,10 +202,10 @@ class L2Quantizer(nn.Module):
         return distance / self._scale * self._temperature1
 
     def encode(self, latent):
+        latent = self._wv(latent)
         # [n, h, w, c]
         q = latent.permute(0, 2, 3, 1)
 
-        q = self._wv(q)
 
         # [k, c]
         k = self._codebook
@@ -219,10 +220,9 @@ class L2Quantizer(nn.Module):
         return logit.argmax(-1)
 
     def softEncode(self, latent):
+        latent = self._wv(latent)
         # [n, h, w, c]
         q = latent.permute(0, 2, 3, 1)
-
-        q = self._wv(q)
 
         # [k, c]
         k = self._codebook
@@ -238,7 +238,7 @@ class L2Quantizer(nn.Module):
         sample = F.one_hot(code, self._k).float()
         # codebook = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = self._wq(sample @ self._codebook).permute(0, 3, 1, 2)
+        quantized = self._wq((sample @ self._codebook).permute(0, 3, 1, 2))
         return quantized
 
     def softDecode(self, code, soft):
@@ -247,15 +247,14 @@ class L2Quantizer(nn.Module):
         # codebook = self._wv(self._codebook)
         # codebookShadow = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = self._wq(sample @ self._codebook).permute(0, 3, 1, 2)
-        soft = self._wq(soft @ self._codebook).permute(0, 3, 1, 2)
+        quantized = self._wq((sample @ self._codebook).permute(0, 3, 1, 2))
+        soft = self._wq((soft @ self._codebook).permute(0, 3, 1, 2))
         return quantized, soft
 
     def forward(self, latent, temperature):
+        latent = self._wv(latent)
         q = latent.permute(0, 2, 3, 1)
         k = self._codebook
-
-        q = self._wv(q)
 
         # [n, h, w, k]
         logit = self.getLogit(q, k)
@@ -265,9 +264,9 @@ class L2Quantizer(nn.Module):
         target = self._codebook
         hard = sample @ target
 
-        hard = self._wq(hard)
 
         hard = hard.permute(0, 3, 1, 2)
+        hard = self._wq(hard)
 
         # if self._wvShadow is not None:
         #     softSample = (logit / temperature).softmax(-1)

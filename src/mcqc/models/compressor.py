@@ -69,7 +69,7 @@ class PQCompressorBig(nn.Module):
 
         self._heads = nn.ModuleList(EncoderHead(channel, 1, alias) for _ in range(self._levels))
         self._mappers = nn.ModuleList(DownSampler(channel, 1, alias) for _ in range(self._levels - 1))
-        self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m) for _ in range(m)) for ki in k)
+        self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m, channel // m * 4) for _ in range(m)) for ki in k)
 
         self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels))
         self._scatters = nn.ModuleList(Director(channel, 1, alias) for _ in range(self._levels - 1))

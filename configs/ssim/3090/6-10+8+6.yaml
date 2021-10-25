@@ -23,8 +23,8 @@ optim:
     type: Lamb
     params:
         lr: 2.5e-3
-        # weight_decay: 0.0
-        # use_nvlamb: true
+        weight_decay: 0.0
+        use_nvlamb: true
 # schdr:
 #     type: MultiStepWarmUp
 #     params:
@@ -40,7 +40,7 @@ regSchdr:
     type: MultiStep
     params:
         initValue: 1.e-3
-        gamma: 0.993
+        gamma: 0.992
         stepInterval: 1
 # regSchdr:
 #     type: Jump
