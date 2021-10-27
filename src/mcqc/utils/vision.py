@@ -4,6 +4,19 @@ from torchvision.transforms import functional as F
 from torchvision import transforms as T
 from torch.distributions import Categorical
 
+class DeTransform(nn.Module):
+    _eps = 1e-3
+    _maxVal = 255
+    def __init__(self, minValue: float = -1.0, maxValue: float = 1.0):
+        super().__init__()
+        self._min = float(minValue)
+        self._max = float(maxValue)
+
+    def forward(self, x):
+        x = (x - self._min) / (self._max - self._min)
+        # [0, 1] to [0, 255]
+        return (x * (self._maxVal + 1.0 - self._eps)).clamp(0.0, 255.0).byte()
+
 
 # https://github.com/pratogab/batch-transforms
 class RandomHorizontalFlip(nn.Module):

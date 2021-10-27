@@ -167,6 +167,48 @@ class PQCompressorBig(nn.Module):
             return latent + scatter(upperQ)
         return latent
 
+    def rawAndQuantized(self, latent, level):
+        splits = torch.chunk(latent, self._m, 1)
+        qs = list()
+        raws = list()
+        codes = list()
+        quantizeds = list()
+        for quantizer, split in zip(self._quantizers[level], splits):
+            c, raw, quantized = quantizer.rawAndQuantized(split)
+            codes.append(c)
+            raws.append(raw)
+            quantizeds.append(quantized)
+            q = quantizer.decode(c)
+            qs.append(q)
+
+        codes = torch.stack(codes, 1)
+        raws = torch.stack(raws, 1)
+        quantizeds = torch.stack(quantizeds, 1)
+        return codes, raws, quantizeds, torch.cat(qs, 1)
+
+    def getLatents(self, x):
+        latent = self._encoder(x)
+
+        allZs = list()
+        allHards = list()
+        allCodes = list()
+
+        for i in range(self._levels):
+            mapper = self._mappers[i] if i < self._levels - 1 else None
+            head = self._heads[i]
+            z = head(latent)
+            if mapper is not None:
+                latent = mapper(latent)
+            else:
+                latent = None
+            c, raws, quantizeds, hard = self.rawAndQuantized(z, i)
+            allCodes.append(c)
+            allZs.append(raws)
+            allHards.append(quantizeds)
+            if latent is not None:
+                latent = latent - hard
+        return allZs, allHards, allCodes
+
 
     def test(self, x:torch.Tensor):
         latent = self._encoder(x)

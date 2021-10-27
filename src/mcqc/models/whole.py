@@ -51,8 +51,8 @@ class WholePQBig(nn.Module):
             m = len(features)
             for i in range(m):
                 for j in range(i + 1, m):
-                    # [n, h, w] := ([n, c, h, w] * [n, c, h, w]).sum(1)
-                    interProduct = (features[i] * features[j]).sum(1)
+                    # [n, h, w] := ([n, h, w, c] * [n, h, w, c]).sum(-1)
+                    interProduct = (features[i] * features[j]).sum(-1)
                     # feature from different group should be orthogonal
                     weakFeatureLoss.append(2 * self._auxLoss(interProduct, torch.zeros_like(interProduct)))
                 intraProduct = (features[i] * features[i]).sum(1)

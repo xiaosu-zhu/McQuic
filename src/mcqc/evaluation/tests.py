@@ -19,21 +19,22 @@ from mcqc.evaluation.metrics import MsSSIM, psnr as validatePSNR
 def deTrans(image):
     eps = 1e-3
     max_val = 255
-    # [-1, 1] to [0, 255]
+    # [0, 1] to [0, 255]
     return (image * (max_val + 1.0 - eps)).clamp(0.0, 255.0).byte()
 
 class Test(abc.ABC):
-    def __init__(self, config: Config, encoder: nn.Module, decoder: nn.Module, preProcess: nn.Module, postProcess: nn.Module, **kwArgs):
+    def __init__(self, config: Config, encoder: nn.Module, decoder: nn.Module, preProcess: nn.Module, postProcess: nn.Module, device: str, **kwArgs):
         super().__init__()
         self._config = config
         self._encoder = encoder
         self._decoder = decoder
         self._preProcess = preProcess
         self._postProcess = postProcess
-        self._encoder.eval()
-        self._decoder.eval()
-        self._preProcess.eval()
-        self._postProcess.eval()
+        self._device = device
+        self._encoder.eval().to(self._device)
+        self._decoder.eval().to(self._device)
+        self._preProcess.eval().to(self._device)
+        self._postProcess.eval().to(self._device)
         torch.autograd.set_grad_enabled(False)
         setattr(self, "test", torch.inference_mode()(self.test))
 
@@ -43,9 +44,8 @@ class Test(abc.ABC):
 
 
 class Speed(Test):
-    def __init__(self, device, **kwArgs) -> None:
+    def __init__(self, **kwArgs) -> None:
         super().__init__(**kwArgs)
-        self._device = device
         # same as kodak
         self._testInput = torch.rand(6, 3, 768, 512).to(self._device)
         self._warmupStep = 10
@@ -89,7 +89,7 @@ class Performance(Test):
     def __init__(self, dataset: Dataset, **kwArgs):
         super().__init__(**kwArgs)
         self._dataLoader = DataLoader(dataset, pin_memory=True)
-        self._ssim = MsSSIM(sizeAverage=False).to(self._encoder.device)
+        self._ssim = MsSSIM(sizeAverage=False).to(self._device)
 
     def test(self):
         shutil.rmtree("ckpt/images", ignore_errors=True)
@@ -100,7 +100,7 @@ class Performance(Test):
         pixels = list()
         images = list()
         for i, x in enumerate(tqdm(self._dataLoader)):
-            x = x.cuda(non_blocking=True)
+            x = x.to(self._device, non_blocking=True)
             minLength = 128
             _, _, h, w = x.shape
 

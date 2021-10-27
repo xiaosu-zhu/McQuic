@@ -219,6 +219,26 @@ class L2Quantizer(nn.Module):
         # sample = F.gumbel_softmax(logit, 1.0, True)
         return logit.argmax(-1)
 
+    def rawAndQuantized(self, latent):
+        latent = self._wv(latent)
+        # [n, h, w, c]
+        q = latent.permute(0, 2, 3, 1)
+
+
+        # [k, c]
+        k = self._codebook
+
+        # [k, c]
+        # k = self._wk(k)
+
+        # [n, h, w, k]
+        logit = self.getLogit(q, k)
+
+        sample = F.one_hot(logit.argmax(-1), self._k).float()
+
+        # sample = F.gumbel_softmax(logit, 1.0, True)
+        return logit.argmax(-1), latent, (sample @ self._codebook).permute(0, 3, 1, 2)
+
     def softEncode(self, latent):
         latent = self._wv(latent)
         # [n, h, w, c]
@@ -275,7 +295,7 @@ class L2Quantizer(nn.Module):
         # else:
         #     soft = hard
 
-        # [n, c, h, w], [n, h, w], [n, h, w, k], [n, c, h, w], [k, c]
+        # [n, c, h, w], [n, h, w], [n, h, w, k], [n, h, w, c], [k, c]
         return hard, code, trueCode, logit, q, self._codebook
 
 
