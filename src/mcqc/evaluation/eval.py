@@ -23,10 +23,10 @@ flags.DEFINE_string("dataset", "data/clic/valid", "The images path")
 
 class Eval:
     def __init__(self, device: str, encoderPath: str, decoderPath: str, config: Config, dataset: Dataset):
-        self._encoder = torch.jit.load(encoderPath, map_location=device)
-        self._decoder = torch.jit.load(decoderPath, map_location=device)
-        self._preProcess = torch.jit.script(Preprocess(128)).to(device)
-        self._postProcess = torch.jit.script(PostProcess()).to(device)
+        self._encoder = torch.jit.load(encoderPath, map_location=device).eval()
+        self._decoder = torch.jit.load(decoderPath, map_location=device).eval()
+        self._preProcess = torch.jit.script(Preprocess(128)).to(device).eval()
+        self._postProcess = torch.jit.script(PostProcess()).to(device).eval()
         self._dataset = dataset
 
         generalArgs = {
