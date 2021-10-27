@@ -19,6 +19,7 @@ flags.DEFINE_string("cfg", "", "The config.json path.")
 flags.DEFINE_string("device", "cuda", "The device to use.")
 flags.DEFINE_string("encoder", "", "The encoder.ckpt file path.")
 flags.DEFINE_string("decoder", "", "The decoder.ckpt file path.")
+flags.DEFINE_string("dataset", "data/clic/valid", "The images path")
 
 class Eval:
     def __init__(self, device: str, encoderPath: str, decoderPath: str, config: Config, dataset: Dataset):
@@ -37,7 +38,7 @@ class Eval:
             "postProcess": self._postProcess
         }
 
-        self._tests: List[Test] = [#Performance(dataset, **generalArgs),]
+        self._tests: List[Test] = [#Performance(dataset, **generalArgs),
          Speed(**generalArgs)]
 
     def __call__(self):
@@ -47,7 +48,7 @@ class Eval:
 
 def main(_):
     config = read(FLAGS.cfg, None, Config)
-    Eval(FLAGS.device, FLAGS.encoder, FLAGS.decoder, config, Basic("data/clic/valid", transform=ConvertImageDtype(torch.float32)))()
+    Eval(FLAGS.device, FLAGS.encoder, FLAGS.decoder, config, Basic(FLAGS.dataset, transform=ConvertImageDtype(torch.float32)))()
 
 
 if __name__ == "__main__":
