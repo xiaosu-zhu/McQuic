@@ -71,7 +71,10 @@ def _main(encoder, decoder, prefix, ckptPath, targetDir):
 
     convert(Preprocess(128), encoder, decoder, PostProcess(), targetDir)
 
+@torch.inference_mode()
 def main(_):
+    torch.backends.cudnn.benchmark = True
+    torch.autograd.set_detect_anomaly(False)
     config = read(FLAGS.cfg, None, Config)
     if not FLAGS.target or not os.path.isdir(FLAGS.target):
         raise FileNotFoundError(f"The given target: {FLAGS.target} is not a valid dir or doesn't exist.")
