@@ -46,7 +46,10 @@ class Eval:
         print(results)
 
 
+@torch.inference_mode()
 def main(_):
+    torch.backends.cudnn.benchmark = True
+    torch.autograd.set_detect_anomaly(False)
     config = read(FLAGS.cfg, None, Config)
     Eval(FLAGS.device, FLAGS.encoder, FLAGS.decoder, config, Basic(FLAGS.dataset, transform=ConvertImageDtype(torch.float32)))()
 
