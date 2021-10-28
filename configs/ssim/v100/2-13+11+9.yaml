@@ -39,7 +39,7 @@ schdr:
 regSchdr:
     type: MultiStep
     params:
-        initValue: 1.e-4
+        initValue: 1.e-3
         gamma: 0.993
         stepInterval: 1
 # regSchdr:
