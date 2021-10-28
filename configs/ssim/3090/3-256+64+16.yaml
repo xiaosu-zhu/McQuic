@@ -1,19 +1,19 @@
-epoch: 1200
+epoch: 1000
 evalFreq: 2
 testFreq: 20
-gpus: 4
+gpus: 3
 vRam: -1
 wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 12
+batchSize: 11
 model:
     type: Big
     target: ssim
-    channel: 128
-    k: [8192, 2048, 512]
-    m: 2
+    channel: 126
+    k: [256, 64, 16]
+    m: 3
     withGroup: false
     withAtt: true
     withDropout: false
@@ -42,14 +42,6 @@ regSchdr:
         initValue: 1.e-3
         gamma: 0.993
         stepInterval: 1
-# regSchdr:
-#     type: Cosine
-#     params:
-#         initValue: 1.e-3
-#         totalStep: 1000
-#         clip: 0.25
-#         revert: true
-#         stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Jump
 #     params:
