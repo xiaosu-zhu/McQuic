@@ -18,7 +18,8 @@ from torchvision import transforms
 
 from mcqc.models.compressor import PQCompressorBig
 from mcqc.datasets import Basic
-from mcqc.utils.vision import DeTransform, getTestTransform
+from mcqc.utils.vision import getTestTransform
+from mcqc.utils.transforms import DeTransform
 from mcqc import Config
 
 FLAGS = flags.FLAGS

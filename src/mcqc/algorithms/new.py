@@ -174,6 +174,7 @@ class New(Algorithm):
             temperature = loaded["temperature"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
+            self._reSpreadAll()
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
             loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=lastEpoch)
             lastEpoch = loaded["epoch"]
