@@ -38,7 +38,7 @@ _logMapping = {
 
 
 class New(Algorithm):
-    def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], regScheduler: Type[_ValueTuner], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueSchedulers: List[Type[_ValueTuner]], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
@@ -62,7 +62,8 @@ class New(Algorithm):
         else:
             self._scheduler = None
 
-        self._regScheduler = regScheduler(**config.RegSchdr.params)
+        self._regScheduler = valueSchedulers[0](**config.RegSchdr.params)
+        self._tempScheduler = valueSchedulers[1](**config.TempSchdr.params)
 
         # dist.barrier(device_ids=[self._rank])
 
@@ -96,7 +97,7 @@ class New(Algorithm):
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar(_logMapping["regCoeff"], self._regScheduler.Value, global_step=step)
-        # self._saver.add_scalar(_logMapping["temperature"], kwArgs["temperature"], global_step=step)
+        self._saver.add_scalar(_logMapping["temperature"], self._tempScheduler.Value, global_step=step)
 
     @torch.inference_mode()
     def _slowHook(self, **kwArgs):
@@ -108,7 +109,7 @@ class New(Algorithm):
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler)
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
         self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
 
     @torch.inference_mode()
@@ -154,10 +155,6 @@ class New(Algorithm):
     # pylint: disable=too-many-locals,arguments-differ
     def run(self, trainLoader: Prefetcher, sampler: DistributedSampler, evalLoader: DataLoader, testLoader: DataLoader):
         step = 0
-
-        temperature = 1.0
-        # finalTemp = 0.001 / math.sqrt(self._config.Model.k[0])
-        # annealRate = 0.997
         initEpoch = 0
         lastEpoch = 0
 
@@ -168,10 +165,10 @@ class New(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, temperature=temperature, regSchdr=self._regScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, regSchdr=self._regScheduler)#, tempSchdr=self._tempScheduler)
+            self._tempScheduler._epoch = self._regScheduler._epoch
             step = loaded["step"]
             initEpoch = loaded["epoch"]
-            temperature = loaded["temperature"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
             self._reSpreadAll()
@@ -192,12 +189,9 @@ class New(Algorithm):
 
         for i in range(initEpoch, self._config.Epoch):
             sampler.set_epoch(i + lastEpoch)
-            # ssimCoef = self._config.Coef.ssim / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            # contextCoef = self._config.Coef.l1l2 / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
-            # bppCoef = self._regScheduler.Value / (self._config.Coef.ssim + self._config.Coef.l1l2 + self._regScheduler.Value)
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + lastEpoch + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
-                dLoss, (weakCodebookLoss, weakFeatureLoss), (restored, allHards, allLogits) = self._model(images, temperature)
+                dLoss, (weakCodebookLoss, weakFeatureLoss), (restored, allHards, allLogits) = self._model(images, self._tempScheduler.Value)
                 (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
@@ -208,14 +202,14 @@ class New(Algorithm):
                     self._trainingStat(now=step, epoch=i + lastEpoch + 1, distortion=dLoss, auxiliary=(weakCodebookLoss, weakFeatureLoss), reg=self._regScheduler.Value)
                 dist.barrier()
             if self._loggingHook is not None:
-                self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, temperature=temperature, logits=allLogits[0], codes=allHards)
+                self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, logits=allLogits[0], codes=allHards)
             if (i + 1) % (self._config.TestFreq) == 0:
                 self._optimizer.zero_grad()
                 self._reSpreadAll()
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
-            # temperature = max(finalTemp, temperature * annealRate)
+            self._tempScheduler.step()
 
         if self._rank == 0:
             self._logger.info("Train finished")

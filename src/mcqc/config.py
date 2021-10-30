@@ -45,6 +45,7 @@ class Config:
     optim: OptimSpec = OptimSpec(type="Adam", params={})
     schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
     regSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
+    tempSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
     batchSize: int = 4
     epoch: int = 10000
     gpus: int = 1
@@ -73,6 +74,10 @@ class Config:
     @property
     def RegSchdr(self) -> RegSchdrSpec:
         return self.regSchdr
+
+    @property
+    def TempSchdr(self) -> RegSchdrSpec:
+        return self.tempSchdr
 
     @property
     def WarmStart(self) -> str:

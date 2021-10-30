@@ -135,7 +135,7 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     #     return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     # def schdrWrapper(optim):
     #     return torch.optim.lr_scheduler.ExponentialLR(optim, 0.99)
-    method = methods[config.Method](config, model, optims[config.Optim.type], schdrs.get(config.Schdr.type, None), regSchdrs.get(config.RegSchdr.type, None), saver, savePath, continueTrain, logger)
+    method = methods[config.Method](config, model, optims[config.Optim.type], schdrs.get(config.Schdr.type, None), [regSchdrs.get(config.RegSchdr.type, None), regSchdrs.get(config.TempSchdr.type, None)], saver, savePath, continueTrain, logger)
 
     trainDataset = BasicLMDB(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, repeat=config.Repeat, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
