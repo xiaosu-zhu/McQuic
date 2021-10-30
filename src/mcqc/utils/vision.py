@@ -18,7 +18,7 @@ def getTrainingTransform():
 def getTrainingPreprocess():
     return T.Compose([
         T.RandomCrop(512, pad_if_needed=True),
-        T.RandomApply([T.ColorJitter(0.15, 0.15, 0.15, 0.15), 0.15])
+        T.RandomApply([T.ColorJitter(0.15, 0.15, 0.15, 0.15)], 0.15)
     ])
 
 def getTrainingFullTransform():
