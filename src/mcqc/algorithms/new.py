@@ -101,7 +101,7 @@ class New(Algorithm):
 
     @torch.inference_mode()
     def _slowHook(self, **kwArgs):
-        evalLoader, step, epoch, temperature = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"], kwArgs["temperature"]
+        evalLoader, step, epoch = kwArgs["evalLoader"], kwArgs["now"], kwArgs["epoch"]
         ssim, _ = self._eval(evalLoader, step)
         if ssim > self._best:
             self._best = ssim
@@ -109,8 +109,8 @@ class New(Algorithm):
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
             self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
             self._saver._savePath = path
-        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, temperature=temperature, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
-        self._logger.info("[%3dk]: LR = %.2e, T = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0], temperature)
+        self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
+        self._logger.info("[%3dk]: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
 
     @torch.inference_mode()
     def _testHook(self, **kwArgs):
@@ -165,7 +165,7 @@ class New(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, regSchdr=self._regScheduler)#, tempSchdr=self._tempScheduler)
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, regSchdr=self._regScheduler)# , tempSchdr=self._tempScheduler)
             self._tempScheduler._epoch = self._regScheduler._epoch
             step = loaded["step"]
             initEpoch = loaded["epoch"]
