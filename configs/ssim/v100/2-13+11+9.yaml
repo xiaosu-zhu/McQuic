@@ -1,4 +1,4 @@
-epoch: 1200
+epoch: 2000
 evalFreq: 2
 testFreq: 20
 gpus: 4
