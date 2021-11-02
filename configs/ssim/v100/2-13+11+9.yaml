@@ -43,11 +43,14 @@ regSchdr:
         gamma: 0.993
         stepInterval: 1
 tempSchdr:
-    type: MultiStep
+    type: Cosine
     params:
-        initValue: 1.0
-        gamma: 0.1
-        stepInterval: 900
+        maxValue: 1.
+        minValue: 0.1
+        totalStep: 2000
+        # shift: 0.25
+        revert: false
+        stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Cosine
 #     params:
