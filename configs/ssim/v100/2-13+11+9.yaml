@@ -52,14 +52,6 @@ tempSchdr:
         revert: false
         stepInterval: 1 # manually divided by repeat
 # regSchdr:
-#     type: Cosine
-#     params:
-#         initValue: 1.e-3
-#         totalStep: 1000
-#         clip: 0.25
-#         revert: true
-#         stepInterval: 1 # manually divided by repeat
-# regSchdr:
 #     type: Jump
 #     params:
 #         initValue: 0.5
