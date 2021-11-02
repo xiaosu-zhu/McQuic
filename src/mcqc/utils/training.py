@@ -499,20 +499,21 @@ class StepValue(_ValueTuner):
         self._value = self._initValue * (self._gamma ** (self._epoch // self._stepInterval))
 
 class CosineValue(_ValueTuner):
-    def __init__(self, initValue: float = 1e-3, stepInterval: int = 1, totalStep: int = 1000, clip: float = 0.25, revert: bool = False):
-        super().__init__(initValue=initValue)
+    def __init__(self, maxValue: float = 1.0, minValue: float = 0.0, stepInterval: int = 1, totalStep: int = 1000, revert: bool = False):
+        super().__init__(initValue=maxValue)
+        self._minValue = minValue
         self._stepInterval = stepInterval
         self._totalStep = totalStep
-        self._clip = clip
         self._revert = revert
 
     def calc(self):
         nowCosine = math.cos(math.pi * self._epoch / self._stepInterval / self._totalStep)
         if self._revert:
             nowCosine = 1 - nowCosine
+        # 0~1
         nowCosine /= 2.0
-        nowCosine = max(nowCosine - self._clip, 0.0)
-        self._value = self._initValue * nowCosine
+        realValule = nowCosine * (self._initValue - self._minValue) + self._minValue
+        self._value = realValule
 
 
 class JumpValue(_ValueTuner):
