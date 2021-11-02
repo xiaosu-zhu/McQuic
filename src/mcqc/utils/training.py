@@ -507,12 +507,11 @@ class CosineValue(_ValueTuner):
         self._revert = revert
 
     def calc(self):
+        # 1 ~ -1
         nowCosine = math.cos(math.pi * self._epoch / self._stepInterval / self._totalStep)
         if self._revert:
             nowCosine = 1 - nowCosine
-        # 0~1
-        nowCosine /= 2.0
-        realValule = nowCosine * (self._initValue - self._minValue) + self._minValue
+        realValule = (nowCosine + 1) / 2.0 * (self._initValue - self._minValue) + self._minValue
         self._value = realValule
 
 
