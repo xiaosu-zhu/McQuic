@@ -71,7 +71,7 @@ def _main(encoder, decoder, prefix, ckptPath, targetDir):
 
     convert(Preprocess(128), encoder, decoder, PostProcess(), targetDir)
 
-@torch.inference_mode()
+
 def main(_):
     torch.backends.cudnn.benchmark = True
     torch.autograd.set_detect_anomaly(False)

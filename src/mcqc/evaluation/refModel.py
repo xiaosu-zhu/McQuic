@@ -143,7 +143,8 @@ class RefEncoder(nn.Module):
             "_encoder",
             "_heads",
             "_mappers",
-            "_quantizers"
+            "_quantizers",
+            "_postProcess"
         })
 
         self._encoder = ResidualBaseEncoder(channel, groups, alias)
@@ -200,7 +201,8 @@ class RefDecoder(nn.Module):
             "_decoder",
             "_reverses",
             "_scatters",
-            "_quantizers"
+            "_quantizers",
+            "_finalProcess"
         })
 
         self._decoder = ResidualBaseDecoder(channel, 1)
@@ -249,7 +251,7 @@ class RefDecoder(nn.Module):
             code = codes[-(i + 2)]
             q = scatter(quantizer(code))
 
-            q = finalProcess(torch.cat((smallQ, scatter(q)), 1))
+            q = finalProcess(torch.cat((smallQ, q), 1))
             smallQ = reverse(q)
 
         return self._decoder(smallQ).tanh(), cAndPadding

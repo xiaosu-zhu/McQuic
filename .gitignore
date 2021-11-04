@@ -1,4 +1,5 @@
 # User-defined paths
+psnr/
 ckpt/
 *.ckpt
 *.npy
