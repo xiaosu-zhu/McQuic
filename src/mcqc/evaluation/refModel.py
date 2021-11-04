@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from mcqc.models.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder
 from mcqc.models.decoder import ResidualBaseDecoder, UpSampler
+from mcqc.layers.blocks import ResidualBlock
 
 
 
@@ -151,16 +152,19 @@ class RefEncoder(nn.Module):
         self._mappers = nn.ModuleList(DownSampler(channel, 1, alias) for _ in range(self._levels - 1))
         self._quantizers = nn.ModuleList(QuantizerEncoder(m, ki, channel // m) for ki in k)
         self._deQuantizers = nn.ModuleList(QuantizerDecoder(m, ki, channel // m) for ki in k)
+        self._postProcess = nn.ModuleList(ResidualBlock(2 * channel, channel, groups=groups) for _ in range(self._levels - 1))
 
     @torch.jit.unused
     def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
         encoderDict = {k[len("_encoder."):]: v for k, v in state_dict.items() if k.startswith("_encoder.")}
         headsDict = {k[len("_heads."):]: v for k, v in state_dict.items() if k.startswith("_heads.")}
         mappersDict = {k[len("_mappers."):]: v for k, v in state_dict.items() if k.startswith("_mappers.")}
+        postProcessDict = {k[len("_postProcess."):]: v for k, v in state_dict.items() if k.startswith("_postProcess.")}
         quantizerDict = {k[len("_quantizers."):]: v for k, v in state_dict.items() if k.startswith("_quantizers.")}
         self._encoder.load_state_dict(encoderDict)
         self._heads.load_state_dict(headsDict)
         self._mappers.load_state_dict(mappersDict)
+        self._postProcess.load_state_dict(postProcessDict)
         for i, q in enumerate(self._quantizers):
             q.load_state_dict({k[len("1."):]: v for k, v in quantizerDict.items() if k.startswith(f"{i}.")})
         for i, q in enumerate(self._deQuantizers):
@@ -174,12 +178,12 @@ class RefEncoder(nn.Module):
     def forward(self, x: torch.Tensor, cAndPadding: torch.Tensor) -> Tuple[List[torch.LongTensor], torch.Tensor]:
         codes = list()
         latent = self._encoder(x)
-        for head, mapper, quantizer, deQuantizer in zip(self._heads, self._mappers, self._quantizers, self._deQuantizers):
+        for head, mapper, quantizer, deQuantizer, postProcess in zip(self._heads, self._mappers, self._quantizers, self._deQuantizers, self._postProcess):
             z = head(latent)
             latent = mapper(latent)
             code = quantizer(z)
             hard = deQuantizer(code)
-            latent = latent - hard
+            latent = postProcess(torch.cat((latent, hard), 1))
             codes.append(code)
         z = self._heads[-1](latent)
         codes.append(self._quantizers[-1](z))
@@ -204,17 +208,19 @@ class RefDecoder(nn.Module):
         self._reverses0 = UpSampler(channel, 1, alias)
         self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels - 1))
         self._scatters = nn.ModuleList(Director(channel, 1, alias) for _ in range(self._levels - 1))
+        self._finalProcess = nn.ModuleList(ResidualBlock(2 * channel, channel, 1) for _ in range(self._levels - 1))
         ################### REVERSE THE QUANTIZER ###################
         self._quantizers0 = QuantizerDecoder(m, k[-1], channel // m)
         self._quantizers = nn.ModuleList(QuantizerDecoder(m, ki, channel // m) for ki in k[-2::-1])
 
     @torch.jit.unused
     def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
-        encoderDict = {k[len("_decoder."):]: v for k, v in state_dict.items() if k.startswith("_decoder.")}
-        self._decoder.load_state_dict(encoderDict)
+        decoderDict = {k[len("_decoder."):]: v for k, v in state_dict.items() if k.startswith("_decoder.")}
+        self._decoder.load_state_dict(decoderDict)
         ############################### IMPORTANT: LOAD IN REVERSE ORDER ###############################
         reversesDict = {k[len("_reverses."):]: v for k, v in state_dict.items() if k.startswith("_reverses.")}
         scattersDict = {k[len("_scatters."):]: v for k, v in state_dict.items() if k.startswith("_scatters.")}
+        finalProcessDict = {k[len("_finalProcess."):]: v for k, v in state_dict.items() if k.startswith("_finalProcess.")}
         quantizerDict = {k[len("_quantizers."):]: v for k, v in state_dict.items() if k.startswith("_quantizers.")}
 
         self._reverses0.load_state_dict({k[len("1."):]: v for k, v in reversesDict.items() if k.startswith(f"{self._levels - 1}.")})
@@ -223,6 +229,9 @@ class RefDecoder(nn.Module):
 
         for i, s in enumerate(self._scatters):
             s.load_state_dict({k[len("1."):]: v for k, v in scattersDict.items() if k.startswith(f"{self._levels - i - 2}.")})
+
+        for i, s in enumerate(self._finalProcess):
+            s.load_state_dict({k[len("1."):]: v for k, v in finalProcessDict.items() if k.startswith(f"{self._levels - i - 2}.")})
 
         self._quantizers0.load_state_dict({k[len("1."):]: v for k, v in quantizerDict.items() if k.startswith(f"{self._levels - 1}.")})
         for i, q in enumerate(self._quantizers):
@@ -236,9 +245,11 @@ class RefDecoder(nn.Module):
 
     def forward(self, codes: List[torch.LongTensor], cAndPadding: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         smallQ = self._reverses0(self._quantizers0(codes[-1]))
-        for i, (scatter, quantizer, reverse) in enumerate(zip(self._scatters, self._quantizers, self._reverses)):
+        for i, (scatter, quantizer, reverse, finalProcess) in enumerate(zip(self._scatters, self._quantizers, self._reverses, self._finalProcess)):
             code = codes[-(i + 2)]
             q = scatter(quantizer(code))
-            smallQ = reverse(q + smallQ)
+
+            q = finalProcess(torch.cat((smallQ, scatter(q)), 1))
+            smallQ = reverse(q)
 
         return self._decoder(smallQ).tanh(), cAndPadding
