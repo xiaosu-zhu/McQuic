@@ -38,7 +38,7 @@ class Eval:
             "postProcess": self._postProcess
         }
 
-        self._tests: List[Test] = [#Performance(dataset, **generalArgs),
+        self._tests: List[Test] = [Performance(dataset, **generalArgs),
          Speed(**generalArgs)]
 
     def __call__(self):
