@@ -3,6 +3,7 @@ import os
 from typing import List, Tuple, Type
 from logging import Logger
 import math
+import copy
 
 from tqdm import tqdm
 import torch
@@ -107,7 +108,7 @@ class New(Algorithm):
             self._best = ssim
             path = self._saver._savePath
             self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
-            self._saver.save(self._logger, model=self._model, step=step, epoch=epoch)
+            self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
             self._saver._savePath = path
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
         self._logger.info("[%3dk]: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
@@ -165,16 +166,26 @@ class New(Algorithm):
         # import copy
         # schdr = copy.deepcopy(self._scheduler)
         if self._continue:
-            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, regSchdr=self._regScheduler)# , tempSchdr=self._tempScheduler)
-            self._tempScheduler._epoch = self._regScheduler._epoch
+            loaded = Saver.load(self._savePath, mapLocation, True, self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=initEpoch, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
             self._reSpreadAll()
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
-            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, epoch=lastEpoch)
-            lastEpoch = loaded["epoch"]
+            schdr = copy.deepcopy(self._scheduler)
+            regSchdr = copy.deepcopy(self._regScheduler)
+            tempSchdr = copy.deepcopy(self._tempScheduler)
+            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, schdr=schdr, step=step, epoch=initEpoch, regSchdr=regSchdr, tempSchdr=tempSchdr)
+            step = loaded["step"]
+            initEpoch = loaded["epoch"]
+            self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
+            for group in self._optimizer.param_groups:
+                group.setdefault('initial_lr', group['lr'])
+            self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
+            self._regScheduler._epoch = regSchdr._epoch
+            self._tempScheduler._epoch = tempSchdr._epoch
+            self._reSpreadAll()
 
         # self._scheduler.last_epoch = schdr.last_epoch
         # del schdr
