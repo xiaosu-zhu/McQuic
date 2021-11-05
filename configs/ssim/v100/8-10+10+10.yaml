@@ -7,13 +7,13 @@ wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 3
+batchSize: 10
 model:
     type: Big
     target: ssim
     channel: 192
-    k: [8192, 2048, 512]
-    m: 12
+    k: [1024, 1024, 1024]
+    m: 8
     withGroup: false
     withAtt: true
     withDropout: false
@@ -35,7 +35,7 @@ schdr:
     params:
         first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 20
-        gamma: 0.8
+        gamma: 0.85
 regSchdr:
     type: MultiStep
     params:

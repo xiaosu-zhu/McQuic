@@ -5,6 +5,10 @@ COPY environment.yaml ./
 
 RUN conda env update --name base --file environment.yml --prune
 
+RUN rm environment.yaml
+
 COPY ../../mcqc ./
 
 RUN cd mcqc/src && pip install -e .
+
+WORKDIR /workspace/mcqc
