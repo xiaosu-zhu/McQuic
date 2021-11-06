@@ -1,7 +1,7 @@
 epoch: 2000
 evalFreq: 2
 testFreq: 20
-gpus: 4
+gpus: 5
 vRam: -1
 wantsMore: false
 dataset: fullDataset
@@ -35,7 +35,7 @@ schdr:
     params:
         first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 20
-        gamma: 0.8
+        gamma: 0.85
 regSchdr:
     type: MultiStep
     params:
@@ -45,8 +45,8 @@ regSchdr:
 tempSchdr:
     type: Cosine
     params:
-        maxValue: 1.
-        minValue: 0.1
+        maxValue: 1.0
+        minValue: 0.01
         totalStep: 2000
         # shift: 0.25
         revert: false

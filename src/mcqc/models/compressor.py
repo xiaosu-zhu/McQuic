@@ -70,12 +70,10 @@ class PQCompressorBig(nn.Module):
 
         self._heads = nn.ModuleList(EncoderHead(channel, 1, alias) for _ in range(self._levels))
         self._mappers = nn.ModuleList(DownSampler(channel, 1, alias) for _ in range(self._levels - 1))
-        self._postProcess = nn.ModuleList(ResidualBlock(2 * channel, channel, groups=groups) for _ in range(self._levels - 1))
         self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m, channel // m) for _ in range(m)) for ki in k)
 
         self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels))
         self._scatters = nn.ModuleList(Director(channel, 1, alias) for _ in range(self._levels - 1))
-        self._finalProcess = nn.ModuleList(ResidualBlock(2 * channel, channel, groups=groups) for _ in range(self._levels - 1))
 
         self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
         self._decoder = ResidualBaseDecoder(channel, 1)
@@ -97,7 +95,7 @@ class PQCompressorBig(nn.Module):
             hard = self.decode(c, i)
             # n, c, h, w = hard.shape
             if latent is not None:
-                latent = self._postProcess[i](torch.cat((latent, hard), 1))
+                latent = latent - hard
             # [n, m, h, w, c//m]
             # z = z.reshape(n, self._m, -1, h, w).permute(0, 1, 3, 4, 2)
             allOriginal.append(c)
@@ -156,7 +154,7 @@ class PQCompressorBig(nn.Module):
             latent = None
         hard, c, tc, l, features, codebooks = self.quantize(z, level, temp)
         if latent is not None:
-            latent = self._postProcess[level](torch.cat((latent, hard), 1))
+            latent = latent - hard
         return latent, hard, c, tc, l, features, codebooks
 
     def deQuantize(self, q, level):
@@ -167,7 +165,7 @@ class PQCompressorBig(nn.Module):
         latent = self.deQuantize(q, level)
         if upperQ is not None:
             scatter = self._scatters[level - 1]
-            return self._finalProcess[level - 1](torch.cat((latent, scatter(upperQ)), 1))
+            return latent + scatter(upperQ)
         return latent
 
     def rawAndQuantized(self, latent, level):
@@ -209,7 +207,7 @@ class PQCompressorBig(nn.Module):
             allZs.append(raws)
             allHards.append(quantizeds)
             if latent is not None:
-                latent = self._postProcess[i](torch.cat((latent, hard), 1))
+                latent = latent - hard
         return allZs, allHards, allCodes
 
 
@@ -233,7 +231,7 @@ class PQCompressorBig(nn.Module):
             allCodes.append(c)
             hard = self.decode(c, i)
             if latent is not None:
-                latent = self._postProcess[i](torch.cat((latent, hard), 1))
+                latent = latent - hard
             allHards.append(hard)
 
         quantizeds = list()
@@ -243,7 +241,7 @@ class PQCompressorBig(nn.Module):
             quantized = self.nextLevelUp(quantizeds[i], allHards[i - 1], i - 1)
             quantizeds[i - 1] = quantized
 
-        restored = torch.tanh(self._decoder(quantizeds[0]))
+        restored = self._decoder(quantizeds[0])
         return restored, allCodes
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
@@ -276,7 +274,7 @@ class PQCompressorBig(nn.Module):
             quantizeds[i - 1] = quantized
 
 
-        restored = torch.tanh(self._decoder(quantizeds[0]))
+        restored = self._decoder(quantizeds[0])
         return restored, allHards, latent, allCodes, allTrues, allLogits, allFeatures, allCodebooks
 
 class PQCompressorQ(nn.Module):

@@ -35,7 +35,7 @@ schdr:
     params:
         first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 20
-        gamma: 0.8
+        gamma: 0.85
 regSchdr:
     type: MultiStep
     params:
@@ -67,5 +67,5 @@ tempSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: psnr/saved.ckpt
+warmStart: "" # psnr/saved.ckpt
 method: New
