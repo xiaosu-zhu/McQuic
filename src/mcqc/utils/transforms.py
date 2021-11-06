@@ -1,11 +1,13 @@
 from typing import Optional, List, Tuple
 import numbers
+import random
 
 import torch
 from torch import Tensor
 from torch import nn
 import torchvision
 from torchvision.transforms import functional as F
+from torchvision.transforms.transforms import RandomTransforms
 
 class DeTransform(nn.Module):
     _eps = 1e-3
@@ -184,7 +186,7 @@ class ColorJitter(torch.nn.Module):
 
 
 
-class RandomApply(torch.nn.Module):
+class RandomChoiceAndApply(RandomTransforms):
     """Apply randomly a list of transformations with a given probability.
     .. note::
         In order to script the transformation, please use ``torch.nn.ModuleList`` as input instead of list/tuple of
@@ -200,14 +202,16 @@ class RandomApply(torch.nn.Module):
         p (float): probability
     """
 
-    def __init__(self, transforms, p=0.5):
-        super().__init__()
-        self.transforms = torchvision.transforms.Compose(transforms)
+    def __init__(self, transforms: List[torch.nn.Module], p=0.5):
+        super().__init__(transforms)
+        self.transforms = transforms
         self.p = p
 
-    def forward(self, img):
+    def __call__(self, img):
         picked = torch.rand(img.shape[0]) < self.p
-        img[picked] = self.transforms(img[picked])
+        for i, x in enumerate(img[picked]):
+            t = random.choice(self.transforms)
+            img[picked[i]] = t(x)
         return img
 
     def __repr__(self):

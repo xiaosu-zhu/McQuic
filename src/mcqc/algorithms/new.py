@@ -85,7 +85,7 @@ class New(Algorithm):
         eps = 1e-3
         max_val = 255
         # [-1, 1] to [0, 255]
-        return ((image + 1.0) / 2.0 * (max_val + 1.0 - eps)).clamp(0.0, 255.0).byte()
+        return (((image + 1.0) / 2.0).clamp_(0.0, 1.0) * (max_val + 1.0 - eps)).clamp(0.0, 255.0).byte()
 
     @torch.inference_mode()
     def _trainingStat(self, **kwArgs):
@@ -215,6 +215,10 @@ class New(Algorithm):
             if self._loggingHook is not None:
                 self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, logits=allLogits[0], codes=allHards)
             if (i + 1) % (self._config.TestFreq) == 0:
+                if self._saver is not None:
+                    for i in range(len(self._config.Model.k)):
+                        for j in range(self._config.Model.m):
+                            self._saver.add_embedding(self._model.module._compressor._quantizers[i][j]._codebook, global_step=step, tag=f"Stat/Codebook_{i}_{j}")
                 self._optimizer.zero_grad()
                 self._reSpreadAll()
             if self._scheduler is not None:
@@ -282,16 +286,22 @@ class New(Algorithm):
                 # some of the entry is 0
                 counts = torch.bincount(partQs, minlength=k)
                 neverAssigned = codebook[counts < 1]
-                if len(neverAssigned) > k // 2:
-                    mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
-                    maskIdx = torch.randperm(len(mask))[k // 2:]
-                    mask[maskIdx] = 1
-                    counts[counts < 1] = mask
-                    neverAssigned = codebook[counts < 1]
-                argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
-                fullyAssigned = codebook[argIdx]
-                selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
-                codebook[counts < 1] = fullyAssigned[selectedIdx]
+                randomChoice = torch.distributions.Categorical(probs=counts)
+                # [n, ]
+                sample = randomChoice.sample((len(neverAssigned), ))
+                # [n, d]
+                prepareToAssign = codebook[sample] + torch.randn_like(codebook[sample]) * (1e-5 / math.sqrt(self._config.Model.channel / self._config.Model.m))
+                codebook[counts < 1] = prepareToAssign
+                # if len(neverAssigned) > k // 2:
+                #     mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
+                #     maskIdx = torch.randperm(len(mask))[k // 2:]
+                #     mask[maskIdx] = 1
+                #     counts[counts < 1] = mask
+                #     neverAssigned = codebook[counts < 1]
+                # argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
+                # fullyAssigned = codebook[argIdx]
+                # selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
+                # codebook[counts < 1] = fullyAssigned[selectedIdx]
                 self._logger.debug("Re-assign on %d:%d, %.2f%% are never assigned.", i, j, len(neverAssigned) / float(k) * 100)
                 numNeverAssigned += len(neverAssigned)
                 numAll += k

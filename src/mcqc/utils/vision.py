@@ -3,12 +3,13 @@ from torch import nn
 from torchvision import transforms as T
 from torch.distributions import Categorical
 
-from mcqc.utils.transforms import RandomHorizontalFlip, RandomVerticalFlip, RandomAutocontrast
+from mcqc.utils.transforms import RandomHorizontalFlip, RandomVerticalFlip, RandomAutocontrast, RandomChoiceAndApply
 
 def getTrainingTransform():
     return T.Compose([
         RandomHorizontalFlip(),
         RandomVerticalFlip(),
+        # RandomChoiceAndApply([T.ColorJitter(0.5, 0, 0, 0), T.ColorJitter(0, 0.5, 0, 0), T.ColorJitter(0, 0, 0.5, 0), T.ColorJitter(0, 0, 0, 0.15), T.ColorJitter(0.5, 0.5, 0, 0), T.ColorJitter(0.5, 0, 0.5, 0), T.ColorJitter(0.5, 0, 0, 0.15), T.ColorJitter(0, 0.5, 0.5, 0), T.ColorJitter(0, 0.5, 0, 0.15), T.ColorJitter(0, 0, 0.5, 0.15), T.ColorJitter(0.5, 0.5, 0.5, 0), T.ColorJitter(0.5, 0.5, 0, 0.15), T.ColorJitter(0.5, 0, 0.5, 0.15), T.ColorJitter(0, 0.5, 0.5, 0.15), T.ColorJitter(0.5, 0.5, 0.5, 0.15)], 0.15),
         RandomAutocontrast(0.15),
         # T.ToTensor(),
         T.ConvertImageDtype(torch.float32),
@@ -18,7 +19,8 @@ def getTrainingTransform():
 def getTrainingPreprocess():
     return T.Compose([
         T.RandomCrop(512, pad_if_needed=True),
-        T.RandomApply([T.ColorJitter(0.3, 0.3, 0.3, 0.3)], 0.15)
+        # T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.2)], 0.15)
+        T.RandomApply([T.RandomChoice([T.ColorJitter(0.4, 0, 0, 0), T.ColorJitter(0, 0.4, 0, 0), T.ColorJitter(0, 0, 0.4, 0), T.ColorJitter(0, 0, 0, 0.2), T.ColorJitter(0.4, 0.4, 0, 0), T.ColorJitter(0.4, 0, 0.4, 0), T.ColorJitter(0.4, 0, 0, 0.2), T.ColorJitter(0, 0.4, 0.4, 0), T.ColorJitter(0, 0.4, 0, 0.2), T.ColorJitter(0, 0, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0), T.ColorJitter(0.4, 0.4, 0, 0.2), T.ColorJitter(0.4, 0, 0.4, 0.2), T.ColorJitter(0, 0.4, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0.2)])], 0.15)
     ])
 
 def getTrainingFullTransform():
