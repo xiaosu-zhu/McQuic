@@ -564,6 +564,25 @@ class CosineValue(_ValueTuner):
         nowCosine = math.cos(math.pi * self._epoch / self._stepInterval / self._totalStep)
         if self._revert:
             nowCosine = 1 - nowCosine
+        realValue = (nowCosine + 1) / 2.0 * (self._initValue - self._minValue) + self._minValue
+        self._value = realValue
+
+class CosineValueWithEnd(_ValueTuner):
+    def __init__(self, maxValue: float = 1.0, minValue: float = 0.0, stepInterval: int = 1, totalStep: int = 1000, revert: bool = False):
+        super().__init__(initValue=maxValue)
+        self._minValue = minValue
+        self._stepInterval = stepInterval
+        self._totalStep = totalStep
+        self._revert = revert
+
+    def calc(self):
+        if self._epoch / self._stepInterval / self._totalStep >= 1:
+            self._value = self._minValue
+            return
+        # 1 ~ -1
+        nowCosine = math.cos(math.pi * self._epoch / self._stepInterval / self._totalStep)
+        if self._revert:
+            nowCosine = 1 - nowCosine
         realValule = (nowCosine + 1) / 2.0 * (self._initValue - self._minValue) + self._minValue
         self._value = realValule
 

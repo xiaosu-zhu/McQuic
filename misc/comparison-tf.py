@@ -193,8 +193,8 @@ def main(args):
 #   URL_PREFIX = args.url_prefix
 #   METAGRAPH_CACHE = args.metagraph_cache
 
-  compress(balle_hyperprior, "data/kodak/kodim01.png", "data/kodak/kodim01.tfci")
-  decompress(balle_hyperprior, "data/kodak/kodim01.tfci", "data/kodak/kodim01.png")
+  compress(minnen2018, "data/kodak/kodim01.png", "tmp/kodim01.tfci")
+  decompress(minnen2018, "tmp/kodim01.tfci", "tmp/kodim01.png")
 
 
 if __name__ == "__main__":

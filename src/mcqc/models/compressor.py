@@ -109,14 +109,16 @@ class PQCompressorBig(nn.Module):
         logits = list()
         hards = list()
         features = list()
+        quantizeds = list()
         codebooks = list()
         for quantizer, split in zip(self._quantizers[level], splits):
-            hard, c, tc, l, feature, codebook = quantizer(split, temp)
+            hard, c, tc, l, (feature, quantized), codebook = quantizer(split, temp)
             codes.append(c)
             trueCodes.append(tc)
             logits.append(l)
             hards.append(hard)
             features.append(feature)
+            quantizeds.append(quantized)
             codebooks.append(codebook)
 
         codes = torch.stack(codes, 1)
@@ -124,7 +126,7 @@ class PQCompressorBig(nn.Module):
         hards = torch.cat(hards, 1)
         logits = torch.stack(logits, 1)
 
-        return hards, codes, trueCodes, logits, features, codebooks
+        return hards, codes, trueCodes, logits, (features, quantizeds), codebooks
 
     def encode(self, latent, level):
         splits = torch.chunk(latent, self._m, 1)
@@ -152,10 +154,10 @@ class PQCompressorBig(nn.Module):
             latent = mapper(x)
         else:
             latent = None
-        hard, c, tc, l, features, codebooks = self.quantize(z, level, temp)
+        hard, c, tc, l, (features, quantizeds), codebooks = self.quantize(z, level, temp)
         if latent is not None:
             latent = latent - hard
-        return latent, hard, c, tc, l, features, codebooks
+        return latent, hard, c, tc, l, (features, quantizeds), codebooks
 
     def deQuantize(self, q, level):
         reverse = self._reverses[level]
@@ -255,15 +257,17 @@ class PQCompressorBig(nn.Module):
         allHards.append(None)
 
         allFeatures = list()
+        allQuantizeds = list()
         allCodebooks = list()
 
         for i in range(self._levels):
-            latent, hards, c, tc, l, features, codebooks = self.nextLevelDown(latent, i, temp)
+            latent, hards, c, tc, l, (features, quantizeds), codebooks = self.nextLevelDown(latent, i, temp)
             allHards.append(hards)
             allCodes.append(c)
             allTrues.append(tc)
             allLogits.append(l)
             allFeatures.append(features)
+            allQuantizeds.append(quantizeds)
             allCodebooks.append(codebooks)
 
         quantizeds = list()
@@ -275,7 +279,7 @@ class PQCompressorBig(nn.Module):
 
 
         restored = self._decoder(quantizeds[0])
-        return restored, allHards, latent, allCodes, allTrues, allLogits, allFeatures, allCodebooks
+        return restored, allHards, latent, allCodes, allTrues, allLogits, (allFeatures, allQuantizeds), allCodebooks
 
 class PQCompressorQ(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
