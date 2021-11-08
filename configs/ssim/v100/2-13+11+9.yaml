@@ -1,7 +1,7 @@
 epoch: 2000
 evalFreq: 2
 testFreq: 20
-gpus: 5
+gpus: 6
 vRam: -1
 wantsMore: false
 dataset: fullDataset
@@ -35,19 +35,22 @@ schdr:
     params:
         first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 20
-        gamma: 0.85
+        gamma: 0.8
 regSchdr:
-    type: MultiStep
+    type: CosineWithEnd
     params:
-        initValue: 1.e-3
-        gamma: 0.993
-        stepInterval: 1
+        maxValue: 1.e-3
+        minValue: 0.0
+        totalStep: 1000
+        # shift: 0.25
+        revert: false
+        stepInterval: 1 # manually divided by repeat
 tempSchdr:
-    type: Cosine
+    type: CosineWithEnd
     params:
         maxValue: 1.0
-        minValue: 0.01
-        totalStep: 2000
+        minValue: 0.1
+        totalStep: 1000
         # shift: 0.25
         revert: false
         stepInterval: 1 # manually divided by repeat
@@ -67,5 +70,5 @@ tempSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: "" # ckpt/3-14+12+10.ckpt
+warmStart: "" # tmp.ckpt
 method: New

@@ -7,7 +7,7 @@ from torchvision.transforms import ConvertImageDtype
 from cfmUtils.config import read
 
 from mcqc.evaluation.refModel import PostProcess, Preprocess
-from mcqc.evaluation.tests import Performance, Speed, Test
+from mcqc.evaluation.tests import Performance, Speed, Test, Preparar
 from absl import app
 from absl import flags
 from mcqc import Config
@@ -38,11 +38,14 @@ class Eval:
             "postProcess": self._postProcess
         }
 
-        self._tests: List[Test] = [Performance(dataset, **generalArgs),
+        self._preparar = Preparar(dataset, **generalArgs)
+
+        self._tests: List[Test] = [# Performance(dataset, **generalArgs),
          Speed(**generalArgs)]
 
     def __call__(self):
-        results = dict(ChainMap(*[x.test() for x in self._tests]))
+        cdfs = self._preparar.test()
+        results = dict(ChainMap(*[x.test(cdfs) for x in self._tests]))
         print(results)
 
 

@@ -94,6 +94,7 @@ class New(Algorithm):
         self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
         self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
+        self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
@@ -171,7 +172,6 @@ class New(Algorithm):
             initEpoch = loaded["epoch"]
             if self._rank == 0:
                 self._logger.info("Resume training from %3dk step.", step // 1000)
-            self._reSpreadAll()
         elif isinstance(self._ckpt, str) and len(self._ckpt) > 0 and os.path.exists(self._ckpt):
             schdr = copy.deepcopy(self._scheduler)
             regSchdr = copy.deepcopy(self._regScheduler)
@@ -185,6 +185,7 @@ class New(Algorithm):
             self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
             self._regScheduler._epoch = regSchdr._epoch
             self._tempScheduler._epoch = tempSchdr._epoch
+        else:
             self._reSpreadAll()
 
         # self._scheduler.last_epoch = schdr.last_epoch
@@ -202,19 +203,19 @@ class New(Algorithm):
             sampler.set_epoch(i + lastEpoch)
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + lastEpoch + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
-                dLoss, (weakCodebookLoss, weakFeatureLoss), (restored, allHards, allLogits) = self._model(images, self._tempScheduler.Value)
-                (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss).backward()
+                dLoss, (weakCodebookLoss, weakFeatureLoss, weakDiversityLoss), (restored, allHards, allLogits) = self._model(images, self._tempScheduler.Value)
+                (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss + self._regScheduler.Value * 1e-2 * weakDiversityLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
                 # updateOp()
                 if step % 2 == 0 and self._loggingHook is not None:
-                    self._trainingStat(now=step, epoch=i + lastEpoch + 1, distortion=dLoss, auxiliary=(weakCodebookLoss, weakFeatureLoss), reg=self._regScheduler.Value)
+                    self._trainingStat(now=step, epoch=i + lastEpoch + 1, distortion=dLoss, auxiliary=(weakCodebookLoss, weakFeatureLoss, weakDiversityLoss), reg=self._regScheduler.Value)
                 dist.barrier()
             if self._loggingHook is not None:
                 self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, logits=allLogits[0], codes=allHards)
-            if (i + 1) % (self._config.TestFreq) == 0:
+            if (i + 1) % (self._config.TestFreq * 10) == 0:
                 if self._saver is not None:
                     for i in range(len(self._config.Model.k)):
                         for j in range(self._config.Model.m):
@@ -287,10 +288,15 @@ class New(Algorithm):
                 counts = torch.bincount(partQs, minlength=k)
                 neverAssigned = codebook[counts < 1]
                 randomChoice = torch.distributions.Categorical(probs=counts)
+                if len(neverAssigned) < 1:
+                    self._logger.debug("Re-assign on %d:%d, %.2f%% are never assigned.", i, j, len(neverAssigned) / float(k) * 100)
+                    numNeverAssigned += len(neverAssigned)
+                    numAll += k
+                    continue
                 # [n, ]
                 sample = randomChoice.sample((len(neverAssigned), ))
                 # [n, d]
-                prepareToAssign = codebook[sample] + torch.randn_like(codebook[sample]) * (1e-5 / math.sqrt(self._config.Model.channel / self._config.Model.m))
+                prepareToAssign = codebook[sample] + torch.randn_like(codebook[sample]) * (1e-7 / math.sqrt(self._config.Model.channel / self._config.Model.m))
                 codebook[counts < 1] = prepareToAssign
                 # if len(neverAssigned) > k // 2:
                 #     mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)

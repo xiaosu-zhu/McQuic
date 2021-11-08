@@ -34,20 +34,22 @@ class WholePQBig(nn.Module):
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
     def forward(self, image, temp, **_):
-        restored, allHards, latent, allCodes, allTrues, allLogits, allFeatures, allCodebooks = self._compressor(image, temp, True)
+        restored, allHards, latent, allCodes, allTrues, allLogits, (allFeatures, allQuantizeds), allCodebooks = self._compressor(image, temp, True)
 
         dLoss = self._cLoss(image, restored)
 
         # regLoss = list()
         weakCodebookLoss = list()
+        weakDiversityLoss = list()
         weakFeatureLoss = list()
 
-        for features, codebooks in zip(allFeatures, allCodebooks):
+        for features, quantizeds, codebooks in zip(allFeatures, allQuantizeds, allCodebooks):
             for codebook in codebooks:
                 # [k, k] := [k, c] @ [c, k]
                 innerProduct = codebook @ codebook.T
                 # orthogonal regularization
                 weakCodebookLoss.append(self._auxLoss(innerProduct, torch.eye(innerProduct.shape[0], device=innerProduct.device, dtype=innerProduct.dtype)))
+                weakDiversityLoss.append(-codebook.std(0).mean())
             m = len(features)
             for i in range(m):
                 for j in range(i + 1, m):
@@ -60,7 +62,7 @@ class WholePQBig(nn.Module):
 
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss)), (restored, allTrues, allLogits)
+        return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss), sum(weakDiversityLoss)), (restored, allTrues, allLogits)
 
 
 class WholePQQ(nn.Module):

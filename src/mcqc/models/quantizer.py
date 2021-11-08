@@ -272,19 +272,18 @@ class L2Quantizer(nn.Module):
 
     def forward(self, latent, temperature):
         q = latent.permute(0, 2, 3, 1)
-        q = self._wv(q)
+        raw = self._wv(q)
         k = self._codebook
 
         # [n, h, w, k]
-        logit = self.getLogit(q, k)
+        logit = self.getLogit(raw, k)
         trueCode = logit.argmax(-1)
         sample = F.gumbel_softmax(logit, temperature, True)
         code = sample.argmax(-1)
         target = self._codebook
-        hard = sample @ target
+        quantized = sample @ target
 
-
-        hard = self._wq(hard)
+        hard = self._wq(quantized)
         hard = hard.permute(0, 3, 1, 2)
 
         # if self._wvShadow is not None:
@@ -295,7 +294,7 @@ class L2Quantizer(nn.Module):
         #     soft = hard
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, h, w, c], [k, c]
-        return hard, code, trueCode, logit, q, self._codebook
+        return hard, code, trueCode, logit, (raw, quantized), self._codebook
 
 
 class AttentiveQuantizer(nn.Module):
