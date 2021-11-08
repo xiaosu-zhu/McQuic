@@ -1,8 +1,7 @@
-from numpy import imag
 from torch import nn
+import torch.nn.functional as F
 import torch
 import storch
-from torch._C import device
 
 from mcqc.losses.quantization import CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, QError
 from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorBig, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
@@ -49,7 +48,6 @@ class WholePQBig(nn.Module):
                 innerProduct = codebook @ codebook.T
                 # orthogonal regularization
                 weakCodebookLoss.append(self._auxLoss(innerProduct, torch.eye(innerProduct.shape[0], device=innerProduct.device, dtype=innerProduct.dtype)))
-                weakDiversityLoss.append(-codebook.std(0).mean())
             m = len(features)
             for i in range(m):
                 for j in range(i + 1, m):
@@ -58,6 +56,7 @@ class WholePQBig(nn.Module):
                     # feature from different group should be orthogonal
                     weakFeatureLoss.append(2 * self._auxLoss(interProduct, torch.zeros_like(interProduct)))
                 intraProduct = (features[i] * features[i]).sum(1)
+                weakDiversityLoss.append(F.mse_loss(quantizeds[i], features[i]))
                 weakFeatureLoss.append(self._auxLoss(intraProduct, torch.ones_like(intraProduct)))
 
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())

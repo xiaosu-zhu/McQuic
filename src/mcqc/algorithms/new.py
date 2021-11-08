@@ -185,8 +185,7 @@ class New(Algorithm):
             self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
             self._regScheduler._epoch = regSchdr._epoch
             self._tempScheduler._epoch = tempSchdr._epoch
-        else:
-            self._reSpreadAll()
+        self._reSpreadAll()
 
         # self._scheduler.last_epoch = schdr.last_epoch
         # del schdr
@@ -204,7 +203,7 @@ class New(Algorithm):
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + lastEpoch + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
                 dLoss, (weakCodebookLoss, weakFeatureLoss, weakDiversityLoss), (restored, allHards, allLogits) = self._model(images, self._tempScheduler.Value)
-                (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss + self._regScheduler.Value * 1e-2 * weakDiversityLoss).backward()
+                (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss + 1e-5 * weakDiversityLoss).backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
@@ -215,7 +214,7 @@ class New(Algorithm):
                 dist.barrier()
             if self._loggingHook is not None:
                 self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, logits=allLogits[0], codes=allHards)
-            if (i + 1) % (self._config.TestFreq * 10) == 0:
+            if (i + 1) % (self._config.TestFreq) == 0:
                 if self._saver is not None:
                     for i in range(len(self._config.Model.k)):
                         for j in range(self._config.Model.m):
