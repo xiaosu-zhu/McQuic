@@ -286,6 +286,16 @@ class New(Algorithm):
                 # some of the entry is 0
                 counts = torch.bincount(partQs, minlength=k)
                 neverAssigned = codebook[counts < 1]
+                if len(neverAssigned) > k // 2:
+                    mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
+                    maskIdx = torch.randperm(len(mask))[k // 2:]
+                    mask[maskIdx] = 1
+                    counts[counts < 1] = mask
+                    neverAssigned = codebook[counts < 1]
+                # argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
+                # fullyAssigned = codebook[argIdx]
+                # selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
+                # codebook[counts < 1] = fullyAssigned[selectedIdx]
                 randomChoice = torch.distributions.Categorical(probs=counts)
                 if len(neverAssigned) < 1:
                     self._logger.debug("Re-assign on %d:%d, %.2f%% are never assigned.", i, j, len(neverAssigned) / float(k) * 100)
