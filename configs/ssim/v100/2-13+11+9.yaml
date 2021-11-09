@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 2.5e-3
+        lr: 2.e-3
         weight_decay: 0.0
         use_nvlamb: true
 # schdr:
@@ -39,7 +39,7 @@ schdr:
 regSchdr:
     type: CosineWithEnd
     params:
-        maxValue: 1.e-2
+        maxValue: 1.e-3
         minValue: 0.0
         totalStep: 1000
         # shift: 0.25
@@ -70,5 +70,5 @@ tempSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: "" # tmp.ckpt
+warmStart: tmp.ckpt
 method: New
