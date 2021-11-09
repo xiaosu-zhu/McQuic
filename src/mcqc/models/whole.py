@@ -56,12 +56,12 @@ class WholePQBig(nn.Module):
                     # feature from different group should be orthogonal
                     weakFeatureLoss.append(2 * self._auxLoss(interProduct, torch.zeros_like(interProduct)))
                 intraProduct = (features[i] * features[i]).sum(1)
-                weakDiversityLoss.append(F.mse_loss(quantizeds[i], features[i].detach()))
+                # weakDiversityLoss.append(F.mse_loss(quantizeds[i], features[i].detach()))
                 weakFeatureLoss.append(self._auxLoss(intraProduct, torch.ones_like(intraProduct)))
 
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
-        return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss), sum(weakDiversityLoss)), (restored, allTrues, allLogits)
+        return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss), 0.0), (restored, allTrues, allLogits)
 
 
 class WholePQQ(nn.Module):
