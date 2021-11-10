@@ -1,4 +1,4 @@
-epoch: 1200
+epoch: 2000
 evalFreq: 2
 testFreq: 20
 gpus: 6
@@ -33,23 +33,21 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 100 # match 10 * testFreq
-        warmup_steps: 20
-        gamma: 0.8
+        first_cycle_steps: 200 # match 10 * testFreq
+        warmup_steps: 60
+        gamma: 0.64
 regSchdr:
     type: MultiStep
     params:
-        initValue: 1.e-3
-        gamma: 0.992
+        initValue: 1.e-4
+        gamma: 0.993
         stepInterval: 1
-# regSchdr:
-#     type: Cosine
-#     params:
-#         initValue: 1.e-3
-#         totalStep: 1000
-#         clip: 0.25
-#         revert: true
-#         stepInterval: 1 # manually divided by repeat
+tempSchdr:
+    type: MultiStep
+    params:
+        initValue: 1.
+        gamma: 1.0
+        stepInterval: 1
 # regSchdr:
 #     type: Jump
 #     params:
@@ -66,5 +64,5 @@ regSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: "" # ckpt/3-14+12+10.ckpt
+warmStart: tmp.ckpt # ckpt/3-14+12+10.ckpt
 method: New

@@ -1,4 +1,4 @@
-epoch: 1200
+epoch: 2000
 evalFreq: 2
 testFreq: 20
 gpus: 6
@@ -7,7 +7,7 @@ wantsMore: false
 dataset: fullDataset
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 5
+batchSize: 4
 model:
     type: Big
     target: ssim
@@ -42,6 +42,12 @@ regSchdr:
         initValue: 1.e-3
         gamma: 0.993
         stepInterval: 1
+tempSchdr:
+    type: MultiStep
+    params:
+        initValue: 1.0
+        gamma: 1.0
+        stepInterval: 900
 # regSchdr:
 #     type: Cosine
 #     params:
