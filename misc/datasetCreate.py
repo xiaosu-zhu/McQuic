@@ -30,7 +30,7 @@ def getFilesFromDir(root, strict: bool = False):
     newFile = list()
     for f in tqdm.tqdm(files, ncols=60, bar_format="{l_bar}{bar}| Search in %d images" % len(files)):
         a = Image.open(f[0])
-        h, w = a.size
+        w, h = a.size
         if strict and (h < 512 or w < 512):
             continue
         newFile.append(f)
