@@ -27,7 +27,7 @@ bpgdec kodim01.bpg -o bpg_kodim01.png
 # vvc
 convert to yuv
 ```bash
-ffmpeg -i data/datasets/kodak/kodim01.png -pix_fmt yuv420p kodim01.yuv
+ffmpeg -i data/datasets/kodak/kodim01.png -pix_fmt yuv444p kodim01.yuv
 ```
 change the -q option
 ```bash

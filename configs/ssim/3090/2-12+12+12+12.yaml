@@ -1,18 +1,18 @@
 epoch: 2000
 evalFreq: 2
 testFreq: 20
-gpus: 6
+gpus: 3
 vRam: -1
 wantsMore: false
-dataset: testSet
-repeat: 300 # duplicate images in one epoch
+dataset: fullDataset
+repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 12
+batchSize: 10
 model:
     type: Big
     target: ssim
     channel: 128
-    k: [8192, 2048, 512]
+    k: [4096, 4096, 4096, 4096]
     m: 2
     withGroup: false
     withAtt: true
@@ -33,21 +33,27 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 200 # match 10 * testFreq
-        warmup_steps: 60
-        gamma: 0.64
+        first_cycle_steps: 1000 # match 10 * testFreq
+        warmup_steps: 100
+        gamma: 0.1
 regSchdr:
-    type: MultiStep
+    type: CosineWithEnd
     params:
-        initValue: 1.e-4
-        gamma: 0.993
-        stepInterval: 1
+        maxValue: 1.e-2
+        minValue: 0.0
+        totalStep: 1000
+        # shift: 0.25
+        revert: false
+        stepInterval: 1 # manually divided by repeat
 tempSchdr:
-    type: MultiStep
+    type: CosineWithEnd
     params:
-        initValue: 1.
-        gamma: 1.0
-        stepInterval: 1
+        maxValue: 1.0
+        minValue: 0.1
+        totalStep: 1000
+        # shift: 0.25
+        revert: false
+        stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Jump
 #     params:
@@ -64,5 +70,5 @@ tempSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: tmp.ckpt
+warmStart: "" # ckpt/3-14+12+10.ckpt
 method: New

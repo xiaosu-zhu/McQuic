@@ -22,12 +22,25 @@ from mcqc.utils.vision import getTestTransform
 from mcqc.utils.transforms import DeTransform
 from mcqc import Config
 
+
+from matplotlib import rcParams
+from matplotlib import rc
+
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+rcParams['font.family'] = 'serif'
+rcParams['mathtext.rm'] = 'CMU Serif'
+rcParams['mathtext.fontset'] = 'custom'
+rcParams['mathtext.it'] = 'CMU Serif:italic'
+rcParams['mathtext.bf'] = 'CMU Serif:bold'
+rc('text', usetex=True)
+rcParams['text.latex.preamble']= r"\usepackage{amsmath}"
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("cfg", "", "The config.json path.")
 flags.DEFINE_string("device", "cuda", "The device to use.")
 flags.DEFINE_string("ckpt", "", "The checkpoint path.")
-flags.DEFINE_string("dataset", "data/clic/valid", "The images path")
+flags.DEFINE_string("dataset", "data/kodak/", "The images path")
 
 class EntropyEstimator:
     def __init__(self, config: Config, model: PQCompressorBig, dataset: Dataset, device: str):
@@ -58,13 +71,32 @@ class EntropyEstimator:
             for m in range(self._config.Model.m):
                 code = torch.cat(codes[l][m])
                 count = torch.bincount(code.flatten(), minlength=self._config.Model.k[l])
-                prob = count / count.sum()
+                prob = count / count.sum().sqrt()
                 estimateEntropy = prob.log2()
                 estimateEntropy[estimateEntropy == float("-inf")] = 0
-                estimateEntropy = -(prob * estimateEntropy)
-                bits.append(estimateEntropy)
+                # estimateEntropy = (prob * estimateEntropy)
+                bits.append(-estimateEntropy)
             bitsPerToken.append(bits)
         return bitsPerToken
+
+def removeAxis(ax):
+    ax.tick_params(
+        axis='both',       # changes apply to the x-axis
+        which='both',      # both major and minor ticks are affected
+        bottom=False,      # ticks along the bottom edge are off
+        top=False,         # ticks along the top edge are off
+        left=False,
+        right=False,
+        labelbottom=False,
+        labeltop=False,
+        labelleft=False,
+        labelright=False) # labels along the bottom edge are off
+
+    ax.spines['right'].set_color("#888888")
+    ax.spines['top'].set_color("#888888")
+    ax.spines['left'].set_color("#888888")
+    ax.spines['bottom'].set_color("#888888")
+
 
 class Visualizer:
     def __init__(self, config: Config, model: PQCompressorBig, dataset: Dataset, device: str):
@@ -82,81 +114,103 @@ class Visualizer:
         baseDir = "tmp/visualize"
         shutil.rmtree(baseDir, ignore_errors=True)
         os.makedirs(baseDir, exist_ok=True)
-        bTrans = DeTransform(0.0, 1.0)
         for i, x in enumerate(tqdm(self._dataLoader)):
             os.makedirs(os.path.join(baseDir, str(i)))
             nowDir = os.path.join(baseDir, str(i))
-            torchvision.io.write_png(self._deTrans(x).cpu()[0], os.path.join(nowDir, "raw.png"))
 
             x = x.to(self._device, non_blocking=True)
+
+            toPillow = torchvision.transforms.ToPILImage()
 
 
             allZs, allHards, allCodes = self._model.getLatents(x)
 
-            _, _, H, W = x.shape
+            for m in range(1):
+                fig = plt.figure(constrained_layout=False, figsize=(8.27, 8.27 / 2.0), dpi=384)
+                gs0 = fig.add_gridspec(6, 8, width_ratios=[8,6,6,0.7,6,0.7,6,0.7], height_ratios=[6,2,6,2,6,2], left=0.0, bottom=0.00, right=1.0, top=1.0, wspace=0.0, hspace=0.0)
+                rs = toPillow(self._deTrans(x).cpu()[0].cpu())
+                for l in range(len(self._config.Model.k)):
+                    z, quantized, b = allZs[l][0, m], allHards[l][0, m], allCodes[l][0, m]
+                    zs = z[0].cpu().numpy()
+                    qs = quantized[0].cpu().numpy()
+                    bs = b.cpu().numpy()
+                    imageOrResidual = fig.add_subplot(gs0[l*2:l*2+2, 0])
+                    if l == 0:
+                        imageOrResidual.set_ylabel("Image", fontsize=9)
+                        imageOrResidual.imshow(rs)
+                    else:
+                        imageOrResidual.set_ylabel(r"$\boldsymbol{y}^" + str(l) + r"- \hat{\boldsymbol{y}}^" + str(l) + r"$", fontsize=9)
+                        imageOrResidual.imshow(rs,cmap="RdBu")
+                    removeAxis(imageOrResidual)
+                    latent = fig.add_subplot(gs0[l*2, 1])
+                    latent.imshow(zs, cmap="RdBu")
+                    removeAxis(latent)
+                    latent.set_xlabel(r"$\boldsymbol{y}^" + str(l) + r"$", fontsize=9)
+                    quantMap = fig.add_subplot(gs0[l*2, 2])
+                    quantIm = quantMap.imshow(qs, cmap="RdBu")
+                    removeAxis(quantMap)
 
-            requiredBits = []
-            for j, (z, quantized, b) in enumerate(zip(allZs, allHards, allCodes)):
-                b = b.cpu()
-                k = self._config.Model.k[j]
-                # [0~1]
-                bNormed = b / float(k)
-                bImg = bTrans(bNormed)
-                # [c // m, h, w], [c // m, h, w]
-                for m, (zs, qs) in enumerate(zip(z[0], quantized[0])):
-                    # [1, h, w]
-                    zs = zs.mean(0, keepdim=True)
-                    qs = qs.mean(0, keepdim=True)
-                    zs = DeTransform(zs.min(), zs.max())(zs)
-                    qs = DeTransform(qs.min(), qs.max())(qs)
+                    axins = inset_axes(quantMap,
+                                    width="5%",  # width = 5% of parent_bbox width
+                                    height="100%",  # height : 100%
+                                    loc='lower left',
+                                    bbox_to_anchor=(1.02, 0., 1, 1),
+                                    bbox_transform=quantMap.transAxes,
+                                    borderpad=0,
+                                    )
+                    cb = fig.colorbar(quantIm, cax=axins, values=None)
+                    cb.outline.set_edgecolor('#888888')
+                    # cb.outline.set_linewidth(1)
+                    removeAxis(axins)
 
-                    rs = zs - qs
-                    rs = DeTransform(rs.min(), rs.max())(rs)
+                    quantMap.set_xlabel(r"$\hat{\boldsymbol{y}}^" + str(l) + r"$", fontsize=9)
+                    binaryMap = fig.add_subplot(gs0[l*2, 4])
+                    binaryIm = binaryMap.imshow(bs, cmap="twilight")
+                    removeAxis(binaryMap)
+                    binaryMap.set_xlabel(r"$\boldsymbol{b}^" + str(l) + r"$", fontsize=9)
 
-                    zs = F.interpolate(zs[None, ...], scale_factor=16, mode="nearest")
-                    qs = F.interpolate(qs[None, ...], scale_factor=16, mode="nearest")
-                    rs = F.interpolate(rs[None, ...], scale_factor=16, mode="nearest")
-                    torchvision.io.write_png(zs[0].cpu(), os.path.join(nowDir, f"z-level{j}-group{m}.png"))
-                    torchvision.io.write_png(qs[0].cpu(), os.path.join(nowDir, f"q-level{j}-group{m}.png"))
-                    torchvision.io.write_png(rs[0].cpu(), os.path.join(nowDir, f"r-level{j}-group{m}.png"))
+                    axins = inset_axes(binaryMap,
+                                    width="5%",  # width = 5% of parent_bbox width
+                                    height="100%",  # height : 100%
+                                    loc='lower left',
+                                    bbox_to_anchor=(1.02, 0., 1, 1),
+                                    bbox_transform=binaryMap.transAxes,
+                                    borderpad=0,
+                                    )
+                    cb = fig.colorbar(binaryIm, cax=axins, values=None)
+                    cb.outline.set_edgecolor('#888888')
+                    # cb.outline.set_linewidth(1)
+                    removeAxis(axins)
 
-
-                # [m, h, w]
-                for m, (mb, bi) in enumerate(zip(bImg[0], b[0])):
-                    mb = mb[None, None, ...].expand(1, 3, mb.shape[0], mb.shape[1])
-                    mb = F.interpolate(mb, scale_factor=16, mode="nearest")
-                    torchvision.io.write_png(mb[0], os.path.join(nowDir, f"b-level{j}-group{m}.png"))
-
+                    rs = (zs - qs)
                     # [k] entropies
-                    bits = bitsPerToken[j][m]
+                    bits = bitsPerToken[l][m]
                     # [h, w] required bits
-                    requiredBitsJM = bits[bi]
-                    h, w = requiredBitsJM.shape
-                    actualBits = requiredBitsJM * h * w / float(H * W)
-                    scale = H / h
-                    requiredBits.append(F.interpolate(actualBits[None, None, ...], scale_factor=scale, mode="nearest"))
-                    # RGBA
-                    requiredBitsJM = requiredBitsJM[None, None, ...].expand(1, 4, requiredBitsJM.shape[0], requiredBitsJM.shape[1])
-                    requiredBitsJM = DeTransform(requiredBitsJM.min(), requiredBitsJM.max())(requiredBitsJM)
-                    requiredBitsJM = F.interpolate(requiredBitsJM, scale_factor=16, mode="nearest")
-                    # Red is always red
-                    requiredBitsJM[0, 0] = 255
-                    # G and B set to zero
-                    requiredBitsJM[0, 1:3] = 0
-                    requiredBitsJM = transforms.ToPILImage()(requiredBitsJM[0])
-                    requiredBitsJM.save(os.path.join(nowDir, f"requiredBits-level{j}-group{m}.png"))
-                    # torchvision.io.write_png(requiredBits[0].cpu(), os.path.join(nowDir, f"requiredBits-level{j}-group{m}.png"))
-            requiredBits = sum(requiredBits)
-            # RGBA
-            requiredBits = requiredBits.expand(1, 4, requiredBits.shape[-2], requiredBits.shape[-1])
-            requiredBits = DeTransform(requiredBits.min(), requiredBits.max())(requiredBits)
-            # Red is always red
-            requiredBits[0, 0] = 255
-            # G and B set to zero
-            requiredBits[0, 1:3] = 0
-            requiredBits = transforms.ToPILImage()(requiredBits[0])
-            requiredBits.save(os.path.join(nowDir, f"requiredBits-full.png"))
+                    requiredBitsJM = bits[b].exp().cpu().numpy()
 
+
+                    bitMap = fig.add_subplot(gs0[l*2, 6])
+                    bitIm = bitMap.imshow(requiredBitsJM, cmap="inferno", vmin=bits.min().exp().item(), vmax=bits.max().exp().item())
+                    removeAxis(bitMap)
+                    bitMap.set_xlabel(r"Bits allocation", fontsize=9)
+
+
+                    axins = inset_axes(bitMap,
+                                    width="5%",  # width = 5% of parent_bbox width
+                                    height="100%",  # height : 100%
+                                    loc='lower left',
+                                    bbox_to_anchor=(1.02, 0., 1, 1),
+                                    bbox_transform=bitMap.transAxes,
+                                    borderpad=0,
+                                    )
+                    cb = fig.colorbar(bitIm, cax=axins, values=None)
+                    cb.outline.set_edgecolor('#888888')
+                    # cb.outline.set_linewidth(1)
+                    removeAxis(axins)
+
+
+            plt.savefig(os.path.join(nowDir, "vis.pdf"), bbox_inches="tight")
+            plt.close()
 
 class Plotter:
     def __init__(self, config: Config, model: PQCompressorBig, dataset: Dataset, device: str):
@@ -255,11 +309,12 @@ def main(_):
 
         visualizer = Visualizer(config, model, dataset, FLAGS.device)
         visualizer(bitsPerToken)
-
-        plotter = Plotter(config, model, Basic("data/clic/test", transform=getTestTransform()), FLAGS.device)
+        return
+        plotter = Plotter(config, model, Basic(FLAGS.dataset, transform=getTestTransform()), FLAGS.device)
         plotter()
 
 
+# pick 1/, 2/, 19/,
 
 if __name__ == "__main__":
     app.run(main)
