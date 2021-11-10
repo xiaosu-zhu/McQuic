@@ -4,8 +4,8 @@ testFreq: 20
 gpus: 6
 vRam: -1
 wantsMore: false
-dataset: fullDataset
-repeat: 1 # duplicate images in one epoch
+dataset: testSet
+repeat: 300 # duplicate images in one epoch
 valDataset: clic/valid
 batchSize: 12
 model:
@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 2.e-3
+        lr: 2.5e-3
         weight_decay: 0.0
         use_nvlamb: true
 # schdr:
@@ -33,27 +33,21 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 1000 # match 10 * testFreq
-        warmup_steps: 100
-        gamma: 0.1
+        first_cycle_steps: 200 # match 10 * testFreq
+        warmup_steps: 60
+        gamma: 0.64
 regSchdr:
-    type: CosineWithEnd
+    type: MultiStep
     params:
-        maxValue: 1.e-3
-        minValue: 0.0
-        totalStep: 1000
-        # shift: 0.25
-        revert: false
-        stepInterval: 1 # manually divided by repeat
+        initValue: 1.e-4
+        gamma: 0.993
+        stepInterval: 1
 tempSchdr:
-    type: CosineWithEnd
+    type: MultiStep
     params:
-        maxValue: 1.0
-        minValue: 0.1
-        totalStep: 1000
-        # shift: 0.25
-        revert: false
-        stepInterval: 1 # manually divided by repeat
+        initValue: 1.
+        gamma: 1.0
+        stepInterval: 1
 # regSchdr:
 #     type: Jump
 #     params:
