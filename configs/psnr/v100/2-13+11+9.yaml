@@ -33,9 +33,9 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 100 # match 10 * testFreq
-        warmup_steps: 20
-        gamma: 0.85
+        first_cycle_steps: 1000 # match 10 * testFreq
+        warmup_steps: 100
+        gamma: 0.1
 regSchdr:
     type: MultiStep
     params:
@@ -43,13 +43,10 @@ regSchdr:
         gamma: 0.993
         stepInterval: 1
 tempSchdr:
-    type: Cosine
+    type: MultiStep
     params:
-        maxValue: 1.
-        minValue: 0.1
-        totalStep: 2000
-        # shift: 0.25
-        revert: false
+        initValue: 1.
+        gamma: 1.0
         stepInterval: 1 # manually divided by repeat
 # regSchdr:
 #     type: Jump
@@ -67,5 +64,5 @@ tempSchdr:
 #         stepInterval: 1
 #         milestone: 600
 #         valueAfterMilestone: 1.e-6
-warmStart: "" # psnr/saved.ckpt
+warmStart: ""
 method: New

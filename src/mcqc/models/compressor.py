@@ -194,6 +194,7 @@ class PQCompressorBig(nn.Module):
 
         allZs = list()
         allHards = list()
+        allResiduals = list()
         allCodes = list()
 
         for i in range(self._levels):
@@ -210,7 +211,8 @@ class PQCompressorBig(nn.Module):
             allHards.append(quantizeds)
             if latent is not None:
                 latent = latent - hard
-        return allZs, allHards, allCodes
+                allResiduals.append(latent - hard)
+        return allZs, allHards, allCodes, allResiduals
 
 
     def test(self, x:torch.Tensor):
