@@ -9,8 +9,7 @@ def getTrainingTransform():
     return T.Compose([
         RandomHorizontalFlip(),
         RandomVerticalFlip(),
-        # RandomChoiceAndApply([T.ColorJitter(0.5, 0, 0, 0), T.ColorJitter(0, 0.5, 0, 0), T.ColorJitter(0, 0, 0.5, 0), T.ColorJitter(0, 0, 0, 0.15), T.ColorJitter(0.5, 0.5, 0, 0), T.ColorJitter(0.5, 0, 0.5, 0), T.ColorJitter(0.5, 0, 0, 0.15), T.ColorJitter(0, 0.5, 0.5, 0), T.ColorJitter(0, 0.5, 0, 0.15), T.ColorJitter(0, 0, 0.5, 0.15), T.ColorJitter(0.5, 0.5, 0.5, 0), T.ColorJitter(0.5, 0.5, 0, 0.15), T.ColorJitter(0.5, 0, 0.5, 0.15), T.ColorJitter(0, 0.5, 0.5, 0.15), T.ColorJitter(0.5, 0.5, 0.5, 0.15)], 0.15),
-        RandomAutocontrast(0.15),
+        RandomAutocontrast(0.25),
         # T.ToTensor(),
         T.ConvertImageDtype(torch.float32),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
@@ -20,7 +19,7 @@ def getTrainingPreprocess():
     return T.Compose([
         T.RandomCrop(512, pad_if_needed=True),
         # T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.2)], 0.15)
-        T.RandomApply([T.RandomChoice([T.ColorJitter(0.4, 0, 0, 0), T.ColorJitter(0, 0.4, 0, 0), T.ColorJitter(0, 0, 0.4, 0), T.ColorJitter(0, 0, 0, 0.2), T.ColorJitter(0.4, 0.4, 0, 0), T.ColorJitter(0.4, 0, 0.4, 0), T.ColorJitter(0.4, 0, 0, 0.2), T.ColorJitter(0, 0.4, 0.4, 0), T.ColorJitter(0, 0.4, 0, 0.2), T.ColorJitter(0, 0, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0), T.ColorJitter(0.4, 0.4, 0, 0.2), T.ColorJitter(0.4, 0, 0.4, 0.2), T.ColorJitter(0, 0.4, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0.2)])], 0.15)
+        T.RandomApply([T.RandomChoice([T.ColorJitter(0.4, 0, 0, 0), T.ColorJitter(0, 0.4, 0, 0), T.ColorJitter(0, 0, 0.4, 0), T.ColorJitter(0, 0, 0, 0.2), T.ColorJitter(0.4, 0.4, 0, 0), T.ColorJitter(0.4, 0, 0.4, 0), T.ColorJitter(0.4, 0, 0, 0.2), T.ColorJitter(0, 0.4, 0.4, 0), T.ColorJitter(0, 0.4, 0, 0.2), T.ColorJitter(0, 0, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0), T.ColorJitter(0.4, 0.4, 0, 0.2), T.ColorJitter(0.4, 0, 0.4, 0.2), T.ColorJitter(0, 0.4, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0.2)])], 0.25)
     ])
 
 def getTrainingFullTransform():

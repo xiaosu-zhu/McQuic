@@ -168,8 +168,12 @@ class Performance(Test):
         bs = list()
         pixels = list()
         images = list()
+
+        # raws = list()
+
         for i, x in enumerate(tqdm(self._dataLoader)):
             x = x.to(self._device, non_blocking=True)
+
             minLength = 128
             _, _, h, w = x.shape
 
@@ -201,6 +205,7 @@ class Performance(Test):
             bs.append(b)
             pixels.append(h * w)
             images.append(y[0].byte().cpu())
+            # raws.append(x[0].byte().cpu())
 
         # cdfs = self._getCDFs(bs)
 
@@ -212,6 +217,7 @@ class Performance(Test):
             binaries.append(binary)
             bpps.append(bpp)
             torchvision.io.write_png(image, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}.png")
+            # torchvision.io.write_png(raw, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}_raw.png")
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}
 
     def _getCDFs(self, bs: List[List[torch.Tensor]]):

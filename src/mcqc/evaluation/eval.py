@@ -40,8 +40,7 @@ class Eval:
 
         self._preparar = Preparar(dataset, **generalArgs)
 
-        self._tests: List[Test] = [# Performance(dataset, **generalArgs),
-         Speed(**generalArgs)]
+        self._tests: List[Test] = [Performance(dataset, **generalArgs),Speed(**generalArgs)]
 
     def __call__(self):
         cdfs = self._preparar.test()
