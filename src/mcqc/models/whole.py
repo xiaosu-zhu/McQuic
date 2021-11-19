@@ -4,7 +4,7 @@ import torch
 import storch
 
 from mcqc.losses.quantization import CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, QError
-from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorBig, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass
+from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorBig, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass, PQCompressor5x5
 
 
 class WholePQ(nn.Module):
@@ -63,6 +63,15 @@ class WholePQBig(nn.Module):
         # pLoss = self._pLoss(image, restored)
         return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss), 0.0), (restored, allTrues, allLogits)
 
+
+class WholePQ5x5(WholePQBig):
+    def __init__(self, m, k, channel, withGroup, withAtt, target, alias, ema):
+        super(WholePQBig, self).__init__()
+        self._compressor = PQCompressor5x5(m, k, channel, withGroup, withAtt, False, alias, ema)
+        self._cLoss = CompressionLossBig(target)
+        self._auxLoss = L1L2Loss()
+        # self.register_buffer("_movingMean", torch.zeros([1]))
+        # self._pLoss = LPIPS(net_type='vgg', version='0.1')
 
 class WholePQQ(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):

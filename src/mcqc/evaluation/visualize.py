@@ -127,7 +127,7 @@ class Visualizer:
 
             for m in range(1):
                 fig = plt.figure(constrained_layout=False, figsize=(8.27, 8.27 / 2.0), dpi=384)
-                gs0 = fig.add_gridspec(6, 8, width_ratios=[8,6,6,0.7,6,0.7,6,0.7], height_ratios=[6,2,6,2,6,2], left=0.0, bottom=0.00, right=1.0, top=1.0, wspace=0.0, hspace=0.0)
+                gs0 = fig.add_gridspec(6, 8, width_ratios=[10,8,8,0.7,8,0.7,8,0.7], height_ratios=[8,2,8,2,8,2], left=0.0, bottom=0.00, right=1.0, top=1.0, wspace=0.0, hspace=0.0)
                 rs = toPillow(self._deTrans(x).cpu()[0].cpu())
                 for l in range(len(self._config.Model.k)):
                     z, quantized, b = allZs[l][0, m], allHards[l][0, m], allCodes[l][0, m]
@@ -140,14 +140,14 @@ class Visualizer:
                         imageOrResidual.imshow(rs)
                     else:
                         imageOrResidual.set_ylabel(r"$\boldsymbol{y}^" + str(l) + r"- \boldsymbol{\mathfrak{y}}^" + str(l) + r"$", fontsize=9)
-                        imageOrResidual.imshow(rs,cmap="RdBu")
+                        imageOrResidual.imshow(rs,cmap="gray")
                     removeAxis(imageOrResidual)
                     latent = fig.add_subplot(gs0[l*2, 1])
-                    latent.imshow(zs, cmap="RdBu")
+                    latent.imshow(zs, cmap="gray")
                     removeAxis(latent)
                     latent.set_xlabel(r"$\boldsymbol{y}^" + str(l + 1) + r"$", fontsize=9)
                     quantMap = fig.add_subplot(gs0[l*2, 2])
-                    quantIm = quantMap.imshow(qs, cmap="RdBu")
+                    quantIm = quantMap.imshow(qs, cmap="gray")
                     removeAxis(quantMap)
 
                     axins = inset_axes(quantMap,
@@ -340,8 +340,8 @@ def main(_):
         dataset = Basic("data/kodak/", transform=getTestTransform())
         bitsPerToken = EntropyEstimator(config, model, dataset, FLAGS.device)()
 
-        # visualizer = Visualizer(config, model, dataset, FLAGS.device)
-        # visualizer(bitsPerToken)
+        visualizer = Visualizer(config, model, dataset, FLAGS.device)
+        visualizer(bitsPerToken)
         plotter = Plotter(config, model, Basic("data/clic/valid", transform=getTestTransform()), FLAGS.device)
         plotter()
 

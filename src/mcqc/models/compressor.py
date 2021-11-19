@@ -9,8 +9,8 @@ from mcqc.layers.dropout import AQMasking, PointwiseDropout
 from mcqc.models.decoder import ResidualBaseDecoder
 from mcqc.models.quantizer import L2Quantizer, NonLinearQuantizer
 
-from .encoder import Director, DownSampler, EncoderHead, ResidualAttEncoderNew, ResidualBaseEncoder, ResidualEncoder, ResidualAttEncoder
-from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder, UpSampler
+from .encoder import Director, DownSampler, EncoderHead, ResidualAttEncoderNew, ResidualBaseEncoder, ResidualEncoder, ResidualAttEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
+from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder, UpSampler, BaseDecoder5x5, UpSampler5x5
 from .contextModel import ContextModel
 from .quantizer import AttentiveQuantizer, Quantizer, RelaxQuantizer
 
@@ -282,6 +282,30 @@ class PQCompressorBig(nn.Module):
 
         restored = self._decoder(quantizeds[0])
         return restored, allHards, latent, allCodes, allTrues, allLogits, (allFeatures, allQuantizeds), allCodebooks
+
+class PQCompressor5x5(PQCompressorBig):
+    def __init__(self, m: int, k: List[int], channel, withGroup, withAtt, withDropout, alias, ema):
+        super(PQCompressorBig, self).__init__()
+        self._k = k
+        self._m = m
+        if withGroup:
+            groups = self._m
+        else:
+            groups = 1
+
+        self._levels = len(k)
+
+        self._encoder = BaseEncoder5x5(channel, groups, alias)
+
+        self._heads = nn.ModuleList(EncoderHead5x5(channel, 1, alias) for _ in range(self._levels))
+        self._mappers = nn.ModuleList(DownSampler5x5(channel, 1, alias) for _ in range(self._levels - 1))
+        self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m, channel // m) for _ in range(m)) for ki in k)
+
+        self._reverses = nn.ModuleList(UpSampler5x5(channel, 1, alias) for _ in range(self._levels))
+        self._scatters = nn.ModuleList(Director5x5(channel, 1, alias) for _ in range(self._levels - 1))
+
+        self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
+        self._decoder = BaseDecoder5x5(channel, 1)
 
 class PQCompressorQ(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
