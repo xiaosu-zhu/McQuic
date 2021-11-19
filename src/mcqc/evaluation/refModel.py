@@ -49,6 +49,13 @@ class PostProcess(nn.Module):
 
 class QuantizerEncoder(nn.Module):
     def __init__(self, m: int, k: int, d: int):
+        """[summary]
+
+        Args:
+            m (int): [description]
+            k (int): [description]
+            d (int): [description]
+        """
         super().__init__()
         self._m = m
         self._wv = nn.Parameter(torch.empty(m, d, d))

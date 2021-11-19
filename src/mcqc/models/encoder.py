@@ -6,6 +6,62 @@ from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockDownSample, ResidualBlockWithStride, AttentionBlock
 
 
+
+
+class BaseEncoder5x5(nn.Module):
+    def __init__(self, channel, groups, alias=False):
+        super().__init__()
+        self._net = nn.Sequential(
+            conv5x5(3, channel, groups=groups),
+            GenDivNorm(channel),
+            conv5x5(channel, channel, groups=groups),
+            GenDivNorm(channel),
+            conv5x5(channel, channel, groups=groups),
+            GenDivNorm(channel),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
+class DownSampler5x5(nn.Module):
+    def __init__(self, channel, groups, alias=False):
+        super().__init__()
+        self._net = nn.Sequential(
+            conv5x5(channel, channel, groups=groups),
+            GenDivNorm(channel),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
+class EncoderHead5x5(nn.Module):
+    def __init__(self, channel, groups, alias=False):
+        super().__init__()
+        self._net = nn.Sequential(
+            conv5x5(channel, channel, groups=groups),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+class Director5x5(nn.Module):
+    def __init__(self, channel, groups, outChannel=None):
+        super().__init__()
+        if outChannel is None:
+            outChannel = channel
+        self._net = nn.Sequential(
+            conv5x5(channel, channel, 1, groups=groups),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
 class Encoder(nn.Module):
     def __init__(self, intermediateChannel=192, outChannel=384):
         super().__init__()

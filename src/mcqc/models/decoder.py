@@ -6,6 +6,21 @@ from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock
 
 
+class BaseDecoder5x5(nn.Module):
+    def __init__(self, channel, groups):
+        super().__init__()
+        self._net = nn.Sequential(
+            deconv5x5(channel, channel, groups=groups),
+            GenDivNorm(channel, inverse=True),
+            deconv5x5(channel, channel, groups=groups),
+            GenDivNorm(channel, inverse=True),
+            deconv5x5(channel, 3, groups=groups)
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
 class Decoder(nn.Module):
     def __init__(self, inChannel=384, intermediateChannel=192):
         super().__init__()
@@ -92,6 +107,21 @@ class UpSampler(nn.Module):
             AttentionBlock(channel, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
             ResidualBlockUpsample(channel, channel, 2, groups=groups),
+        )
+
+    def forward(self, x: torch.Tensor):
+        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
+        return self._net(x)
+
+
+class UpSampler5x5(nn.Module):
+    def __init__(self, channel, groups, outChannel=None):
+        super().__init__()
+        if outChannel is None:
+            outChannel = channel
+        self._net = nn.Sequential(
+            deconv5x5(channel, channel, groups=groups),
+            GenDivNorm(channel)
         )
 
     def forward(self, x: torch.Tensor):
