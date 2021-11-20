@@ -78,7 +78,6 @@ class WholePQPixelCNN(nn.Module):
     def test(self, image):
         restored, allCodes, allHards = self._compressor.test(image)
         for i, (pixelCNN, hard, code) in enumerate(zip(self._pixelCNN, allHards, allCodes)):
-            n, c, h, w = hard.shape
             logits = pixelCNN(hard)
             correct = logits.argmax(1) == code
             code[correct] = -1
@@ -91,9 +90,9 @@ class WholePQPixelCNN(nn.Module):
             allZs, allHards, allCodes, allResiduals = self._compressor.getLatents(image)
         predictLoss = list()
         ratios = list()
-        for i, (pixelCNN, z, code) in enumerate(zip(self._pixelCNN, allZs, allCodes)):
-            n, m, c, h, w = z.shape
-            logits = pixelCNN(z.reshape(n, m * c, h, w))
+        for i, (pixelCNN, hard, code) in enumerate(zip(self._pixelCNN, allHards, allCodes)):
+            n, m, c, h, w = hard.shape
+            logits = pixelCNN(hard.reshape(n, m * c, h, w))
             dLoss = self._cLoss(logits, code)
             predictLoss.append(dLoss)
             ratios.append((logits.argmax(1) == code).float().mean())
