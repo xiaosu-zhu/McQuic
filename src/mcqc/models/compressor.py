@@ -246,7 +246,7 @@ class PQCompressorBig(nn.Module):
             quantizeds[i - 1] = quantized
 
         restored = self._decoder(quantizeds[0])
-        return restored, allCodes
+        return restored, allCodes, allHards[1:]
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)

@@ -6,8 +6,8 @@ from torch import nn
 from torch.functional import Tensor
 import torch.nn.functional as F
 
-from mcqc.models.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder
-from mcqc.models.decoder import ResidualBaseDecoder, UpSampler
+from mcqc.models.encoder import BaseEncoder5x5, Director, Director5x5, DownSampler, DownSampler5x5, EncoderHead, EncoderHead5x5, ResidualBaseEncoder
+from mcqc.models.decoder import BaseDecoder5x5, ResidualBaseDecoder, UpSampler, UpSampler5x5
 from mcqc.layers.blocks import ResidualBlock
 
 
@@ -262,3 +262,50 @@ class RefDecoder(nn.Module):
             smallQ = reverse(q)
 
         return self._decoder(smallQ).clamp_(-1, 1), cAndPadding
+
+
+
+class RefEncoder5x5(RefEncoder):
+    def __init__(self, m, k, channel, groups, alias):
+        super(RefEncoder, self).__init__()
+        self._levels = len(k)
+
+        self._keys = tuple({
+            "_encoder",
+            "_heads",
+            "_mappers",
+            "_quantizers",
+            "_postProcess"
+        })
+
+        self._encoder = BaseEncoder5x5(channel, groups, alias)
+
+        self._heads = nn.ModuleList(EncoderHead5x5(channel, 1, alias) for _ in range(self._levels))
+        self._mappers = nn.ModuleList(DownSampler5x5(channel, 1, alias) for _ in range(self._levels - 1))
+        self._quantizers = nn.ModuleList(QuantizerEncoder(m, ki, channel // m) for ki in k)
+        self._deQuantizers = nn.ModuleList(QuantizerDecoder(m, ki, channel // m) for ki in k)
+        # self._postProcess = nn.ModuleList(ResidualBlock(2 * channel, channel, groups=groups) for _ in range(self._levels - 1))
+
+
+class RefDecoder5x5(RefDecoder):
+    def __init__(self, m, k, channel, alias):
+        super(RefDecoder, self).__init__()
+        self._levels = len(k)
+
+        self._keys = tuple({
+            "_decoder",
+            "_reverses",
+            "_scatters",
+            "_quantizers",
+            "_finalProcess"
+        })
+
+        self._decoder = BaseDecoder5x5(channel, 1)
+
+        self._reverses0 = UpSampler5x5(channel, 1, alias)
+        self._reverses = nn.ModuleList(UpSampler5x5(channel, 1, alias) for _ in range(self._levels - 1))
+        self._scatters = nn.ModuleList(Director5x5(channel, 1, alias) for _ in range(self._levels - 1))
+        # self._finalProcess = nn.ModuleList(ResidualBlock(2 * channel, channel, 1) for _ in range(self._levels - 1))
+        ################### REVERSE THE QUANTIZER ###################
+        self._quantizers0 = QuantizerDecoder(m, k[-1], channel // m)
+        self._quantizers = nn.ModuleList(QuantizerDecoder(m, ki, channel // m) for ki in k[-2::-1])

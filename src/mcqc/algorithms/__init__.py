@@ -9,3 +9,4 @@ from .plain import Plain
 from .fineTune import FineTune
 from .twoPass import TwoPass
 from .new import New
+from .pixelCNN import PixelCNN

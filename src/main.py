@@ -4,7 +4,6 @@ import math
 import random
 
 import apex
-
 from tqdm.contrib.logging import logging_redirect_tqdm
 import torch
 import torch.multiprocessing as mp
@@ -21,8 +20,8 @@ from cfmUtils.config import read, summary
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
-from mcqc.algorithms import Plain, FineTune, TwoPass, New
-from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew, WholePQ5x5
+from mcqc.algorithms import Plain, FineTune, TwoPass, New, PixelCNN
+from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew, WholePQ5x5, WholePQPixelCNN
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CosineAnnealingWarmupRestarts, CosineValue, CosineValueWithEnd, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
@@ -84,14 +83,16 @@ models = {
     "New": WholePQQ,
     "AQ": WholeAQ,
     "Big": WholePQBig,
-    "5x5": WholePQ5x5
+    "5x5": WholePQ5x5,
+    "PixelCNN": WholePQPixelCNN
 }
 
 methods = {
     "Plain": Plain,
     "FineTune": FineTune,
     "TwoPass": TwoPass,
-     "New": New
+    "New": New,
+    "PixelCNN": PixelCNN
 }
 
 optims = {

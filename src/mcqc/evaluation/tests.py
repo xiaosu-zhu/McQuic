@@ -213,9 +213,16 @@ class Performance(Test):
         bpps = list()
 
         for i, (b, pixel, ssim, psnr, image) in enumerate(zip(tqdm(bs), pixels, ssims, psnrs, images)):
+            sizes = list()
+            for bi in b:
+                sizes.append((bi.shape[1], bi.shape[2]))
             binary, bpp = self._compress(cdfs, b, pixel)
             binaries.append(binary)
             bpps.append(bpp)
+            restoredB = self._decompress(binary, cdfs, sizes)
+            for ba, bb in zip(b, restoredB):
+                if torch.any(ba != bb):
+                    raise RuntimeError("Compress error.")
             torchvision.io.write_png(image, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}.png")
             # torchvision.io.write_png(raw, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}_raw.png")
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}
@@ -277,50 +284,25 @@ class Performance(Test):
         return binaries, bpp
 
 
-    def _decompressAndCheck(self, rawCodes: List[List[List[torch.Tensor]]], binaries: List[str], cdfs: List[List[float]]):
-        decoder = ans32.RansDecoder()
+    def _decompress(self, binaries, cdfs, sizes):
 
-        for lv, levels in enumerate(rawCodes):
-            images = list()
+        codes = list()
 
-        for lv, levels in enumerate(rawCodes):
-            images = list()
-            cdfs = list()
-            for part in levels:
-                # N * [-1] all code of images at level i, group m
-                c = torch.cat(part)
-                pixels = len(c)
-                prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
-                estimateEntropy = prob.log2()
-                estimateEntropy[estimateEntropy == float("-inf")] = 0
-                estimateEntropy = -(prob * estimateEntropy).sum().item()
-                bits.append(estimateEntropy * pixels)
-                cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
-                cdfs.append(cdf)
-                images.append(part)
-            # codePerImage: M * [Tensor of [h * w]]
-            for i, codePerImage in enumerate(zip(*images)):
-                # [M, h * w]
-                codePerImage = torch.stack(codePerImage, 0)
-                indices = torch.arange(codePerImage.shape[0])[:, None].expand_as(codePerImage).flatten().int().tolist()
-                cdfSizes = [self._config.Model.k[lv] + 2] * self._config.Model.m
-                offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
-                # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
-                # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-                binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
-                # [M, h, w] binary
-                compressed.append(binary)
-                bpps.append(8 * len(binary) / totalPixels[i])
-        for binary, raw in zip(binaries, rawCodes):
-            m, h, w = raw.shape
-            code: List[int] = decoder.decode_with_indexes(binary, torch.arange(m)[:, None, None].expand(m, h, w).flatten().int().tolist(), cdfs, [self._config.Model.k] * m, torch.zeros(m, h, w).flatten().int().tolist())
-            code = torch.tensor(code, dtype=torch.long).reshape(m, h, w)
-            print(code)
-            print(raw)
-            input()
-            if torch.any(raw != code):
-                raise ValueError("Decompress failed, decoded b not equals to raw b.")
-
+        for lv in range(len(self._config.Model.k)):
+            # List of m cdfs
+            cdf = cdfs[lv]
+            # [1, m, h*w]
+            binary = binaries[lv]
+            index = torch.arange(self._config.Model.m)[:, None].expand([self._config.Model.m, hs[lv]*ws[lv]]).flatten().int().tolist()
+            cdfSize = [self._config.Model.k[lv] + 2] * self._config.Model.m
+            offset = torch.zeros([self._config.Model.m, sizes[lv, 0], sizes[lv, 1]]).flatten().int().tolist()
+            # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
+            # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
+            code = self._entropyDecoder.decode_with_indexes(binary, index, cdf, cdfSize, offset)
+            # [m, h*w] -> [1, h, w, m]
+            code = torch.tensor(code, dtype=torch.long).reshape(self._config.Model.m, sizes[lv, 0], sizes[lv, 1]).permute(1, 2, 0)[None, ...]
+            codes.append(code)
+        return codes
 
 
     def _calculateFreq(self, code: torch.Tensor, k):
@@ -424,52 +406,31 @@ class Preparar(Test):
         # self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
         return binaries, bpp
 
+    def _decompress(self, binaries, cdfs, hs, ws):
 
-    def _decompressAndCheck(self, rawCodes: List[List[List[torch.Tensor]]], binaries: List[str], cdfs: List[List[float]]):
-        decoder = ans32.RansDecoder()
+        codes = list()
 
-        for lv, levels in enumerate(rawCodes):
-            images = list()
-
-        for lv, levels in enumerate(rawCodes):
-            images = list()
-            cdfs = list()
-            for part in levels:
-                # N * [-1] all code of images at level i, group m
-                c = torch.cat(part)
-                pixels = len(c)
-                prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
-                estimateEntropy = prob.log2()
-                estimateEntropy[estimateEntropy == float("-inf")] = 0
-                estimateEntropy = -(prob * estimateEntropy).sum().item()
-                bits.append(estimateEntropy * pixels)
-                cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
-                cdfs.append(cdf)
-                images.append(part)
-            # codePerImage: M * [Tensor of [h * w]]
-            for i, codePerImage in enumerate(zip(*images)):
-                # [M, h * w]
-                codePerImage = torch.stack(codePerImage, 0)
-                indices = torch.arange(codePerImage.shape[0])[:, None].expand_as(codePerImage).flatten().int().tolist()
-                cdfSizes = [self._config.Model.k[lv] + 2] * self._config.Model.m
-                offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
-                # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
-                # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
-                binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
-                # [M, h, w] binary
-                compressed.append(binary)
-                bpps.append(8 * len(binary) / totalPixels[i])
-        for binary, raw in zip(binaries, rawCodes):
-            m, h, w = raw.shape
-            code: List[int] = decoder.decode_with_indexes(binary, torch.arange(m)[:, None, None].expand(m, h, w).flatten().int().tolist(), cdfs, [self._config.Model.k] * m, torch.zeros(m, h, w).flatten().int().tolist())
-            code = torch.tensor(code, dtype=torch.long).reshape(m, h, w)
-            print(code)
-            print(raw)
-            input()
-            if torch.any(raw != code):
-                raise ValueError("Decompress failed, decoded b not equals to raw b.")
-
-
+        for lv in range(len(self._config.Model.k)):
+            # List of m cdfs
+            cdf = cdfs[lv]
+            # [1, h, w, m]
+            binary = binaries[lv]
+            # cdf = list()
+            # for c in code:
+            #     prob = self._calculateFreq(c.flatten(), self._config.Model.k[lv])
+            #     cdfOfLv = pmf_to_quantized_cdf(prob.tolist(), 16)
+            #     cdf.append(cdfOfLv)
+            index = torch.arange(self._config.Model.m)[:, None].expand([self._config.Model.m, hs[lv]*ws[lv]]).flatten().int().tolist()
+            cdfSize = [self._config.Model.k[lv] + 2] * self._config.Model.m
+            offset = torch.zeros([self._config.Model.m, hs[lv], ws[lv]]).flatten().int().tolist()
+            # params: List of symbols, List of indices of pdfs, List of pdfs, List of upper-bounds, List of offsets
+            # [0, 1, 2, 3], [0, 0, 1, 1], [[xx, xx, xx, xx], [xx, xx, xx, xx]], [4, 4, 4, 4], [0, 0, 0, 0]
+            code = self._entropyDecoder.decode_with_indexes(binary, index, cdf, cdfSize, offset)
+            # [m, h*w]
+            code = torch.tensor(code, dtype=torch.long).reshape(self._config.Model.m, hs[lv], ws[lv])
+            codes.append(code)
+        # perfect = sum(bits) / sum(totalPixels)
+        # self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
 
     def _calculateFreq(self, code: torch.Tensor, k):
         count = torch.bincount(code.long(), minlength=k)

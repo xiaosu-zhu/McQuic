@@ -4,6 +4,7 @@ from torchvision import transforms as T
 from torch.distributions import Categorical
 
 from mcqc.utils.transforms import RandomHorizontalFlip, RandomVerticalFlip, RandomAutocontrast, RandomChoiceAndApply
+from mcqc.utils.colorspace import RandomGamma
 
 def getTrainingTransform():
     return T.Compose([
@@ -12,6 +13,7 @@ def getTrainingTransform():
         RandomAutocontrast(0.25),
         # T.ToTensor(),
         T.ConvertImageDtype(torch.float32),
+        RandomGamma(),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
     ])
 

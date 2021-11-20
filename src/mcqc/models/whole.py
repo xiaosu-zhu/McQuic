@@ -1,3 +1,4 @@
+import enum
 from torch import nn
 import torch.nn.functional as F
 import torch
@@ -5,6 +6,7 @@ import storch
 
 from mcqc.losses.quantization import CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, QError
 from mcqc.models.compressor import AQCompressor, PQCompressor, PQCompressorBig, PQCompressorNew, PQCompressorQ, PQContextCompressor, PQRelaxCompressor, PQCompressorTwoPass, PQCompressor5x5
+from mcqc.models.pixelCNN import PixelCNN
 
 
 class WholePQ(nn.Module):
@@ -62,6 +64,40 @@ class WholePQBig(nn.Module):
         # self._movingMean -= 0.9 * (self._movingMean - ssimLoss.mean())
         # pLoss = self._pLoss(image, restored)
         return dLoss, (sum(weakCodebookLoss), sum(weakFeatureLoss), 0.0), (restored, allTrues, allLogits)
+
+class WholePQPixelCNN(nn.Module):
+    def __init__(self, m, k, channel, withGroup, withAtt, target, alias, ema):
+        super().__init__()
+        self._levels = len(k)
+        self._compressor = PQCompressorBig(m, k, channel, withGroup, withAtt, False, alias, ema)
+        self._cLoss = nn.CrossEntropyLoss()
+        self._pixelCNN = nn.ModuleList(PixelCNN(m, ki, channel) for ki in k)
+        # self.register_buffer("_movingMean", torch.zeros([1]))
+        # self._pLoss = LPIPS(net_type='vgg', version='0.1')
+
+    def test(self, image):
+        restored, allCodes, allHards = self._compressor.test(image)
+        for i, (pixelCNN, hard, code) in enumerate(zip(self._pixelCNN, allHards, allCodes)):
+            n, c, h, w = hard.shape
+            logits = pixelCNN(hard)
+            correct = logits.argmax(1) == code
+            code[correct] = -1
+            code += 1
+
+        return restored, allCodes
+
+    def forward(self, image, temp, **_):
+        with torch.no_grad():
+            allZs, allHards, allCodes, allResiduals = self._compressor.getLatents(image)
+        predictLoss = list()
+        ratios = list()
+        for i, (pixelCNN, z, code) in enumerate(zip(self._pixelCNN, allZs, allCodes)):
+            n, m, c, h, w = z.shape
+            logits = pixelCNN(z.reshape(n, m * c, h, w))
+            dLoss = self._cLoss(logits, code)
+            predictLoss.append(dLoss)
+            ratios.append((logits.argmax(1) == code).float().mean())
+        return sum(predictLoss), sum(ratios) / len(ratios)
 
 
 class WholePQ5x5(WholePQBig):
