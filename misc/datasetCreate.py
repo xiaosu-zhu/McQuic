@@ -40,13 +40,10 @@ def getFilesFromDir(root, strict: bool = False):
 def main(targetDir):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
-    listA = ["data/ImageNet/test", "data/ImageNet/val", "data/COCO/train2017"] #, "data/nus" <- no images larget than 512]
-    listB = ["data/clic/train", "data/DIV2K/train", "data/urban100", "data/manga109"]
+    lists = ["data/ImageNet/test", "data/ImageNet/val", "data/COCO/train2017", "data/clic/train", "data/DIV2K", "data/urban100", "data/manga109"]
     allFiles = list()
-    for path in listA:
+    for path in lists:
         allFiles.extend(getFilesFromDir(path, True))
-    for path in listB:
-        allFiles.extend(getFilesFromDir(path))
     os.makedirs(targetDir, exist_ok=True)
     shuffle(allFiles)
     env = lmdb.Environment(targetDir, subdir=True, map_size=1073741824 * 20)

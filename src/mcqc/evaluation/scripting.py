@@ -10,11 +10,12 @@ from absl import flags
 import torch
 from torch import nn
 
-from mcqc.evaluation.refModel import PostProcess, Preprocess, RefEncoder, RefDecoder
+from mcqc.evaluation.refModel import PostProcess, Preprocess, RefDecoder5x5, RefEncoder, RefDecoder, RefEncoder5x5
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("cfg", None, "The config.json path.")
+flags.DEFINE_string("model", "cheng", "Backbone model type: cheng, minnen.")
 flags.DEFINE_string("path", None, "The .ckpt file path.")
 flags.DEFINE_string("target", None, "The saving path.")
 flags.DEFINE_boolean("gpu", True, "Whether the model should be on GPU.")
@@ -76,12 +77,22 @@ def main(_):
     torch.backends.cudnn.benchmark = True
     torch.autograd.set_detect_anomaly(False)
     config = read(FLAGS.cfg, None, Config)
+
+    modelTypes = {
+        "cheng": (RefEncoder, RefDecoder),
+        "minnen": (RefEncoder5x5, RefDecoder5x5)
+    }
+
+    encoderFn, decoderFn = modelTypes[FLAGS.model.lower()]
+
     if not FLAGS.target or not os.path.isdir(FLAGS.target):
         raise FileNotFoundError(f"The given target: {FLAGS.target} is not a valid dir or doesn't exist.")
     if not FLAGS.path or not os.path.isfile(FLAGS.path):
-        _main(RefEncoder(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), RefDecoder(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", None, FLAGS.target)
-    _main(RefEncoder(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), RefDecoder(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", FLAGS.path, FLAGS.target)
+        _main(encoderFn(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), decoderFn(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", None, FLAGS.target)
+    _main(encoderFn(config.Model.m, config.Model.k, config.Model.channel, 1, config.Model.alias), decoderFn(config.Model.m, config.Model.k, config.Model.channel, config.Model.alias), "module._compressor.", FLAGS.path, FLAGS.target)
 
 
 if __name__ == "__main__":
     app.run(main)
+
+# CUDA_VISIBLE_DEVICES=4 python src/mcqc/evaluation/scripting.py --cfg configs/ssim/v100/5x5-2-13+11+9.yaml --model minnen --path saved/fullDataset/latest/best.ckpt --target ts5x5
