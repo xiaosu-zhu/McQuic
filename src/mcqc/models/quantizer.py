@@ -255,10 +255,11 @@ class L2Quantizer(nn.Module):
     def decode(self, code):
         # [n, h, w, k]
         sample = F.one_hot(code, self._k).float()
+        quantized = (sample @ self._codebook)
         # codebook = self._wv(self._codebook)
         # [n, h, w, c] -> [n, c, h, w]
-        quantized = self._wq((sample @ self._codebook)).permute(0, 3, 1, 2)
-        return quantized
+        result = self._wq(quantized).permute(0, 3, 1, 2)
+        return result, quantized.permute(0, 3, 1, 2)
 
     def softDecode(self, code, soft):
         # [n, h, w, k]

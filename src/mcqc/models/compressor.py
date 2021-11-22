@@ -92,7 +92,7 @@ class PQCompressorBig(nn.Module):
             else:
                 latent = None
             c = self.encode(z, i)
-            hard = self.decode(c, i)
+            hard, _ = self.decode(c, i)
             # n, c, h, w = hard.shape
             if latent is not None:
                 latent = latent - hard
@@ -140,11 +140,13 @@ class PQCompressorBig(nn.Module):
 
     def decode(self, code, level):
         qs = list()
+        hards = list()
         for quantizer, c in zip(self._quantizers[level], code.permute(1, 0, 2, 3)):
-            q = quantizer.decode(c)
+            hard, q = quantizer.decode(c)
+            hards.append(hard)
             qs.append(q)
 
-        return torch.cat(qs, 1)
+        return torch.cat(hards, 1), torch.cat(qs, 1)
 
     def nextLevelDown(self, x, level, temp):
         mapper = self._mappers[level] if level < self._levels - 1 else None
@@ -172,7 +174,7 @@ class PQCompressorBig(nn.Module):
 
     def rawAndQuantized(self, latent, level):
         splits = torch.chunk(latent, self._m, 1)
-        qs = list()
+        hards = list()
         raws = list()
         codes = list()
         quantizeds = list()
@@ -181,13 +183,13 @@ class PQCompressorBig(nn.Module):
             codes.append(c)
             raws.append(raw)
             quantizeds.append(quantized)
-            q = quantizer.decode(c)
-            qs.append(q)
+            hard, _ = quantizer.decode(c)
+            hards.append(hard)
 
         codes = torch.stack(codes, 1)
         raws = torch.stack(raws, 1)
         quantizeds = torch.stack(quantizeds, 1)
-        return codes, raws, quantizeds, torch.cat(qs, 1)
+        return codes, raws, quantizeds, torch.cat(hards, 1)
 
     def getLatents(self, x):
         latent = self._encoder(x)
@@ -222,6 +224,7 @@ class PQCompressorBig(nn.Module):
         allCodes = list()
 
         allHards.append(None)
+        mathfraks = list()
 
         for i in range(self._levels):
             mapper = self._mappers[i] if i < self._levels - 1 else None
@@ -233,7 +236,8 @@ class PQCompressorBig(nn.Module):
                 latent = None
             c = self.encode(z, i)
             allCodes.append(c)
-            hard = self.decode(c, i)
+            hard, quantized = self.decode(c, i)
+            mathfraks.append(quantized)
             if latent is not None:
                 latent = latent - hard
             allHards.append(hard)
@@ -246,7 +250,7 @@ class PQCompressorBig(nn.Module):
             quantizeds[i - 1] = quantized
 
         restored = self._decoder(quantizeds[0])
-        return restored, allCodes, allHards[1:]
+        return restored, allCodes, mathfraks
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)

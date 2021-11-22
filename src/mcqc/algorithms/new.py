@@ -185,7 +185,7 @@ class New(Algorithm):
             self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
             self._regScheduler._epoch = regSchdr._epoch
             self._tempScheduler._epoch = tempSchdr._epoch
-        self._reSpreadAll()
+        # self._reSpreadAll()
 
         # self._scheduler.last_epoch = schdr.last_epoch
         # del schdr
@@ -346,7 +346,7 @@ class New(Algorithm):
 
             numImages += n
 
-            restored, allCodes = model.test(raw)
+            restored, allCodes, _ = model.test(raw)
             countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):
@@ -441,7 +441,7 @@ class New(Algorithm):
 
             numImages += n
 
-            restored, allCodes = model.test(raw)
+            restored, allCodes, _ = model.test(raw)
             countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):

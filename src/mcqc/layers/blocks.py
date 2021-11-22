@@ -7,7 +7,7 @@ from torch import nn
 from mcqc import Consts
 
 from .gdn import GenDivNorm
-from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3, superPixelConv3x3
+from .convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, subPixelConv3x3, superPixelConv3x3
 
 
 class L2Normalize(nn.Module):
@@ -130,6 +130,47 @@ class ResidualBlock(nn.Module):
         self.conv2 = conv3x3(out_ch, out_ch, groups=groups)
         if in_ch != out_ch:
             self.skip = conv1x1(in_ch, out_ch, groups=groups)
+        else:
+            self.skip = None
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.leaky_relu(out)
+        out = self.conv2(out)
+        out = self.leaky_relu(out)
+
+        if self.skip is not None:
+            identity = self.skip(x)
+
+        out = out + identity
+        return out
+
+
+class ResidualBlockMasked(nn.Module):
+    """Simple residual block with two 3x3 convolutions.
+    Args:
+        in_ch (int): number of input channels
+        out_ch (int): number of output channels
+    """
+    @staticmethod
+    def _mask3x3(inChannel, outChannel, stride=1):
+        return MaskedConv2d(inChannel, outChannel, bias=False, kernel_size=3, stride=stride, padding=1, padding_mode="zeros")
+
+    @staticmethod
+    def _mask5x5(inChannel, outChannel, stride=1):
+        """5x5 convolution with padding."""
+        return MaskedConv2d(inChannel, outChannel, bias=False, kernel_size=5, stride=stride, padding=5 // 2, padding_mode="zeros")
+
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+
+        self.conv1 = self._mask5x5(in_ch, out_ch)
+        self.leaky_relu = nn.LeakyReLU(inplace=True)
+        self.conv2 = self._mask5x5(out_ch, out_ch)
+        if in_ch != out_ch:
+            self.skip = self._mask5x5(in_ch, out_ch)
         else:
             self.skip = None
 

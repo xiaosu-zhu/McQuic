@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from mcqc.layers.convs import conv1x1, conv3x3, deconv5x5
+from mcqc.layers.convs import conv1x1, conv3x3, deconv5x5, deconv5x5Up
 from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock
 
@@ -10,11 +10,11 @@ class BaseDecoder5x5(nn.Module):
     def __init__(self, channel, groups):
         super().__init__()
         self._net = nn.Sequential(
-            deconv5x5(channel, channel, groups=groups),
+            deconv5x5Up(channel, channel, groups=groups),
             GenDivNorm(channel, inverse=True),
-            deconv5x5(channel, channel, groups=groups),
+            deconv5x5Up(channel, channel, groups=groups),
             GenDivNorm(channel, inverse=True),
-            deconv5x5(channel, 3, groups=groups)
+            deconv5x5Up(channel, 3, groups=groups)
         )
 
     def forward(self, x: torch.Tensor):
@@ -25,13 +25,13 @@ class Decoder(nn.Module):
     def __init__(self, inChannel=384, intermediateChannel=192):
         super().__init__()
         self._net = nn.Sequential(
-            deconv5x5(inChannel, intermediateChannel, 2),
+            deconv5x5Up(inChannel, intermediateChannel, 2),
             GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5(intermediateChannel, intermediateChannel, 2),
+            deconv5x5Up(intermediateChannel, intermediateChannel, 2),
             GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5(intermediateChannel, intermediateChannel, 2),
+            deconv5x5Up(intermediateChannel, intermediateChannel, 2),
             GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5(intermediateChannel, 3, 2)
+            deconv5x5Up(intermediateChannel, 3, 2)
         )
 
     def forward(self, x: torch.Tensor):
@@ -120,7 +120,7 @@ class UpSampler5x5(nn.Module):
         if outChannel is None:
             outChannel = channel
         self._net = nn.Sequential(
-            deconv5x5(channel, channel, groups=groups),
+            deconv5x5Up(channel, channel, groups=groups),
             GenDivNorm(channel)
         )
 
