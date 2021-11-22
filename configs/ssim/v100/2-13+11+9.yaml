@@ -1,10 +1,10 @@
-epoch: 2000
-evalFreq: 2
-testFreq: 20
+epoch: 1000
+evalFreq: 1
+testFreq: 10
 gpus: 4
 vRam: -1
 wantsMore: false
-dataset: fullDataset
+dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
 batchSize: 12
@@ -33,14 +33,14 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 1000 # match 10 * testFreq
-        warmup_steps: 100
+        first_cycle_steps: 500 # match 10 * testFreq
+        warmup_steps: 50
         gamma: 0.1
 regSchdr:
     type: MultiStep
     params:
         initValue: 1.e-3
-        gamma: 0.993
+        gamma: 0.998
         stepInterval: 1
 tempSchdr:
     type: MultiStep

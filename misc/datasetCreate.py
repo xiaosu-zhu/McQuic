@@ -7,6 +7,7 @@ import sys
 import tqdm
 import lmdb
 from PIL import Image
+import PIL
 _EXT = [".png", ".jpg", ".jpeg"]
 
 def write(txn, i: bytes, path: str):
@@ -29,7 +30,10 @@ def getFilesFromDir(root, strict: bool = False):
     files = findAllWithSize(root, _EXT)
     newFile = list()
     for f in tqdm.tqdm(files, ncols=60, bar_format="{l_bar}{bar}| Search in %d images" % len(files)):
-        a = Image.open(f[0])
+        try:
+            a = Image.open(f[0])
+        except PIL.UnidentifiedImageError:
+            continue
         w, h = a.size
         if strict and (h < 512 or w < 512):
             continue
@@ -37,27 +41,36 @@ def getFilesFromDir(root, strict: bool = False):
     print(f"{len(newFile)} images meets requirement.")
     return [x[0] for x in newFile]
 
-def main(targetDir):
+FULL_DATASET = ["data/ImageNet/test", "data/ImageNet/val", "data/COCO/train2017", "data/clic/train", "data/DIV2K", "data/urban100", "data/manga109"]
+EXTRA_DATSET = FULL_DATASET + ["data/paris", "data/oxford", "data/Flickr2K/Flickr2K_HR", "data/holiday"] # TOOOOOOOO BIG!: , "data/revisitop1m"]
+
+NAMES = {
+    "full": FULL_DATASET,
+    "extra": EXTRA_DATSET
+}
+
+def main(targetDir, content):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
-    lists = ["data/ImageNet/test", "data/ImageNet/val", "data/COCO/train2017", "data/clic/train", "data/DIV2K", "data/urban100", "data/manga109"]
+    lists = NAMES[content]
     allFiles = list()
     for path in lists:
         allFiles.extend(getFilesFromDir(path, True))
     os.makedirs(targetDir, exist_ok=True)
     shuffle(allFiles)
-    env = lmdb.Environment(targetDir, subdir=True, map_size=1073741824 * 20)
+    env = lmdb.Environment(targetDir, subdir=True, map_size=int(1024 ** 4))
     with env.begin(write=True) as txn:
+        i = -1
         for i, f in enumerate(tqdm.tqdm(allFiles, ncols=60, bar_format="{l_bar}{bar}| Write %d images..." % len(allFiles))):
             write(txn, i.to_bytes(32, sys.byteorder), f)
+        # Create metadata needed for dataset
+        with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
+            json.dump({
+                "length": i + 1,
+            }, fp)
     env.close()
 
-    # Create metadata needed for dataset
-    with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
-        json.dump({
-            "length": i + 1,
-        }, fp)
 
 
 if __name__ == "__main__":
-    main("data/fullDataset")
+    main("data/compression", "extra")
