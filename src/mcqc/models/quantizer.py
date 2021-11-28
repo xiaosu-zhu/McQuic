@@ -199,7 +199,7 @@ class L2Quantizer(nn.Module):
 
         distance = -(x2 + c2 - 2 * inter) #.sqrt()
 
-        return distance / self._scale * self._temperature1
+        return distance
 
     def encode(self, latent):
         # [n, h, w, c]
@@ -277,7 +277,8 @@ class L2Quantizer(nn.Module):
         k = self._codebook
 
         # [n, h, w, k]
-        logit = self.getLogit(raw, k)
+        logitRaw = self.getLogit(raw, k)
+        logit = logitRaw / self._scale * self._temperature1
         trueCode = logit.argmax(-1)
         sample = F.gumbel_softmax(logit, temperature, True)
         code = sample.argmax(-1)
@@ -295,7 +296,7 @@ class L2Quantizer(nn.Module):
         #     soft = hard
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, h, w, c], [k, c]
-        return hard, code, trueCode, logit, (raw, quantized), self._codebook
+        return hard, code, trueCode, logitRaw, (raw, quantized), self._codebook
 
 
 class AttentiveQuantizer(nn.Module):
