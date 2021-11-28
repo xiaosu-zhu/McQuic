@@ -219,10 +219,10 @@ class Performance(Test):
             binary, bpp = self._compress(cdfs, b, pixel)
             binaries.append(binary)
             bpps.append(bpp)
-            restoredB = self._decompress(binary, cdfs, sizes)
-            for ba, bb in zip(b, restoredB):
-                if torch.any(ba != bb):
-                    raise RuntimeError("Compress error.")
+            # restoredB = self._decompress(binary, cdfs, sizes)
+            # for ba, bb in zip(b, restoredB):
+            #     if torch.any(ba != bb):
+            #         raise RuntimeError("Compress error.")
             torchvision.io.write_png(image, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}.png")
             # torchvision.io.write_png(raw, f"ckpt/images/test_SSIM_{ssim:2.2f}_PSNR_{psnr:2.2f}_bpp_{bpp:.4f}_{i}_raw.png")
         return {"ssim": sum(ssims) / len(ssims), "psnr": sum(psnrs) / len(psnrs), "bpp": sum(bpps) / len(bpps)}

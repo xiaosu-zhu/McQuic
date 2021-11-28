@@ -27,7 +27,7 @@ class Preprocess(nn.Module):
         padTop = hPad // 2
         padBottom = hPad - padTop
 
-        x = F.pad(x, (padLeft, padRight, padTop, padBottom))
+        x = F.pad(x, (padLeft, padRight, padTop, padBottom), mode="reflect")
         if c == 1:
             n, c, h, w = x.shape
             x = x.expand(n, 3, h, w)
