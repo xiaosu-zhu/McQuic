@@ -3,7 +3,7 @@ from torch import nn
 
 from mcqc.layers.convs import conv1x1, conv3x3, deconv5x5, deconv5x5Up
 from mcqc.layers.gdn import GenDivNorm
-from mcqc.layers.blocks import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock
+from mcqc.layers import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock
 
 
 class BaseDecoder5x5(nn.Module):

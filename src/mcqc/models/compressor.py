@@ -3,11 +3,8 @@ import storch
 from storch.wrappers import deterministic
 import torch
 from torch import nn
-from torch.nn.modules.activation import ReLU
-from mcqc.layers.blocks import ResidualBlock
-from mcqc.layers.dropout import AQMasking, PointwiseDropout
 from mcqc.models.decoder import ResidualBaseDecoder
-from mcqc.models.quantizer import L2Quantizer, NonLinearQuantizer
+from mcqc.models.quantizer import L2Quantizer
 
 from .encoder import Director, DownSampler, EncoderHead, ResidualAttEncoderNew, ResidualBaseEncoder, ResidualEncoder, ResidualAttEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
 from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder, UpSampler, BaseDecoder5x5, UpSampler5x5

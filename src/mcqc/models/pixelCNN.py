@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from mcqc.layers.blocks import ResidualBlockMasked
+from mcqc.layers import ResidualBlockMasked
 from mcqc.layers.convs import MaskedConv2d
 
 

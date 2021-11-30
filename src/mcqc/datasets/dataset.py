@@ -1,15 +1,15 @@
-from typing import Callable, Any, Optional, Tuple, Callable, List, Union, cast
+from typing import Callable, Optional, Tuple, Callable, List, Union, cast
 import os
 import json
 import sys
 
 import lmdb
 import torch
-from torch.functional import Tensor
+from torch import Tensor
 from torchvision.io import read_image
+from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
-from torchvision.io.image import ImageReadMode, decode_image
 
 
 __all__ = [
@@ -52,7 +52,27 @@ def _makeDataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, i
 
 
 class Basic(VisionDataset):
-    def __init__(self, root: str, duplicate: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    """A Basic dataset that reads all images from a directory.
+    """
+    def __init__(self, root: str, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+        """A Basic dataset that reads all images from a directory.
+
+        Usage:
+        ```python
+            dataset = Basic("data/clic/train", T.Compose([
+                                                   T.ToTensor(),
+                                                   T.Normalize(mean, std)]))
+        ```
+
+        Args:
+            root (str): The folder to read from.
+            duplicate (int, optional): A number that repeat images in this dataset for N times. Defaults to 1.
+            transform (Optional[Callable], optional): A transform applies to images. Defaults to None.
+            is_valid_file (Optional[Callable[[str], bool]], optional): A function that check image is valid. Defaults to None, will use builtin implementation.
+
+        Raises:
+            RuntimeError: Find no images in this folder.
+        """
         super().__init__(root, transform=transform)
         samples = _makeDataset(self.root, IMG_EXTENSIONS if is_valid_file is None else None, is_valid_file)
         if len(samples) == 0:
@@ -61,7 +81,7 @@ class Basic(VisionDataset):
             raise RuntimeError(msg)
         self.loader = default_loader
         self.extensions = IMG_EXTENSIONS
-        self.samples = samples * duplicate
+        self.samples = samples
 
     def __getitem__(self, index: int) -> Tensor:
         """
@@ -69,7 +89,7 @@ class Basic(VisionDataset):
             index (int): Index
 
         Returns:
-            tuple: (sample, target) where target is class_index of the target class.
+            Tensor: sample at index.
         """
         path = self.samples[index]
         # sample = readImage(path)
@@ -84,7 +104,24 @@ class Basic(VisionDataset):
 
 
 class BasicLMDB(VisionDataset):
-    def __init__(self, root: str, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    """A Basic dataset that reads from a LMDB.
+    """
+    def __init__(self, root: str, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None) -> None:
+        """A Basic dataset that reads from a LMDB.
+
+        Usage:
+        ```python
+            dataset = Basic("data/trainSet", numWorkers + 2,
+                               transform=T.Compose([T.ToTensor(),
+                                                    T.Normalize(mean, std)]))
+        ```
+
+        Args:
+            root (str): LMDB folder path. In addition, a `meatadata.json` should be placed in the same folder --- see `src/misc/datasetCreate.py`
+            maxTxns (int, optional): Max trasactions of LMDB. Defaults to 1.
+            repeat (int, optional): Repeat images of the dataset for N times. Defaults to 1.
+            transform (Optional[Callable], optional): Transform applies to images. Defaults to None.
+        """
         super().__init__(root, transform=transform)
         self._maxTxns = maxTxns
         # env and txn is lazy-loaded in ddp. They can't be pickled
@@ -116,7 +153,7 @@ class BasicLMDB(VisionDataset):
             index (int): Index
 
         Returns:
-            tuple: (sample, target) where target is class_index of the target class.
+            Tensor: sample at index.
         """
         index = index % self._length
         if self._env is None or self._txn is None:

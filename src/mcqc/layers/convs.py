@@ -15,6 +15,24 @@ class MaskedConv2d(nn.Conv2d):
     """
 
     def __init__(self, *args: Any, mask_type: str = "A", **kwargs: Any):
+        """Masked Conv 2D.
+
+        Args:
+            args: Arguments for `nn.Conv2d`.
+            mask_type (str, optional): Mask type, if "A", current pixel will be masked, otherwise "B". Use "A" for first layer and "B" for successive layers. Defaults to "A".
+            kwargs: Arguments for `nn.Conv2d`.
+
+        Usage:
+        ```python
+            # First layer
+            conv = MaskedConv2d(3, 6, 3, mask_type='A')
+            # Subsequent layers
+            conv = MaskedConv2d(6, 6, 3, mask_type='B')
+        ```
+
+        Raises:
+            ValueError: Mask type not in ["A", "B"].
+        """
         super().__init__(*args, **kwargs)
 
         if mask_type not in ("A", "B"):

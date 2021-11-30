@@ -45,15 +45,15 @@ class WholePQBig(nn.Module):
         dLoss = self._cLoss(image, restored)
 
         # weakFeatureLoss = list()
-        weakCodebookLoss = list()
+        # weakCodebookLoss = list()
 
-        for raws, codes, codebooks, k, logits in zip(allFeatures, allCodes, allCodebooks, self._k, allLogits):
-            for raw, code, codebook, logit in zip(raws, codes, codebooks, logits):
-                # weakFeatureLoss.append(self._alignLoss(raw, F.one_hot(code, k).float(), codebook))
-                weakCodebookLoss.append(self._spreadLoss(codebook))
+        # for raws, codes, codebooks, k, logits in zip(allFeatures, allCodes, allCodebooks, self._k, allLogits):
+        #     for raw, code, codebook, logit in zip(raws, codes, codebooks, logits):
+        #         # weakFeatureLoss.append(self._alignLoss(raw, F.one_hot(code, k).float(), codebook))
+        #         weakCodebookLoss.append(self._spreadLoss(codebook))
                 # weakCodebookLoss.append(self._l2Reg(raw, -1))
 
-        return dLoss, (sum(weakCodebookLoss), 0.0, 0.0), (restored, allTrues, allLogits)
+        return dLoss, (0.0, 0.0, 0.0), (restored, allTrues, allLogits)
 
 class WholePQPixelCNN(nn.Module):
     def __init__(self, m, k, channel, withGroup, withAtt, target, alias, ema):

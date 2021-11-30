@@ -37,11 +37,11 @@ schdr:
         warmup_steps: 50
         gamma: 0.1
 regSchdr:
-    type: MultiStep
+    type: CosineWithEnd
     params:
-        initValue: 1.e-3
-        gamma: 0.998
-        stepInterval: 1
+        maxValue: 1.e-3
+        minValue: 0.0
+        totalStep: 1050
 tempSchdr:
     type: MultiStep
     params:
