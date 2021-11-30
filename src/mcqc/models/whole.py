@@ -34,7 +34,7 @@ class WholePQBig(nn.Module):
         # self._auxLoss = L1L2Loss()
         # self._alignLoss = MeanAligning()
         # self._klDivergence = Regularization()
-        self._spreadLoss = nn.ModuleList(CodebookSpreading(0.1, math.sqrt(ki)) for ki in self._k)
+        self._spreadLoss = CodebookSpreading()
         # self._l2Reg = L2Regularization()
         # self.register_buffer("_movingMean", torch.zeros([1]))
         # self._pLoss = LPIPS(net_type='vgg', version='0.1')
@@ -47,10 +47,10 @@ class WholePQBig(nn.Module):
         # weakFeatureLoss = list()
         weakCodebookLoss = list()
 
-        for raws, codes, codebooks, k, logits, spread in zip(allFeatures, allCodes, allCodebooks, self._k, allLogits, self._spreadLoss):
+        for raws, codes, codebooks, k, logits in zip(allFeatures, allCodes, allCodebooks, self._k, allLogits):
             for raw, code, codebook, logit in zip(raws, codes, codebooks, logits):
                 # weakFeatureLoss.append(self._alignLoss(raw, F.one_hot(code, k).float(), codebook))
-                weakCodebookLoss.append(spread(codebook))
+                weakCodebookLoss.append(self._spreadLoss(codebook))
                 # weakCodebookLoss.append(self._l2Reg(raw, -1))
 
         return dLoss, (sum(weakCodebookLoss), 0.0, 0.0), (restored, allTrues, allLogits)

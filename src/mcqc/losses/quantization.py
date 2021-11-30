@@ -148,24 +148,15 @@ class MeanAligning(nn.Module):
 
 
 class CodebookSpreading(nn.Module):
-    def __init__(self, lowerBound: float, upperBound: float):
-        super().__init__()
-        self._lower = lowerBound
-        self._upper = upperBound
-
     def forward(self, codebook):
         # [k]
         inter = (codebook ** 2).sum(-1)
         # [k, k]
-        intra = codebook @ codebook.T
+        intra = (codebook @ codebook.T).triu(1)
 
-        distance = 2 * ((inter[:, None] - 2 * intra + inter) / codebook.shape[-1]).triu(1)
+        loss = ((inter - 1.0) ** 2).mean() - intra.mean()
 
-        lower = F.relu(self._lower - distance) ** 2
-
-        upper = F.relu(distance - self._upper) ** 2
-
-        return (lower + upper).mean()
+        return loss
 
 class L2Regularization(nn.Module):
     def forward(self, x, dim: int = -1):
