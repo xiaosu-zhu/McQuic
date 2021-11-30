@@ -9,7 +9,7 @@
 # 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-from typing import Union
+from typing import Union, Optional, Callable
 
 import torch
 from torch.utils.data import DataLoader
@@ -22,7 +22,30 @@ __all__ = [
 
 # https://github.com/NVIDIA/apex/blob/master/examples/imagenet/main_amp.py
 class Prefetcher:
-    def __init__(self, loader: DataLoader, rank: int, transform = None):
+    """From `NVIDIA/apex`.
+
+        A DataLoader wrapper that prefetches data for speed-up.
+    """
+    def __init__(self, loader: DataLoader, rank: int, transform: Optional[Callable] = None):
+        """From `NVIDIA/apex`.
+
+            A DataLoader wrapper that prefetches data for speed-up.
+
+        Usage:
+        ```python
+            trainLoader = DataLoader(dataset, ...)
+            # A drop-in replacement for trainLoader
+            prefetcher = Prefetcher(trainLoader, rank=dist.get_rank())
+            for batch in prefetcher:
+                # do something with batch, don't need call .cuda() or .to(device)
+                ...
+        ```
+
+        Args:
+            loader (DataLoader): The DataLoader to be wrapped.
+            rank (int): Rank of current DistributedDataParallel.
+            transform (Optional[Callable], optional): A transform that is able to accept batched inputs, e.g., `BatchedHorizontalFlip`. Defaults to None.
+        """
         self._rank = rank
         self._loader = loader
         self._iter = iter(loader)

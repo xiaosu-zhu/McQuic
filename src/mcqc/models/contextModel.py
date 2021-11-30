@@ -1,10 +1,5 @@
-from math import perm
-import torch
 from torch import nn
-from torch.distributions import Categorical
 from mcqc.layers.convs import conv1x1
-
-from mcqc.layers.positional import PositionalEncoding2D
 from mcqc.models.decoder import UpSampler
 
 

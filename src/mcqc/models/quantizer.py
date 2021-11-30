@@ -1,21 +1,11 @@
-from types import FrameType
 from typing import Union
 import math
 from storch.method.relax import RELAX
 
-import numpy as np
-
 import torch
 from torch import nn
-from torch.distributions import categorical
 from torch.distributions.categorical import Categorical
 import torch.nn.functional as F
-from torch import distributed as dist
-
-from mcqc.layers.dropout import PointwiseDropout
-from mcqc.layers.gdn import GenDivNorm1D
-from mcqc.layers.convs import conv3x3
-from mcqc.layers.stochastic import gumbelRaoMCK, iGumbelSoftmax
 
 
 class _resLinear(nn.Module):
@@ -183,7 +173,7 @@ class L2Quantizer(nn.Module):
         #     self._wvShadow = None
         self._temperature1 = nn.Parameter(torch.ones(()))
         # self._temperature2 = nn.Parameter(torch.ones(()))
-        self._scale = math.sqrt(dHidden)
+        self._scale = math.sqrt(k)
 
     @torch.no_grad()
     def EMAUpdate(self):
@@ -197,7 +187,7 @@ class L2Quantizer(nn.Module):
         # [n, h, w, k]
         inter = x @ c.permute(1, 0)
 
-        distance = -(x2 + c2 - 2 * inter) #.sqrt()
+        distance = -(x2 + c2 - 2 * inter).log() #.sqrt()
 
         return distance
 
@@ -278,7 +268,7 @@ class L2Quantizer(nn.Module):
 
         # [n, h, w, k]
         logitRaw = self.getLogit(raw, k)
-        logit = logitRaw / self._scale * self._temperature1
+        logit = logitRaw * self._temperature1
         trueCode = logit.argmax(-1)
         sample = F.gumbel_softmax(logit, temperature, True)
         code = sample.argmax(-1)
