@@ -12,10 +12,10 @@ from torch.utils.data import DataLoader, DistributedSampler
 import numpy as np
 from absl import app
 from absl import flags
-from cfmUtils.runtime import queryGPU
-from cfmUtils.logger import configLogging
-from cfmUtils.saver import Saver
-from cfmUtils.config import read, summary
+from vlutils.runtime import queryGPU
+from vlutils.logger import configLogging
+from vlutils.saver import Saver
+from vlutils.config import read, summary
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB

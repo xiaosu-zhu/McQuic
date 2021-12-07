@@ -14,8 +14,8 @@ from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
-from cfmUtils.saver import Saver
-from cfmUtils.base import FrequecyHook
+from vlutils.saver import Saver
+from vlutils.base import FrequecyHook
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.datasets.dataset import BasicLMDB
@@ -176,15 +176,15 @@ class New(Algorithm):
             schdr = copy.deepcopy(self._scheduler)
             regSchdr = copy.deepcopy(self._regScheduler)
             tempSchdr = copy.deepcopy(self._tempScheduler)
-            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, schdr=schdr, step=step, epoch=initEpoch, regSchdr=regSchdr, tempSchdr=tempSchdr)
+            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, schdr=schdr, step=step, epoch=initEpoch) # , regSchdr=regSchdr, tempSchdr=tempSchdr)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
             for group in self._optimizer.param_groups:
                 group.setdefault('initial_lr', group['lr'])
             self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
-            self._regScheduler._epoch = regSchdr._epoch
-            self._tempScheduler._epoch = tempSchdr._epoch
+            self._regScheduler._epoch = initEpoch
+            self._tempScheduler._epoch = initEpoch
         # self._reSpreadAll()
 
         # self._scheduler.last_epoch = schdr.last_epoch
@@ -260,7 +260,7 @@ class New(Algorithm):
     def _reSpread(self, model):
         model.eval()
         trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
-        dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
+        dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize * 8, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
         quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
         for image in tqdm(dataLoader, ncols=40, bar_format="Assign: {n_fmt}/{total_fmt} |{bar}|", leave=False):
             image = image.to(self._rank, non_blocking=True)

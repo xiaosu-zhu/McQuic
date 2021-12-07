@@ -174,6 +174,7 @@ class L2Quantizer(nn.Module):
         self._temperature1 = nn.Parameter(torch.ones(()))
         # self._temperature2 = nn.Parameter(torch.ones(()))
         self._scale = math.sqrt(k)
+        self._eps = 1e-7
 
     @torch.no_grad()
     def EMAUpdate(self):
@@ -187,7 +188,7 @@ class L2Quantizer(nn.Module):
         # [n, h, w, k]
         inter = x @ c.permute(1, 0)
 
-        distance = -(x2 + c2 - 2 * inter).log() #.sqrt()
+        distance = -(x2 + c2 - 2 * inter) #.sqrt()
 
         return distance
 
@@ -268,9 +269,9 @@ class L2Quantizer(nn.Module):
 
         # [n, h, w, k]
         logitRaw = self.getLogit(raw, k)
-        logit = logitRaw * self._temperature1
+        logit = logitRaw / (self._temperature1 * temperature)
         trueCode = logit.argmax(-1)
-        sample = F.gumbel_softmax(logit, temperature, True)
+        sample = F.gumbel_softmax(logit, math.sqrt(temperature), True)
         code = sample.argmax(-1)
         target = self._codebook
         quantized = sample @ target

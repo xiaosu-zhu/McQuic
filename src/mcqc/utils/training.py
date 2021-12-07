@@ -2,7 +2,7 @@ from logging import warning
 from typing import Any
 import warnings
 import math
-from cfmUtils.base.restorable import Restorable
+from vlutils.base.restorable import Restorable
 from collections import Counter
 from bisect import bisect_right
 from functools import wraps

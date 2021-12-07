@@ -4,7 +4,7 @@ from typing import List
 import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import ConvertImageDtype
-from cfmUtils.config import read
+from vlutils.config import read
 
 from mcqc.evaluation.refModel import PostProcess, Preprocess
 from mcqc.evaluation.tests import Performance, Speed, Test, Preparar

@@ -16,7 +16,7 @@ dependencies:
   - matplotlib
   - pip:
     - pyyaml
-    - cfmUtils
+    - vlutils
     - pyro-ppl
     - storchastic
     - lmdb

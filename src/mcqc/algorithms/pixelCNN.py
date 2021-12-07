@@ -14,8 +14,8 @@ from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
-from cfmUtils.saver import Saver
-from cfmUtils.base import FrequecyHook
+from vlutils.saver import Saver
+from vlutils.base import FrequecyHook
 
 from mcqc.algorithms.algorithm import Algorithm
 from mcqc.datasets.dataset import BasicLMDB

@@ -1,7 +1,7 @@
 import os
 from typing import Dict
 
-from cfmUtils.config import read
+from vlutils.config import read
 from mcqc import Config
 
 from absl import app
