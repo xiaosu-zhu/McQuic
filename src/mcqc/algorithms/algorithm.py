@@ -1,7 +1,7 @@
 """Base class of algorithms"""
 import abc
 
-from cfmUtils.base import Restorable
+from vlutils.base import Restorable
 
 
 class Algorithm(Restorable, abc.ABC):

@@ -147,7 +147,7 @@ class MeanAligning(nn.Module):
         return alignLoss
 
 
-class CodebookSpreading(nn.Module):
+class CodebookRegularization(nn.Module):
     def forward(self, codebook):
         # [k]
         inter = (codebook ** 2).sum(-1)
@@ -155,6 +155,24 @@ class CodebookSpreading(nn.Module):
         intra = (codebook @ codebook.T).triu(1)
 
         loss = ((inter - 1.0) ** 2).mean() - intra.mean()
+
+        return loss
+
+class CodebookSpreading(nn.Module):
+    def forward(self, codebook, temperature):
+        k, d = codebook.shape
+        # [k]
+        inter = (codebook ** 2).sum(-1)
+        # [k, k]
+        intra = (codebook @ codebook.T).triu(1)
+
+        indices = torch.ones_like(intra, dtype=bool).triu(1)
+
+        # [k, k] distance
+        distance = (inter[:, None] - 2 * intra + inter)[indices]
+        distance = distance[distance > 0]
+
+        loss = F.relu(-((distance / d) * math.sqrt(k / temperature) + 1e-7).log()).mean()
 
         return loss
 
@@ -167,15 +185,15 @@ class L2Regularization(nn.Module):
 
 class Regularization(nn.Module):
     def forward(self, logit):
+        # [n, m, h, w, k]
         target = -math.log(logit.shape[-1])
-        logit = logit.sum((0, 1, 2))
-        logit = logit - logit.logsumexp(-1)
-        # [k]
+        logit = logit.mean((2, 3))
+        logit = logit - logit.logsumexp(-1, keepdim=True)
+        # [n, m, k]
         prob = torch.softmax(logit, -1)
         t = prob * (logit - target)
         t[prob == 0] = 0
-        return t.sum()
-
+        return t.mean()
 
 
 class CompressionLossBig(nn.Module):

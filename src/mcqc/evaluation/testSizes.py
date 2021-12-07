@@ -4,7 +4,7 @@ from typing import Dict
 
 import numpy as np
 from tqdm import tqdm, trange
-from cfmUtils.config import read
+from vlutils.config import read
 from mcqc import Config
 
 from absl import app

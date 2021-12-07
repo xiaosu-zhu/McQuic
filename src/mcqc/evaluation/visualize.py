@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from absl import app, flags
-from cfmUtils.config import read
+from vlutils.config import read
 import torchvision
 from sklearn.preprocessing import StandardScaler
 import umap
