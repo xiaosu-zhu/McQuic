@@ -1,96 +1,39 @@
 import torch
 from torch import nn
 
-from mcqc.layers.convs import conv1x1, conv3x3, deconv5x5, deconv5x5Up
+from mcqc.layers.convs import pixelShuffle3x3, pixelShuffle5x5
 from mcqc.layers.gdn import GenDivNorm
-from mcqc.layers import ResidualBlock, ResidualBlockUpsample, subPixelConv3x3, AttentionBlock
+from mcqc.layers.blocks import ResidualBlock, AttentionBlock, ResidualBlockShuffle
+
 
 
 class BaseDecoder5x5(nn.Module):
     def __init__(self, channel, groups):
         super().__init__()
         self._net = nn.Sequential(
-            deconv5x5Up(channel, channel, groups=groups),
+            pixelShuffle5x5(channel, channel, 2),
             GenDivNorm(channel, inverse=True),
-            deconv5x5Up(channel, channel, groups=groups),
+            pixelShuffle5x5(channel, channel, 2),
             GenDivNorm(channel, inverse=True),
-            deconv5x5Up(channel, 3, groups=groups)
+            pixelShuffle5x5(channel, 3, 2)
         )
 
     def forward(self, x: torch.Tensor):
         # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
         return self._net(x)
 
-class Decoder(nn.Module):
-    def __init__(self, inChannel=384, intermediateChannel=192):
-        super().__init__()
-        self._net = nn.Sequential(
-            deconv5x5Up(inChannel, intermediateChannel, 2),
-            GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5Up(intermediateChannel, intermediateChannel, 2),
-            GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5Up(intermediateChannel, intermediateChannel, 2),
-            GenDivNorm(intermediateChannel, inverse=True),
-            deconv5x5Up(intermediateChannel, 3, 2)
-        )
-
-    def forward(self, x: torch.Tensor):
-        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
-        return self._net(x)
-
-
-class ResidualDecoder(nn.Module):
-    def __init__(self, channel, groups):
-        super().__init__()
-        self._net = nn.Sequential(
-            AttentionBlock(channel, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            AttentionBlock(channel, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            subPixelConv3x3(channel, 3, 2),
-        )
-
-    def forward(self, x: torch.Tensor):
-        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
-        return self._net(x)
-
-
-class ResidualAttDecoder(nn.Module):
-    def __init__(self, channel, groups):
-        super().__init__()
-        self._net = nn.Sequential(
-            AttentionBlock(channel, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            AttentionBlock(channel, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            subPixelConv3x3(channel, 3, 2),
-        )
-
-    def forward(self, x: torch.Tensor):
-        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
-        return self._net(x)
 
 class ResidualBaseDecoder(nn.Module):
     def __init__(self, channel, groups):
         super().__init__()
         self._net = nn.Sequential(
             ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlockShuffle(channel, channel, 2, groups=groups),
             AttentionBlock(channel, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlockShuffle(channel, channel, 2, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
-            subPixelConv3x3(channel, 3, 2),
+            pixelShuffle3x3(channel, 3, 2),
         )
 
     def forward(self, x: torch.Tensor):
@@ -99,14 +42,14 @@ class ResidualBaseDecoder(nn.Module):
 
 
 class UpSampler(nn.Module):
-    def __init__(self, channel, groups, outChannel=None):
+    def __init__(self, channel, groups, outChannels=None):
         super().__init__()
-        if outChannel is None:
-            outChannel = channel
+        if outChannels is None:
+            outChannels = channel
         self._net = nn.Sequential(
             AttentionBlock(channel, groups=groups),
             ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
+            ResidualBlockShuffle(channel, channel, 2, groups=groups),
         )
 
     def forward(self, x: torch.Tensor):
@@ -115,35 +58,13 @@ class UpSampler(nn.Module):
 
 
 class UpSampler5x5(nn.Module):
-    def __init__(self, channel, groups, outChannel=None):
+    def __init__(self, channel, groups, outChannels=None):
         super().__init__()
-        if outChannel is None:
-            outChannel = channel
+        if outChannels is None:
+            outChannels = channel
         self._net = nn.Sequential(
-            deconv5x5Up(channel, channel, groups=groups),
+            pixelShuffle5x5(channel, channel, 2),
             GenDivNorm(channel)
-        )
-
-    def forward(self, x: torch.Tensor):
-        # [N, channel, H // 16, W // 16] <- [N, 3, H, W]
-        return self._net(x)
-
-
-class ResidualAttDecoderNew(nn.Module):
-    def __init__(self, channel, groups, k):
-        super().__init__()
-        self._net = nn.Sequential(
-            conv1x1(groups * k, channel, groups=groups),
-            AttentionBlock(channel, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            AttentionBlock(channel, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups),
-            subPixelConv3x3(channel, 3, 2),
         )
 
     def forward(self, x: torch.Tensor):
