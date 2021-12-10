@@ -1,3 +1,17 @@
+# Copyright 2020 InterDigital Communications, Inc.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# https://github.com/InterDigitalInc/CompressAI/blob/master/compressai/layers/gdn.py
 
 import torch
 import torch.nn as nn
@@ -24,7 +38,6 @@ class _lowerBound(torch.autograd.Function):
         pass_through_if = (input_ >= bound) | (grad_output < 0)
         return pass_through_if.type(grad_output.dtype) * grad_output, None
 
-
 class LowerBound(nn.Module):
     """Lower bound operator, computes `torch.max(x, bound)` with a custom
     gradient.
@@ -49,7 +62,6 @@ class LowerBound(nn.Module):
         if torch.jit.is_scripting(): # type: ignore
             return torch.max(x, self.bound) # type: ignore
         return self.lower_bound(x)
-
 
 class NonNegativeParametrizer(nn.Module):
     """
@@ -81,7 +93,6 @@ class NonNegativeParametrizer(nn.Module):
         out = out ** 2 - self.pedestal
         return out
 
-
 class GenDivNorm(nn.Module):
     r"""Generalized Divisive Normalization layer.
     Introduced in `"Density Modeling of Images Using a Generalized Normalization
@@ -91,11 +102,11 @@ class GenDivNorm(nn.Module):
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
 
-    def __init__(self, in_channels, inverse=False, beta_min=1e-6, gamma_init=0.1):
+    def __init__(self, inChannels: int, inverse: bool = False, beta_min: float = 1e-6, gamma_init: float = 0.1):
         """Generalized Divisive Normalization layer.
 
         Args:
-            in_channels (int): Channels of input tensor.
+            inChannels (int): Channels of input tensor.
             inverse (bool, optional): GDN or I-GDN. Defaults to False.
             beta_min (float, optional): Lower bound of beta. Defaults to 1e-6.
             gamma_init (float, optional): Initial value of gamma. Defaults to 0.1.
@@ -107,12 +118,12 @@ class GenDivNorm(nn.Module):
         self.inverse = bool(inverse)
 
         self.beta_reparam = NonNegativeParametrizer(minimum=beta_min)
-        beta = torch.ones(in_channels)
+        beta = torch.ones(inChannels)
         beta = self.beta_reparam.init(beta)
         self.beta = nn.Parameter(beta) # type: ignore
 
         self.gamma_reparam = NonNegativeParametrizer()
-        gamma = gamma_init * torch.eye(in_channels)
+        gamma = gamma_init * torch.eye(inChannels)
         gamma = self.gamma_reparam.init(gamma)
         self.gamma = nn.Parameter(gamma) # type: ignore
 
@@ -132,7 +143,6 @@ class GenDivNorm(nn.Module):
         out = x * norm
 
         return out
-
 
 class EffGenDivNorm(GenDivNorm):
     r"""Simplified GDN layer.

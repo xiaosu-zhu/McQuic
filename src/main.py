@@ -20,8 +20,8 @@ from vlutils.config import read, summary
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
-from mcqc.algorithms import Plain, FineTune, TwoPass, New, PixelCNN
-from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew, WholePQ5x5, WholePQPixelCNN
+from mcqc.algorithms import New, PixelCNN
+from mcqc.models.whole import WholePQBig, WholePQ5x5, WholePQPixelCNN
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CosineAnnealingWarmupRestarts, CosineValue, CosineValueWithEnd, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
@@ -76,21 +76,12 @@ def _generalConfig(rank: int, worldSize: int):
     # dist.barrier(device_ids=[rank])
 
 models = {
-    "Base": WholePQ,
-    "Context": WholePQContext,
-    "Relax": WholePQRelax,
-    "TwoPass": WholePQTwoPass,
-    "New": WholePQQ,
-    "AQ": WholeAQ,
     "Big": WholePQBig,
     "5x5": WholePQ5x5,
     "PixelCNN": WholePQPixelCNN
 }
 
 methods = {
-    "Plain": Plain,
-    "FineTune": FineTune,
-    "TwoPass": TwoPass,
     "New": New,
     "PixelCNN": PixelCNN
 }

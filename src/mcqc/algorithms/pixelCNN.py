@@ -21,7 +21,7 @@ from mcqc.algorithms.algorithm import Algorithm
 from mcqc.datasets.dataset import BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.evaluation.metrics import MsSSIM, PSNR
-from mcqc.models.whole import WholePQ
+from mcqc.models.whole import WholePQBig
 from mcqc import Config
 from mcqc.utils.training import _ValueTuner
 from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess
@@ -39,7 +39,7 @@ _logMapping = {
 
 
 class PixelCNN(Algorithm):
-    def __init__(self, config: Config, model: WholePQ, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueSchedulers: List[Type[_ValueTuner]], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: WholePQBig, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueSchedulers: List[Type[_ValueTuner]], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
         self._worldSize = dist.get_world_size()
