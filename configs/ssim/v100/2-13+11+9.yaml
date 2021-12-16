@@ -40,7 +40,7 @@ tempSchdr:
 regSchdr:
     type: MultiStep
     params:
-        initValue: 1.
+        initValue: 0.0
         gamma: 1.0
         stepInterval: 1
 # regSchdr:
