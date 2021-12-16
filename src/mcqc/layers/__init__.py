@@ -1,1 +1,1 @@
-from .blocks import BlockFactory
+import mcqc.layers.blocks
