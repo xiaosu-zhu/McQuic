@@ -73,11 +73,10 @@ class Compressor(nn.Module):
 
     def forward(self, x: torch.Tensor):
         y = self._encoder(x)
-        yHat = self._quantizer(y)
+        # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
+        yHat, codes, logits = self._quantizer(y)
         xHat = self._decoder(yHat)
-        return xHat
-
-
+        return xHat, yHat, codes, logits
 
 
 

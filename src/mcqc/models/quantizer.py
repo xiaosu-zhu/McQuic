@@ -83,7 +83,7 @@ class _quantizerEncoder(nn.Module):
         self._quantizationHead =  quantizationHead
         self._latentHead =  latentHead
 
-    def forwrad(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
         q, code, logit = self._quantizer(self._quantizationHead(z))
@@ -91,7 +91,7 @@ class _quantizerEncoder(nn.Module):
             return q, None, code, logit
         z = self._latentHead(z)
         #         ↓ residual
-        return q, z - q, code, logit
+        return q, z - self._dequantizer(q), code, logit
 
 class _quantizerDecoder(nn.Module):
     """
@@ -113,7 +113,7 @@ class _quantizerDecoder(nn.Module):
         self._sideHead =  sideHead
         self._restoreHead =  restoreHead
 
-    def forwrad(self, q: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
+    def forward(self, q: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
         q = self._dequantizationHead(self._dequantizer(q))
         if self._sideHead is not None:
             xHat = q + self._sideHead(formerLevel)
@@ -166,7 +166,7 @@ class UMGMQuantizer(nn.Module):
             codes.append(code)
             logits.append(logit)
         formerLevel = None
-        for decoder, quantized in zip(self._decoders, quantizeds):
+        for decoder, quantized in zip(self._decoders, quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
         return formerLevel, codes, logits
