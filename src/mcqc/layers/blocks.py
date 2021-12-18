@@ -33,6 +33,18 @@ class _baseAct(nn.Module):
     def forward(self, x):
         return self._act(self._norm(x))
 
+
+@Registry.register
+class GroupSwishConv2D(nn.Module):
+    def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1):
+        super().__init__()
+        self._net = nn.Sequential(
+            _baseAct(groups, inChannels),
+            conv3x3(inChannels, outChannels),
+        )
+    def forward(self, x: torch.Tensor):
+        return self._net(x)
+
 # NOTE: Slightly modified based on [CompVis/taming-transformers]
 class _residulBlock(nn.Module):
     def __init__(self, act1: nn.Module, conv1: nn.Conv2d, act2: nn.Module, conv2: nn.Conv2d, skip: Union[nn.Module, None]):

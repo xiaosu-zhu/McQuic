@@ -1,30 +1,56 @@
 version: v1.0
 
 encoder:
-  - ResidualBlockWithStride(`channel`, `hidden`, groups=`m`)
+  - Conv2D(3, `channel`)
+  - ResidualBlockWithStride(`channel`, `channel`, groups=`m`) # 1/2
   - ResidualBlock(`channel`, `channel`, groups=`m`)
+  - ResidualBlockWithStride(`channel`, `channel`, groups=`m`)
   - ResidualBlock(`channel`, `channel`, groups=`m`)
-  - ResidualBlockWithStride(`channel`, `hidden`, groups=`m`)
-  - ResidualBlock(`channel`, `channel`, groups=`m`)
-  - ResidualBlock(`channel`, `channel`, groups=`m`)
-  - ResidualBlockWithStride(`channel`, `hidden`, groups=`m`)
-  - ResidualBlock(`channel`, `channel`, groups=`m`)
+  - ResidualBlockWithStride(`channel`, `channel`, groups=`m`)
   - ResidualBlock(`channel`, `channel`, groups=`m`)
 
 
 quantizer:
-  - QuantizerEncoder(`channel`, `level`, `m`, `k`)
-  - QuantizerDecoder(`channel`, `level`, `m`, `k`)
-
+  - UMGMQuantizer(`channel`, `m`, `k`):
+    # x [H, W]
+    # | `latentStageEncoder`
+    # z [H/2 , W/2] -------╮
+    # | `quantizationHead` | `latentHead`
+    # q [H/2, W/2]         z' [H/2, w/2]
+    # |                    |
+    # ├-`subtract` --------╯
+    # residual for next level
+    latentStageEncoder:
+      - ResidualBlockWithStride(`channel`, `channel`, groups=`m`)
+      - ResidualBlock(`channel`, `channel`, groups=`m`)
+    quantizationHead:
+      - ResidualBlock(`channel`, `channel`, groups=`m`)
+      - GroupSwishConv2D(`channel`, `channel`, groups=`m`)
+    latentHead:
+      - ResidualBlock(`channel`, `channel`, groups=`m`)
+      - GroupSwishConv2D(`channel`, `channel`, groups=`m`)
+    # q [H/2, W/2]            formerLevelRestored [H/2, W/2]
+    # | `dequantizaitonHead`  | `sideHead`
+    # ├-`add` ----------------╯
+    # xHat [H/2, W/2]
+    # | `restoreHead`
+    # nextLevelRestored [H, W]
+    dequantizationHead:
+      - ResidualBlock(`channel`, `channel`, groups=`m`)
+      - GroupSwishConv2D(`channel`, `channel`, groups=`m`)
+    sideHead:
+      - ResidualBlock(`channel`, `channel`, groups=`m`)
+      - GroupSwishConv2D(`channel`, `channel`, groups=`m`)
+    restoreHead:
+      - ResidualBlock(`channel`, `channel`, groups=`m`)
+      - ResidualBlockShuffle(`channel`, `channel`, groups=`m`)
 
 decoder:
   - ResidualBlock(`channel`, `channel`, groups=`m`)
+  - ResidualBlockShuffle(`channel`, `channel`, groups=`m`)
   - ResidualBlock(`channel`, `channel`, groups=`m`)
   - ResidualBlockShuffle(`channel`, `channel`, groups=`m`)
   - ResidualBlock(`channel`, `channel`, groups=`m`)
-  - ResidualBlock(`channel`, `channel`, groups=`m`)
   - ResidualBlockShuffle(`channel`, `channel`, groups=`m`)
   - ResidualBlock(`channel`, `channel`, groups=`m`)
-  - ResidualBlock(`channel`, `channel`, groups=`m`)
-  - ResidualBlockShuffle(`channel`, `channel`, groups=`m`)
-  - Conv2D(`channel`, 3)
+  - GroupSwishConv2D(`channel`, 3)
