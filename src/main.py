@@ -21,7 +21,7 @@ from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.algorithms import New, PixelCNN
-from mcqc.models.whole import WholePQBig, WholePQ5x5, WholePQPixelCNN
+from mcqc.models.deprecated.whole import WholePQBig, WholePQ5x5, WholePQPixelCNN
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CosineAnnealingWarmupRestarts, CosineValue, CosineValueWithEnd, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess

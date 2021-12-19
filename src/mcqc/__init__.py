@@ -1,4 +1,9 @@
 from .consts import Consts
 from .config import Config
 
-from vlutils.base import Registry
+import mcqc.layers
+import mcqc.loss
+import mcqc.datasets
+import mcqc.models
+import mcqc.training
+import mcqc.utils
