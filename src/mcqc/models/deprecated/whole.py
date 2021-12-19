@@ -4,9 +4,9 @@ import torch.nn.functional as F
 import torch
 import storch
 
-from mcqc.losses.quantization import CodebookSpreading, CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, L2Regularization, MeanAligning, QError, Regularization
+from mcqc.loss.quantization import CodebookSpreading, CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, L2Regularization, MeanAligning, QError, Regularization
 from mcqc.models.compressor import PQCompressorBig, PQCompressor5x5
-from mcqc.models.pixelCNN import PixelCNN
+from mcqc.models.deprecated.pixelCNN import PixelCNN
 
 
 class WholePQBig(nn.Module):

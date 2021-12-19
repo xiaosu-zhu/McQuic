@@ -21,7 +21,7 @@ from mcqc.algorithms.algorithm import Algorithm
 from mcqc.datasets.dataset import BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.evaluation.metrics import MsSSIM, PSNR
-from mcqc.models.whole import WholePQBig
+from mcqc.models.deprecated.whole import WholePQBig
 from mcqc import Config
 from mcqc.utils.training import _ValueTuner
 from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess

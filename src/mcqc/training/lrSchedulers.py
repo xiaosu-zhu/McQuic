@@ -1,39 +1,16 @@
-from logging import warning
-from typing import Any
-import warnings
-import math
-from vlutils.base.restorable import Restorable
 from collections import Counter
-from bisect import bisect_right
 from functools import wraps
+import math
 import warnings
 import weakref
 
 import torch
 from torch.optim.optimizer import Optimizer
 
-
-class MovingMean:
-    def __init__(self, momentum=0.9):
-        super().__init__()
-        self._slots = dict()
-        self._alpha = 1 - momentum
-
-    def step(self, key, value: torch.Tensor):
-        if key in self._slots:
-            mean = self._slots[key]
-            mean -= self._alpha * (mean - float(value))
-            self._slots[key] = mean
-        else:
-            mean = value.item()
-            self._slots[key] = mean
-        return mean
-
-    def __getitem__(self, key: Any) -> float:
-        return self._slots[key]
+from mcqc.utils import LrSchedulerRegistry
 
 
-
+@LrSchedulerRegistry.register
 class MultiStepLRWithWarmUp(torch.optim.lr_scheduler._LRScheduler):
     """Decays the learning rate of each parameter group by gamma once the
     number of epoch reaches one of the milestones. Notice that such decay can
@@ -82,6 +59,7 @@ class MultiStepLRWithWarmUp(torch.optim.lr_scheduler._LRScheduler):
                 for group in self.optimizer.param_groups]
 
 
+@LrSchedulerRegistry.register
 class CyclicLR(torch.optim.lr_scheduler._LRScheduler):
     r"""Sets the learning rate of each parameter group according to
     cyclical learning rate policy (CLR). The policy cycles the learning
@@ -280,7 +258,7 @@ class CyclicLR(torch.optim.lr_scheduler._LRScheduler):
         """
 
         if not self._get_lr_called_within_step:
-            warning.warn("To get the last learning rate computed by the scheduler, "
+            warnings.warn("To get the last learning rate computed by the scheduler, "
                           "please use `get_last_lr()`.", UserWarning)
 
         cycle = math.floor(1 + self.last_epoch / self.total_size)
@@ -316,6 +294,7 @@ class CyclicLR(torch.optim.lr_scheduler._LRScheduler):
 
 
 
+@LrSchedulerRegistry.register
 class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
     """
         optimizer (Optimizer): Wrapped optimizer.
@@ -491,141 +470,3 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
                 self.step_in_cycle = epoch
 
         super().step()
-
-class _ValueTuner(Restorable):
-    def __init__(self, initValue: float = 2e-2):
-        super().__init__()
-        self._epoch = 0
-        self._initValue = initValue
-
-    def step(self):
-        self._epoch += 1
-        self.calc()
-
-    def calc(self):
-        self._value = self._initValue
-
-    @property
-    def Value(self) -> float:
-        if not hasattr(self, "_value"):
-            self.calc()
-        return self._value
-
-
-class CyclicValue(_ValueTuner):
-    def __init__(self, initValue: float = 2e-2, gamma: float = 1.0, cyclicInterval: int = 400, boostInterval: int = 3, zeroOutRatio: float = 1./3.):
-        super().__init__(initValue=initValue)
-        self._cyclicInterval = cyclicInterval
-        self._boostInterval = boostInterval
-        self._zeroOutRatio = zeroOutRatio
-        self._gamma = gamma
-
-    def calc(self):
-        maxReg = self._initValue * (self._gamma ** self._epoch)
-        # phase 1
-        if (self._epoch // self._cyclicInterval) % self._boostInterval == 0:
-            self._value = maxReg
-        # phase 2
-        else:
-            j = (self._epoch % self._cyclicInterval) / float(self._cyclicInterval)
-            down = 2 * maxReg / (self._zeroOutRatio - 1) * j + maxReg
-            up = 2 * maxReg / (1 - self._zeroOutRatio) * j + (self._zeroOutRatio + 1) / (self._zeroOutRatio - 1) * maxReg
-            self._value = max(0, max(up, down))
-
-
-class ExponentialValue(_ValueTuner):
-    def __init__(self, initValue: float = 2e-2, gamma: float = 0.9999):
-        super().__init__(initValue=initValue)
-        self._gamma = gamma
-
-    def calc(self):
-        self._value = self._initValue * (self._gamma ** self._epoch)
-
-
-class StepValue(_ValueTuner):
-    def __init__(self, initValue: float = 2e-2, gamma: float = 0.1, stepInterval: int = 1000):
-        super().__init__(initValue=initValue)
-        self._gamma = gamma
-        self._stepInterval = stepInterval
-
-    def calc(self):
-        self._value = self._initValue * (self._gamma ** (self._epoch // self._stepInterval))
-
-class CosineValue(_ValueTuner):
-    def __init__(self, maxValue: float = 1.0, minValue: float = 0.0, stepInterval: int = 1, totalStep: int = 1000, revert: bool = False):
-        super().__init__(initValue=maxValue)
-        self._minValue = minValue
-        self._stepInterval = stepInterval
-        self._totalStep = totalStep
-        self._revert = revert
-
-    def calc(self):
-        # 1 ~ -1
-        nowCosine = math.cos(math.pi * self._epoch / self._stepInterval / self._totalStep)
-        if self._revert:
-            nowCosine = nowCosine
-        realValue = (nowCosine + 1) / 2.0 * (self._initValue - self._minValue) + self._minValue
-        self._value = realValue
-
-class CosineValueWithEnd(_ValueTuner):
-    def __init__(self, maxValue: float = 1.0, minValue: float = 0.0, stepInterval: int = 1, totalStep: int = 1000, revert: bool = False):
-        super().__init__(initValue=maxValue)
-        self._minValue = minValue
-        self._stepInterval = stepInterval
-        self._totalStep = totalStep
-        self._revert = revert
-
-    def calc(self):
-        if self._epoch / self._stepInterval / self._totalStep >= 1:
-            self._value = self._minValue
-            return
-        # 1 ~ -1
-        nowCosine = math.cos(math.pi * self._epoch / self._stepInterval / self._totalStep)
-        if self._revert:
-            nowCosine = -nowCosine
-        realValule = (nowCosine + 1) / 2.0 * (self._initValue - self._minValue) + self._minValue
-        self._value = realValule
-
-
-class JumpValue(_ValueTuner):
-    def __init__(self, initValue: float = 10.0, gamma: float = 0.9, stepInterval: int = 1000, minValue: float = 0.01):
-        super().__init__(initValue=initValue)
-        self._gamma = gamma
-        self._stepInterval = stepInterval
-        self._max = initValue
-        self._min = minValue
-
-        self._iteration = int(math.log(self._min / self._max) / math.log(self._gamma))
-
-    def calc(self):
-        self._value = self._initValue * (self._gamma ** ((self._epoch // self._stepInterval) % self._iteration))
-
-
-class JumpAlter(_ValueTuner):
-    def __init__(self, initValue: float = 10.0, gamma: float = 0.9, stepInterval: int = 10, minValue: float = 0.01, milestone: int = 500, valueAfterMilestone: float = 0.01):
-        super().__init__(initValue=initValue)
-        self._gamma = gamma
-        self._stepInterval = stepInterval
-        self._max = initValue
-        self._min = minValue
-        self._milestone = milestone
-        self._valueAfterMilestone = valueAfterMilestone
-
-        self._iteration = int(math.log(self._min / self._max) / math.log(self._gamma))
-
-    def calc(self):
-        if self._iteration <= self._milestone:
-            self._value = self._initValue * (self._gamma ** ((self._epoch // self._stepInterval) % self._iteration))
-        else:
-            self._value = self._valueAfterMilestone
-
-
-if __name__ == "__main__":
-    a = CosineValue(revert=True)
-    from matplotlib import pyplot as plt
-    values = list()
-    for i in range(1000):
-        a.step()
-        values.append(float(a._value))
-    plt.plot(values)
-    plt.savefig("value.pdf")

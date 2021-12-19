@@ -18,10 +18,10 @@ from typing import Union
 
 import torch
 from torch import nn
-from vlutils.base import Registry
 
-from .gdn import GenDivNorm
-from .convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, pixelShuffle3x3
+from mcqc.utils import ModuleRegistry
+from mcqc.layers.gdn import GenDivNorm
+from mcqc.layers.convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, pixelShuffle3x3
 
 
 # NOTE: Based on [CompVis/taming-transformers]
@@ -34,7 +34,7 @@ class _baseAct(nn.Module):
         return self._act(self._norm(x))
 
 
-@Registry.register
+@ModuleRegistry.register
 class GroupSwishConv2D(nn.Module):
     def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1):
         super().__init__()
@@ -65,7 +65,7 @@ class _residulBlock(nn.Module):
         return out
 
 
-@Registry.register
+@ModuleRegistry.register
 class ResidualBlockWithStride(_residulBlock):
     """Residual block with stride for down-sampling.
 
@@ -109,7 +109,7 @@ class ResidualBlockWithStride(_residulBlock):
             skip)
 
 
-@Registry.register
+@ModuleRegistry.register
 class ResidualBlockUnShuffle(_residulBlock):
     """Residual block with PixelUnShuffle for down-sampling.
 
@@ -148,7 +148,7 @@ class ResidualBlockUnShuffle(_residulBlock):
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
 
 
-@Registry.register
+@ModuleRegistry.register
 class ResidualBlockShuffle(_residulBlock):
     """Residual block with PixelShuffle for up-sampling.
 
@@ -187,7 +187,7 @@ class ResidualBlockShuffle(_residulBlock):
             pixelShuffle3x3(inChannels, outChannels, upsample))
 
 
-@Registry.register
+@ModuleRegistry.register
 class ResidualBlock(_residulBlock):
     """Basic residual block.
 
@@ -229,7 +229,7 @@ class ResidualBlock(_residulBlock):
             skip)
 
 
-@Registry.register
+@ModuleRegistry.register
 class ResidualBlockMasked(_residulBlock):
     """A residual block with MaskedConv for causal inference.
 
@@ -271,7 +271,7 @@ class ResidualBlockMasked(_residulBlock):
             skip)
 
 
-@Registry.register
+@ModuleRegistry.register
 class AttentionBlock(nn.Module):
     """Self attention block.
     Simplified variant from `"Learned Image Compression with
@@ -333,7 +333,7 @@ class AttentionBlock(nn.Module):
         return out
 
 
-@Registry.register
+@ModuleRegistry.register
 class NonLocalBlock(nn.Module):
     def __init__(self, N, groups=1):
         super().__init__()

@@ -5,8 +5,8 @@ from mcqc.layers import convs
 from mcqc.layers.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 
 from mcqc.models.quantizer import L2Quantizer, UMGMQuantizer
-from mcqc.models.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
-from mcqc.models.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
+from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
+from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
 
 
 # class Compressor(nn.Module):
