@@ -33,14 +33,20 @@ optim:
 schdr:
     type: CosineWarmRestart
     params:
-        first_cycle_steps: 100 # match 10 * testFreq
-        warmup_steps: 20
-        gamma: 0.8
+        first_cycle_steps: 500 # match 10 * testFreq
+        warmup_steps: 50
+        gamma: 0.25
 regSchdr:
     type: MultiStep
     params:
         initValue: 1.e-3
-        gamma: 0.992
+        gamma: 0.993
+        stepInterval: 1
+tempSchdr:
+    type: MultiStep
+    params:
+        initValue: 1.
+        gamma: 1.0
         stepInterval: 1
 # regSchdr:
 #     type: Cosine
