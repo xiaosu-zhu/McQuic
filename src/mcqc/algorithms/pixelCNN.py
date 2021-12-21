@@ -38,7 +38,7 @@ _logMapping = {
 }
 
 
-class New(Algorithm):
+class PixelCNN(Algorithm):
     def __init__(self, config: Config, model: WholePQBig, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueSchedulers: List[Type[_ValueTuner]], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         self._rank = dist.get_rank()
@@ -49,7 +49,7 @@ class New(Algorithm):
             raise AttributeError("Try passing a saver for sub-process.")
         torch.cuda.set_device(self._rank)
 
-        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False)
+        self._model = DistributedDataParallel(model.to(self._rank), device_ids=[self._rank], output_device=self._rank, broadcast_buffers=False, find_unused_parameters=True)
 
         if self._rank == 0:
             self._evalSSIM = MsSSIM(sizeAverage=False).to(self._rank)
@@ -75,7 +75,7 @@ class New(Algorithm):
         self._config = config
         self._continue = continueTrain
         if self._rank == 0:
-            self._loggingHook = FrequecyHook({self._config.EvalFreq: self._mediumHook, self._config.TestFreq: self._slowHook, self._config.TestFreq * 10: self._testHook})
+            self._loggingHook = FrequecyHook({self._config.TestFreq: self._slowHook})
         else:
             self._loggingHook = None
         self._best = -1
@@ -91,12 +91,8 @@ class New(Algorithm):
     def _trainingStat(self, **kwArgs):
         step = kwArgs["now"]
         self._saver.add_scalar("Stat/Epoch", kwArgs["epoch"], step)
-        self._saver.add_scalar(_logMapping["distortion"], -10 * kwArgs["distortion"].log10(), global_step=step)
-        self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
-        self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
-        self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
-        # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
-        # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
+        self._saver.add_scalar("Loss/cls", kwArgs["predict"], global_step=step)
+        self._saver.add_scalar("Loss/rate", kwArgs["rate"], global_step=step)
         self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
         self._saver.add_scalar(_logMapping["regCoeff"], self._regScheduler.Value, global_step=step)
         self._saver.add_scalar(_logMapping["temperature"], self._tempScheduler.Value, global_step=step)
@@ -113,26 +109,6 @@ class New(Algorithm):
             self._saver._savePath = path
         self._saver.save(self._logger, model=self._model, optim=self._optimizer, schdr=self._scheduler, step=step, epoch=epoch, regSchdr=self._regScheduler, tempSchdr=self._tempScheduler)
         self._logger.info("[%3dk]: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
-
-    @torch.inference_mode()
-    def _testHook(self, **kwArgs):
-        testLoader, step = kwArgs["testLoader"], kwArgs["now"]
-        self._evalFull(testLoader, step)
-
-    @torch.inference_mode()
-    def _mediumHook(self, **kwArgs):
-        images, restored, step, logits, codes, step = kwArgs["images"], kwArgs["restored"], kwArgs["now"], kwArgs["logits"], kwArgs["codes"], kwArgs["now"]
-        # prediction = kwArgs["prediction"]
-        # [n, m, h, w, k]
-        # print(logits.shape)
-        # self._saver.add_scalar("Stat/MaxProb", logits[0, 0].softmax(-1).max(), global_step=step)
-        # self._saver.add_scalar("Stat/MinProb", logits[0, 0].softmax(-1).min(), global_step=step)
-        self._saver.add_histogram("Stat/Logit", logits[0, 0], global_step=step)
-        for i, c in enumerate(codes):
-            self._saver.add_histogram(f"Stat/Code{i}", c[0, ..., 0].flatten(), global_step=step)
-            self._visualizeIntermediate(i, c, step)
-        self._saver.add_images("Train/Raw", self._deTrans(images), global_step=step)
-        self._saver.add_images("Train/Res", self._deTrans(restored), global_step=step)
 
     @torch.inference_mode()
     def _visualizeIntermediate(self, i, code, step):
@@ -176,16 +152,15 @@ class New(Algorithm):
             schdr = copy.deepcopy(self._scheduler)
             regSchdr = copy.deepcopy(self._regScheduler)
             tempSchdr = copy.deepcopy(self._tempScheduler)
-            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, schdr=schdr, step=step, epoch=initEpoch) # , regSchdr=regSchdr, tempSchdr=tempSchdr)
+            loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, schdr=schdr, step=step, epoch=initEpoch, regSchdr=regSchdr, tempSchdr=tempSchdr)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
             self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
             for group in self._optimizer.param_groups:
                 group.setdefault('initial_lr', group['lr'])
             self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
-            self._regScheduler._epoch = initEpoch
-            self._tempScheduler._epoch = initEpoch
-        # self._reSpreadAll()
+            self._regScheduler._epoch = regSchdr._epoch
+            self._tempScheduler._epoch = tempSchdr._epoch
 
         # self._scheduler.last_epoch = schdr.last_epoch
         # del schdr
@@ -202,25 +177,18 @@ class New(Algorithm):
             sampler.set_epoch(i + lastEpoch)
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (i + lastEpoch + 1), total=totalBatches, leave=False, disable=self._rank != 0):
                 self._optimizer.zero_grad()
-                dLoss, (weakCodebookLoss, weakFeatureLoss, weakDiversityLoss), (restored, allHards, allLogits) = self._model(images, self._tempScheduler.Value)
-                (dLoss + self._regScheduler.Value * weakCodebookLoss + self._regScheduler.Value * 1e-3 * weakFeatureLoss).backward()
+                clsLoss, predictRate = self._model(images, self._tempScheduler.Value)
+                clsLoss.backward()
                 # if True:
                 #     torch.nn.utils.clip_grad_norm_(self._model.parameters(), 0.5)
                 self._optimizer.step()
                 step += 1
                 # updateOp()
                 if step % 2 == 0 and self._loggingHook is not None:
-                    self._trainingStat(now=step, epoch=i + lastEpoch + 1, distortion=dLoss, auxiliary=(weakCodebookLoss, weakFeatureLoss, weakDiversityLoss), reg=self._regScheduler.Value)
+                    self._trainingStat(now=step, epoch=i + lastEpoch + 1, predict=clsLoss, rate=predictRate)
                 dist.barrier()
             if self._loggingHook is not None:
-                self._loggingHook(i + 1, now=step, images=images, restored=restored, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1, logits=allLogits[0], codes=allHards)
-            if (i + 1) % (self._config.TestFreq) == 0:
-                if self._saver is not None:
-                    for i in range(len(self._config.Model.k)):
-                        for j in range(self._config.Model.m):
-                            self._saver.add_embedding(self._model.module._compressor._quantizers[i][j]._codebook, global_step=step, tag=f"Stat/Codebook_{i}_{j}")
-                self._optimizer.zero_grad()
-                self._reSpreadAll()
+                self._loggingHook(i + 1, now=step, images=images, evalLoader=evalLoader, testLoader=testLoader, epoch=i + lastEpoch + 1)
             if self._scheduler is not None:
                 self._scheduler.step()
             self._regScheduler.step()
@@ -229,104 +197,9 @@ class New(Algorithm):
         if self._rank == 0:
             self._logger.info("Train finished")
 
-    def _reSpreadAll(self):
-        if self._rank == 0:
-            self._logger.debug("Begin re-assigning...")
-            self._reSpread(self._model.module._compressor)
-        dist.barrier()
-        if self._rank == 0:
-            self._logger.debug("Begin broadcast...")
-        for i in range(len(self._config.Model.k)):
-            for j in range(self._config.Model.m):
-                codebook = self._model.module._compressor._quantizers[i][j]._codebook.clone().detach()
-                dist.broadcast(codebook, 0)
-                self._model.module._compressor._quantizers[i][j]._codebook.data.copy_(codebook)
-        # del self._optimizer
-        # # reset optimizer's moments
-        # self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
-        # # restore learning rate
-        # # lr = self._scheduler.get_last_lr()[0]
-        # # for g in self._optimizer.param_groups:
-        # #    g['lr'] = lr
-        # # replace scheduler's optimizer
-        # if self._scheduler is not None:
-        #     self._scheduler = self._schdrFn(self._optimizer, **self._config.Schdr.params)
-        #     # self._scheduler.optimizer = self._optimizer
-        #     # self._scheduler.step()
-        if self._rank == 0:
-            self._logger.debug("End broadcast...")
-
-    @torch.inference_mode()
-    def _reSpread(self, model):
-        model.eval()
-        trainDataset = BasicLMDB(os.path.join("data", self._config.Dataset), maxTxns=(self._config.BatchSize + 4), transform=getTrainingFullTransform())
-        dataLoader = DataLoader(trainDataset, batch_size=self._config.BatchSize * 8, shuffle=True, num_workers=self._config.BatchSize + 4, pin_memory=True)
-        quantizeds = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
-        for image in tqdm(dataLoader, ncols=40, bar_format="Assign: {n_fmt}/{total_fmt} |{bar}|", leave=False):
-            image = image.to(self._rank, non_blocking=True)
-            # list of [n, m, h, w]
-            allOriginal = model.prepare(image)
-            for ori, levelQs in zip(allOriginal, quantizeds):
-                # [n, h, w, c]
-                for part, partQs in zip(ori.permute(1, 0, 2, 3), levelQs):
-                    partQs.append(part.flatten().cpu())
-
-        numNeverAssigned, numAll = 0, 0
-
-        for i, (k, levelQs) in enumerate(zip(self._config.Model.k, quantizeds)):
-            for j, partQs in enumerate(levelQs):
-                # kmeans = kmeans_core(k, torch.cat(partQs), all_cuda=False, batch_size=3 * k)
-                # kmeans.run()
-                # codebook = kmeans.cent
-                # kmeans = MiniBatchKMeans(n_clusters=k, init="random", compute_labels=False, tol=1e-6)
-                # kmeans.fit(torch.cat(partQs).cpu().numpy())
-                # codebook = kmeans.cluster_centers_
-                codebook = model._quantizers[i][j]._codebook.data
-                partQs = torch.cat(partQs)
-                # some of the entry is 0
-                counts = torch.bincount(partQs, minlength=k)
-                neverAssigned = codebook[counts < 1]
-                if len(neverAssigned) > k // 2:
-                    mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
-                    maskIdx = torch.randperm(len(mask))[k // 2:]
-                    mask[maskIdx] = 1
-                    counts[counts < 1] = mask
-                    neverAssigned = codebook[counts < 1]
-                # argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
-                # fullyAssigned = codebook[argIdx]
-                # selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
-                # codebook[counts < 1] = fullyAssigned[selectedIdx]
-                randomChoice = torch.distributions.Categorical(probs=counts)
-                if len(neverAssigned) < 1:
-                    self._logger.debug("Re-assign on %d:%d, %.2f%% are never assigned.", i, j, len(neverAssigned) / float(k) * 100)
-                    numNeverAssigned += len(neverAssigned)
-                    numAll += k
-                    continue
-                # [n, ]
-                sample = randomChoice.sample((len(neverAssigned), ))
-                # [n, d]
-                prepareToAssign = codebook[sample] + torch.randn_like(codebook[sample]) * (1e-7 / math.sqrt(self._config.Model.channel / self._config.Model.m))
-                codebook[counts < 1] = prepareToAssign
-                # if len(neverAssigned) > k // 2:
-                #     mask = torch.zeros((len(neverAssigned), ), dtype=counts.dtype, device=counts.device)
-                #     maskIdx = torch.randperm(len(mask))[k // 2:]
-                #     mask[maskIdx] = 1
-                #     counts[counts < 1] = mask
-                #     neverAssigned = codebook[counts < 1]
-                # argIdx = torch.argsort(counts, descending=True)[:(k - len(neverAssigned))]
-                # fullyAssigned = codebook[argIdx]
-                # selectedIdx = torch.randperm(len(fullyAssigned))[:len(neverAssigned)]
-                # codebook[counts < 1] = fullyAssigned[selectedIdx]
-                self._logger.debug("Re-assign on %d:%d, %.2f%% are never assigned.", i, j, len(neverAssigned) / float(k) * 100)
-                numNeverAssigned += len(neverAssigned)
-                numAll += k
-                # model._quantizers[i][j]._codebook.data.copy_(torch.from_numpy(codebook))
-        self._logger.info("Re-assign of %.2f%% codewords completed.", numNeverAssigned / float(numAll) * 100)
-        model.train()
-
     @torch.inference_mode()
     def _eval(self, dataLoader: DataLoader, step: int) -> Tuple[float, float]:
-        model = self._model.module._compressor
+        model = self._model.module
         model.eval()
         ssims = list()
         psnrs = list()
@@ -346,7 +219,7 @@ class New(Algorithm):
 
             numImages += n
 
-            restored, allCodes, _ = model.test(raw)
+            restored, allCodes = model.test(raw)
             countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):
@@ -398,7 +271,6 @@ class New(Algorithm):
     @torch.inference_mode()
     def _evalFull(self, dataLoader: DataLoader, step: int) -> Tuple[Number, Number]:
         model = self._model.module._compressor
-        model.eval()
         ssims = list()
         psnrs = list()
         bs = [[list() for _ in range(self._config.Model.m)] for _ in range(model._levels)]
@@ -441,7 +313,8 @@ class New(Algorithm):
 
             numImages += n
 
-            restored, allCodes, _ = model.test(raw)
+            # -1 in codes can be predicted.
+            restored, allCodes = model.test(raw)
             countUnique.append(allCodes[0][:, 0].flatten())
 
             for i, codesAtLeveli in enumerate(allCodes):
@@ -483,8 +356,10 @@ class New(Algorithm):
 
     def _compress(self, codes: List[List[List[torch.Tensor]]], totalPixels):
         encoder = ans.RansEncoder()
+        decoder = ans.RansDecoder()
         compressed = list()
         bits = list()
+        allCdfs = list()
         for lv, levels in enumerate(codes):
             images = list()
             cdfs = list()
@@ -512,6 +387,10 @@ class New(Algorithm):
                 binary: str = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), indices, cdfs, cdfSizes, offsets)
                 # [M, h, w] binary
                 compressed.append(binary)
+                restoredCode = decoder.decode_with_indexes(binary, indices, cdfs, cdfSizes, offsets)
+                if torch.any(torch.tensor(restoredCode) != codePerImage.flatten().int().cpu()):
+                    raise RuntimeError("Compress error.")
+            allCdfs.append(cdfs)
         # binary: 1 byte per word
         # N * [binaries]
         total = 8 * sum(len(binary) for binary in compressed)
@@ -520,18 +399,6 @@ class New(Algorithm):
         perfect = sum(bits) / totalPixels
         self._logger.info("Estimate \"perfect\" BPP: %.4f", perfect)
         return compressed, bpp
-
-    def _decompressAndCheck(self, rawCodes: List[torch.Tensor], binaries: List[str], cdfs: List[List[float]]):
-        decoder = ans32.RansDecoder()
-        for binary, raw in zip(binaries, rawCodes):
-            m, h, w = raw.shape
-            code: List[int] = decoder.decode_with_indexes(binary, torch.arange(m)[:, None, None].expand(m, h, w).flatten().int().tolist(), cdfs, [self._config.Model.k] * m, torch.zeros(m, h, w).flatten().int().tolist())
-            code = torch.tensor(code, dtype=torch.long).reshape(m, h, w)
-            print(code)
-            print(raw)
-            input()
-            if torch.any(raw != code):
-                raise ValueError("Decompress failed, decoded b not equals to raw b.")
 
     def _calculateFreq(self, code: torch.Tensor, k):
         count = torch.bincount(code, minlength=k)

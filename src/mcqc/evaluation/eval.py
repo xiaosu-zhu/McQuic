@@ -4,7 +4,7 @@ from typing import List
 import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import ConvertImageDtype
-from cfmUtils.config import read
+from vlutils.config import read
 
 from mcqc.evaluation.refModel import PostProcess, Preprocess
 from mcqc.evaluation.tests import Performance, Speed, Test, Preparar
@@ -40,8 +40,7 @@ class Eval:
 
         self._preparar = Preparar(dataset, **generalArgs)
 
-        self._tests: List[Test] = [# Performance(dataset, **generalArgs),
-         Speed(**generalArgs)]
+        self._tests: List[Test] = [Performance(dataset, **generalArgs)] # [Speed(**generalArgs)] # [Performance(dataset, **generalArgs),Speed(**generalArgs)]
 
     def __call__(self):
         cdfs = self._preparar.test()

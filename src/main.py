@@ -4,7 +4,6 @@ import math
 import random
 
 import apex
-
 from tqdm.contrib.logging import logging_redirect_tqdm
 import torch
 import torch.multiprocessing as mp
@@ -13,16 +12,16 @@ from torch.utils.data import DataLoader, DistributedSampler
 import numpy as np
 from absl import app
 from absl import flags
-from cfmUtils.runtime import queryGPU
-from cfmUtils.logger import configLogging
-from cfmUtils.saver import Saver
-from cfmUtils.config import read, summary
+from vlutils.runtime import queryGPU
+from vlutils.logger import configLogging
+from vlutils.saver import Saver
+from vlutils.config import read, summary
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
-from mcqc.algorithms import Plain, FineTune, TwoPass, New
-from mcqc.models.whole import WholeAQ, WholePQBig, WholePQQ, WholePQRelax, WholeVQ, WholePQ, WholePQContext, WholePQTwoPass, WholePQNew
+from mcqc.algorithms import New, PixelCNN
+from mcqc.models.deprecated.whole import WholePQBig, WholePQ5x5, WholePQPixelCNN
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
 from mcqc.utils.training import CosineAnnealingWarmupRestarts, CosineValue, CosineValueWithEnd, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
 from mcqc.utils.vision import getTrainingPreprocess
@@ -77,20 +76,14 @@ def _generalConfig(rank: int, worldSize: int):
     # dist.barrier(device_ids=[rank])
 
 models = {
-    "Base": WholePQ,
-    "Context": WholePQContext,
-    "Relax": WholePQRelax,
-    "TwoPass": WholePQTwoPass,
-    "New": WholePQQ,
-    "AQ": WholeAQ,
-    "Big": WholePQBig
+    "Big": WholePQBig,
+    "5x5": WholePQ5x5,
+    "PixelCNN": WholePQPixelCNN
 }
 
 methods = {
-    "Plain": Plain,
-    "FineTune": FineTune,
-    "TwoPass": TwoPass,
-     "New": New
+    "New": New,
+    "PixelCNN": PixelCNN
 }
 
 optims = {
@@ -125,7 +118,8 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     if rank == 0:
         saver = Saver(saveDir, "saved.ckpt", config, reserve=continueTrain)
         logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if debug else "INFO", rotateLogs=-1)
-        logger.info("\r\n%s", summary(config))
+        saver.setLogger(logger)
+        saver.info("\r\n%s", summary(config))
     else:
         saver = None
         logger = None

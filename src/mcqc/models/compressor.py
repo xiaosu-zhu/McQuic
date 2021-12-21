@@ -1,57 +1,101 @@
-from typing import List
-import storch
-from storch.wrappers import deterministic
+from typing import List, Tuple
 import torch
 from torch import nn
-from torch.nn.modules.activation import ReLU
-from mcqc.layers.blocks import ResidualBlock
-from mcqc.layers.dropout import AQMasking, PointwiseDropout
-from mcqc.models.decoder import ResidualBaseDecoder
-from mcqc.models.quantizer import L2Quantizer, NonLinearQuantizer
+from mcqc.layers import convs
+from mcqc.layers.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 
-from .encoder import Director, DownSampler, EncoderHead, ResidualAttEncoderNew, ResidualBaseEncoder, ResidualEncoder, ResidualAttEncoder
-from .decoder import ResidualAttDecoderNew, ResidualDecoder, ResidualAttDecoder, UpSampler
-from .contextModel import ContextModel
-from .quantizer import AttentiveQuantizer, Quantizer, RelaxQuantizer
+from mcqc.models.quantizer import L2Quantizer, UMGMQuantizer
+from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
+from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
+from mcqc.utils.specification import FileHeader
 
-class PQCompressor(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
+
+# class Compressor(nn.Module):
+#     def __init__(self, encoder: nn.Module, quantizer: nn.Module, decoder: nn.Module):
+#         super().__init__()
+#         self._encoder = encoder
+#         self._quantizer = quantizer
+#         self._decoder = decoder
+
+#     def forward(self, x: torch.Tensor):
+#         y = self._encoder(x)
+#         yHat = self._quantizer(y)
+#         xHat = self._decoder(yHat)
+#         return xHat
+
+
+class BaseCompressor(nn.Module):
+    def __init__(self, encoder, decoder, quantizer):
         super().__init__()
-        self._k = k
-        self._m = m
-        if withGroup:
-            groups = self._m
-        else:
-            groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel // m, withDropout, False, True, ema if ema > 0.0 else None) for _ in range(m))
-        self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, 1)
+        self._encoder = encoder
+        self._decoder = decoder
+        self._quantizer = quantizer
 
-    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
-        latent = self._encoder(x)
-        # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, self._m, 1)
-        qs = list()
-        codes = list()
-        logits = list()
-        fs = list()
-        ts = list()
-        binCounts = list()
-        for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, (trueCode, frequency, binCount) = quantizer(split, temp)
-            qs.append(q)
-            codes.append(c)
-            logits.append(l)
-            # [n, h, w] trueCode frequency
-            fs.append(frequency)
-            ts.append(trueCode)
-            binCounts.append(binCount)
-        quantized = torch.cat(qs, 1)
-        if self._groupDropout is not None:
-            quantized = self._groupDropout(quantized)
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, quantized, latent, torch.stack(ts, -1), logits
+    def forward(self, x: torch.Tensor):
+        y = self._encoder(x)
+        # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
+        yHat, stats = self._quantizer(y)
+        xHat = self._decoder(yHat)
+        return xHat, yHat, stats
+
+    def compress(self, x: torch.Tensor) -> Tuple[str, FileHeader]:
+        y = self._encoder(x)
+        binaries, header = self._quantizer.compress(y)
+        return binaries, header
+
+    def decompress(self, binaries: str, header: FileHeader) -> torch.Tensor:
+        yHat = self._quantizer.decompress(binaries, header)
+        return self._decoder(yHat)
+
+
+class Compressor(BaseCompressor):
+    def __init__(self, channel, m, k):
+        encoder = nn.Sequential(
+            convs.conv1x1(3, channel),
+            ResidualBlockWithStride(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockWithStride(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockWithStride(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m)
+        )
+        decoder = nn.Sequential(
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockShuffle(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockShuffle(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockShuffle(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            GroupSwishConv2D(channel, 3),
+        )
+        quantizer = UMGMQuantizer(channel, m, k, {
+            "latentStageEncoder": lambda: nn.Sequential(
+                ResidualBlockWithStride(channel, channel, groups=m),
+                ResidualBlock(channel, channel, groups=m),
+            ),
+            "quantizationHead": lambda: nn.Sequential(
+                ResidualBlock(channel, channel, groups=m),
+                GroupSwishConv2D(channel, channel, groups=m)
+            ),
+            "latentHead": lambda: nn.Sequential(
+                ResidualBlock(channel, channel, groups=m),
+                GroupSwishConv2D(channel, channel, groups=m)
+            ),
+            "dequantizationHead": lambda: nn.Sequential(
+                ResidualBlock(channel, channel, groups=m),
+                GroupSwishConv2D(channel, channel, groups=m)
+            ),
+            "sideHead": lambda: nn.Sequential(
+                ResidualBlock(channel, channel, groups=m),
+                GroupSwishConv2D(channel, channel, groups=m)
+            ),
+            "restoreHead": lambda: nn.Sequential(
+                ResidualBlock(channel, channel, groups=m),
+                ResidualBlockShuffle(channel, channel, groups=m)
+            ),
+        })
+        super().__init__(encoder, decoder, quantizer)
 
 
 class PQCompressorBig(nn.Module):
@@ -72,7 +116,7 @@ class PQCompressorBig(nn.Module):
         self._mappers = nn.ModuleList(DownSampler(channel, 1, alias) for _ in range(self._levels - 1))
         self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m, channel // m) for _ in range(m)) for ki in k)
 
-        self._reverses = nn.ModuleList(UpSampler(channel, 1, alias) for _ in range(self._levels))
+        self._reverses = nn.ModuleList(UpSampler(channel, 1) for _ in range(self._levels))
         self._scatters = nn.ModuleList(Director(channel, 1, alias) for _ in range(self._levels - 1))
 
         self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
@@ -92,7 +136,7 @@ class PQCompressorBig(nn.Module):
             else:
                 latent = None
             c = self.encode(z, i)
-            hard = self.decode(c, i)
+            hard, _ = self.decode(c, i)
             # n, c, h, w = hard.shape
             if latent is not None:
                 latent = latent - hard
@@ -140,11 +184,13 @@ class PQCompressorBig(nn.Module):
 
     def decode(self, code, level):
         qs = list()
+        hards = list()
         for quantizer, c in zip(self._quantizers[level], code.permute(1, 0, 2, 3)):
-            q = quantizer.decode(c)
+            hard, q = quantizer.decode(c)
+            hards.append(hard)
             qs.append(q)
 
-        return torch.cat(qs, 1)
+        return torch.cat(hards, 1), torch.cat(qs, 1)
 
     def nextLevelDown(self, x, level, temp):
         mapper = self._mappers[level] if level < self._levels - 1 else None
@@ -172,7 +218,7 @@ class PQCompressorBig(nn.Module):
 
     def rawAndQuantized(self, latent, level):
         splits = torch.chunk(latent, self._m, 1)
-        qs = list()
+        hards = list()
         raws = list()
         codes = list()
         quantizeds = list()
@@ -181,19 +227,20 @@ class PQCompressorBig(nn.Module):
             codes.append(c)
             raws.append(raw)
             quantizeds.append(quantized)
-            q = quantizer.decode(c)
-            qs.append(q)
+            hard, _ = quantizer.decode(c)
+            hards.append(hard)
 
         codes = torch.stack(codes, 1)
         raws = torch.stack(raws, 1)
         quantizeds = torch.stack(quantizeds, 1)
-        return codes, raws, quantizeds, torch.cat(qs, 1)
+        return codes, raws, quantizeds, torch.cat(hards, 1)
 
     def getLatents(self, x):
         latent = self._encoder(x)
 
         allZs = list()
         allHards = list()
+        allResiduals = list()
         allCodes = list()
 
         for i in range(self._levels):
@@ -210,7 +257,8 @@ class PQCompressorBig(nn.Module):
             allHards.append(quantizeds)
             if latent is not None:
                 latent = latent - hard
-        return allZs, allHards, allCodes
+                allResiduals.append(latent - hard)
+        return allZs, allHards, allCodes, allResiduals
 
 
     def test(self, x:torch.Tensor):
@@ -220,6 +268,7 @@ class PQCompressorBig(nn.Module):
         allCodes = list()
 
         allHards.append(None)
+        mathfraks = list()
 
         for i in range(self._levels):
             mapper = self._mappers[i] if i < self._levels - 1 else None
@@ -231,7 +280,8 @@ class PQCompressorBig(nn.Module):
                 latent = None
             c = self.encode(z, i)
             allCodes.append(c)
-            hard = self.decode(c, i)
+            hard, quantized = self.decode(c, i)
+            mathfraks.append(quantized)
             if latent is not None:
                 latent = latent - hard
             allHards.append(hard)
@@ -244,7 +294,7 @@ class PQCompressorBig(nn.Module):
             quantizeds[i - 1] = quantized
 
         restored = self._decoder(quantizeds[0])
-        return restored, allCodes
+        return restored, allCodes, mathfraks
 
     def forward(self, x: torch.Tensor, temp: float, e2e: bool):
         latent = self._encoder(x)
@@ -281,172 +331,26 @@ class PQCompressorBig(nn.Module):
         restored = self._decoder(quantizeds[0])
         return restored, allHards, latent, allCodes, allTrues, allLogits, (allFeatures, allQuantizeds), allCodebooks
 
-class PQCompressorQ(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
-        super().__init__()
+class PQCompressor5x5(PQCompressorBig):
+    def __init__(self, m: int, k: List[int], channel, withGroup, withAtt, withDropout, alias, ema):
+        super(PQCompressorBig, self).__init__()
         self._k = k
         self._m = m
         if withGroup:
             groups = self._m
         else:
             groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = Quantizer(m, k, channel, False, False, True, -1)
+
+        self._levels = len(k)
+
+        self._encoder = BaseEncoder5x5(channel, groups, alias)
+
+        self._heads = nn.ModuleList(EncoderHead5x5(channel, 1, alias) for _ in range(self._levels))
+        self._mappers = nn.ModuleList(DownSampler5x5(channel, 1, alias) for _ in range(self._levels - 1))
+        self._quantizers = nn.ModuleList(nn.ModuleList(L2Quantizer(ki, channel // m, channel // m) for _ in range(m)) for ki in k)
+
+        self._reverses = nn.ModuleList(UpSampler5x5(channel, 1, alias) for _ in range(self._levels))
+        self._scatters = nn.ModuleList(Director5x5(channel, 1, alias) for _ in range(self._levels - 1))
+
         self._groupDropout = None # PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, 1)
-
-    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
-        latent = self._encoder(x)
-        quantized, trueCodes, logits = self._quantizer(latent, temp)
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, quantized, latent, trueCodes, logits
-
-
-class AQCompressor(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias, ema):
-        super().__init__()
-        self._k = k
-        self._m = m
-        if withGroup:
-            groups = self._m
-        else:
-            groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, channel, False, False, True, ema if ema > 0.0 else None) for _ in range(m))
-        self._aqMask = AQMasking(0.1, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, 1)
-
-    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
-        latent = self._encoder(x)
-        # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, self._m, 1)
-        qs = list()
-        codes = list()
-        logits = list()
-        fs = list()
-        ts = list()
-        binCounts = list()
-        for quantizer, split in zip(self._quantizer, splits):
-            q, c, l, (trueCode, frequency, binCount) = quantizer(split, temp)
-            qs.append(q)
-            codes.append(c)
-            logits.append(l)
-            # [n, h, w] trueCode frequency
-            fs.append(frequency)
-            ts.append(trueCode)
-            binCounts.append(binCount)
-        # fs = sum(fs) / len(fs)
-        # [M, N, C, H, W]
-        quantized = torch.stack(qs, 0)
-        if self._aqMask is not None:
-            quantized = self._aqMask(quantized)
-        quantized = quantized.sum(0)
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, (quantized, latent), (torch.stack(codes, 1), fs, binCounts, torch.stack(ts, 1)), logits
-
-
-class PQCompressorNew(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
-        super().__init__()
-        self._k = k
-        self._m = m
-        self._encoder = ResidualAttEncoderNew(channel, self._m, self._k, alias)
-        # self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoderNew(channel, self._m, self._k)
-
-    def forward(self, x: torch.Tensor, temp: float):
-        code, logit = self._encoder(x, temp)
-        # if self._groupDropout is not None:
-        #     quantized = self._groupDropout(quantized)
-        restored = torch.tanh(self._decoder(code))
-        return restored, code, logit
-
-
-class PQCompressorTwoPass(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
-        super().__init__()
-        self._k = k
-        self._m = m
-        if withGroup:
-            groups = self._m
-        else:
-            groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias) if withAtt else ResidualEncoder(channel, groups, alias)
-        self._quantizer = Quantizer(m, k, channel, withDropout)
-        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, groups) if withAtt else ResidualDecoder(channel, groups)
-
-    def forward(self, x: torch.Tensor, temp: float, first: bool):
-        latent = self._encoder(x)
-        quantized, codes, logits = self._quantizer(latent, temp, first)
-        if self._groupDropout is not None:
-            quantized = self._groupDropout(quantized)
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, (quantized, latent), codes, logits
-
-
-class PQRelaxCompressor(nn.Module):
-    def __init__(self, m, k, channel, withGroup, withAtt, withDropout, alias):
-        super().__init__()
-        self._k = k
-        self._m = m
-        if withGroup:
-            groups = self._m
-        else:
-            groups = 1
-        self._encoder = ResidualAttEncoder(channel, groups, alias)
-        self._quantizer = RelaxQuantizer(m, k, channel)
-        self._groupDropout = PointwiseDropout(0.05, True) if withDropout else None
-        self._decoder = ResidualAttDecoder(channel, groups)
-
-    @deterministic
-    def encode(self, x):
-        return self._encoder(x)
-
-    @deterministic(flatten_plates=True)
-    def decode(self, x):
-        return torch.tanh(self._decoder(x))
-
-    def forward(self, x: torch.Tensor):
-        latent = self.encode(x)
-        # M * [n, c // M, h, w]
-        qSamples, code, logit = self._quantizer(latent)
-        qSamples: storch.Tensor = qSamples
-        # if self._groupDropout is not None:
-        #     qSamples = self._groupDropout(qSamples)
-        restored = self.decode(qSamples)
-        return restored, qSamples, code, logit
-
-
-class PQContextCompressor(nn.Module):
-    def __init__(self, m, k, channel, numLayers):
-        super().__init__()
-        self._k = k
-        self._m = m
-        self._encoder = ResidualEncoder(channel)
-        self._quantizer = nn.ModuleList(AttentiveQuantizer(k, channel // m, False, True) for _ in range(m))
-        self._decoder = ResidualDecoder(channel)
-        self._context = nn.ModuleList(ContextModel(channel // m, 1, numLayers, channel // m, k) for _ in range(m))
-
-    def forward(self, x: torch.Tensor, temp: float, e2e: bool):
-        latent = self._encoder(x)
-        # M * [n, c // M, h, w]
-        splits = torch.chunk(latent, self._m, 1)
-        qs = list()
-        codes = list()
-        logits = list()
-        predicts = list()
-        targets = list()
-        for quantizer, context, split in zip(self._quantizer, self._context, splits):
-            q, c, l, wv = quantizer(split, temp)
-            predict, target = context(q, c)
-            predicts.append(predict)
-            targets.append(target)
-            qs.append(q)
-            codes.append(c)
-            logits.append(l)
-        quantized = torch.cat(qs, 1)
-        # [n, m, h, w]
-        codes = torch.stack(codes, 1)
-        restored = torch.tanh(self._decoder(quantized))
-        return restored, codes, logits, predicts, targets
+        self._decoder = BaseDecoder5x5(channel, 1)

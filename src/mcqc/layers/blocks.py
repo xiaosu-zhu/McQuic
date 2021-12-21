@@ -1,223 +1,302 @@
+# Copyright 2020 InterDigital Communications, Inc.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# https://github.com/InterDigitalInc/CompressAI/blob/master/compressai/layers/layers.py
+
 from math import sqrt
-from typing import Union, Tuple
+from typing import Union
 
 import torch
 from torch import nn
 
-from mcqc import Consts
-
-from .gdn import GenDivNorm
-from .convs import conv1x1, conv3x3, conv5x5, subPixelConv3x3, superPixelConv3x3
-
-
-class L2Normalize(nn.Module):
-    def forward(self, x: torch.Tensor, dim: Union[int, Tuple[int]] = -1):
-        norm = (x ** 2).sum(dim, keepdim=True).sqrt()
-        return x / norm
+from mcqc.utils import ModuleRegistry
+from mcqc.layers.gdn import GenDivNorm
+from mcqc.layers.convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, pixelShuffle3x3
 
 
-class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, groups=1):
+# NOTE: Based on [CompVis/taming-transformers]
+class _baseAct(nn.Module):
+    def __init__(self, groups: int, channels: int):
+        super().__init__()
+        self._norm = nn.GroupNorm(groups, channels, 1e-6, True)
+        self._act = nn.SiLU(True)
+    def forward(self, x):
+        return self._act(self._norm(x))
+
+
+@ModuleRegistry.register
+class GroupSwishConv2D(nn.Module):
+    def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1):
         super().__init__()
         self._net = nn.Sequential(
-            conv5x5(in_ch, out_ch, bias=False, groups=groups),
-            nn.GroupNorm(32, out_ch),
-            nn.LeakyReLU(inplace=True)
-            )
-
-    def forward(self, x):
+            _baseAct(groups, inChannels),
+            conv3x3(inChannels, outChannels),
+        )
+    def forward(self, x: torch.Tensor):
         return self._net(x)
 
-
-class ResidualBlockWithStride(nn.Module):
-    """Residual block with a stride on the first convolution.
-    Args:
-        in_ch (int): number of input channels
-        out_ch (int): number of output channels
-        stride (int): stride value (default: 2)
-    """
-
-    def __init__(self, in_ch, out_ch, stride=2, groups=1):
+# NOTE: Slightly modified based on [CompVis/taming-transformers]
+class _residulBlock(nn.Module):
+    def __init__(self, act1: nn.Module, conv1: nn.Conv2d, act2: nn.Module, conv2: nn.Conv2d, skip: Union[nn.Module, None]):
         super().__init__()
-        self.conv1 = conv3x3(in_ch, out_ch, stride=stride, groups=groups)
-        self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(out_ch, out_ch, groups=groups)
-        self.gdn = GenDivNorm(out_ch)
-        if stride != 1 or in_ch != out_ch:
-            self.skip = conv1x1(in_ch, out_ch, stride=stride, groups=groups)
-        else:
-            self.skip = None
-
-    def forward(self, x):
-        identity = x
-        out = self.conv1(x)
-        out = self.leaky_relu(out)
-        out = self.conv2(out)
-        out = self.gdn(out)
-
-        if self.skip is not None:
-            identity = self.skip(x)
-
-        out += identity
-        return out
-
-
-class ResidualBlockDownSample(nn.Module):
-    """Residual block with a stride on the first convolution.
-    Args:
-        in_ch (int): number of input channels
-        out_ch (int): number of output channels
-        stride (int): stride value (default: 2)
-    """
-
-    def __init__(self, in_ch, out_ch, downsample=2, groups=1):
-        super().__init__()
-        self.down1 = superPixelConv3x3(in_ch, out_ch, downsample, groups=groups)
-        self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv = conv3x3(out_ch, out_ch, groups=groups)
-        self.gdn = GenDivNorm(out_ch)
-        self.down2 = superPixelConv3x3(in_ch, out_ch, downsample, groups=groups)
-
-    def forward(self, x):
-        identity = x
-        out = self.down1(x)
-        out = self.leaky_relu(out)
-        out = self.conv(out)
-        out = self.gdn(out)
-        identity = self.down2(x)
-        out += identity
-        return out
-
-
-class ResidualBlockUpsample(nn.Module):
-    """Residual block with sub-pixel upsampling on the last convolution.
-    Args:
-        in_ch (int): number of input channels
-        out_ch (int): number of output channels
-        upsample (int): upsampling factor (default: 2)
-    """
-
-    def __init__(self, in_ch, out_ch, upsample=2, groups=1):
-        super().__init__()
-        self.subpel_conv = subPixelConv3x3(in_ch, out_ch, upsample, groups=groups)
-        self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv = conv3x3(out_ch, out_ch, groups=groups)
-        self.igdn = GenDivNorm(out_ch, inverse=True)
-        self.upsample = subPixelConv3x3(in_ch, out_ch, upsample, groups=groups)
-
-    def forward(self, x):
-        identity = x
-        out = self.subpel_conv(x)
-        out = self.leaky_relu(out)
-        out = self.conv(out)
-        out = self.igdn(out)
-        identity = self.upsample(x)
-        out += identity
-        return out
-
-
-class ResidualBlock(nn.Module):
-    """Simple residual block with two 3x3 convolutions.
-    Args:
-        in_ch (int): number of input channels
-        out_ch (int): number of output channels
-    """
-
-    def __init__(self, in_ch, out_ch, groups=1):
-        super().__init__()
-        self.conv1 = conv3x3(in_ch, out_ch, groups=groups)
-        self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(out_ch, out_ch, groups=groups)
-        if in_ch != out_ch:
-            self.skip = conv1x1(in_ch, out_ch, groups=groups)
-        else:
-            self.skip = None
-
-    def forward(self, x):
-        identity = x
-
-        out = self.conv1(x)
-        out = self.leaky_relu(out)
-        out = self.conv2(out)
-        out = self.leaky_relu(out)
-
-        if self.skip is not None:
-            identity = self.skip(x)
-
-        out = out + identity
-        return out
-
-
-class GroupAttentionBlock(nn.Module):
-    """Self attention block.
-    Simplified variant from `"Learned Image Compression with
-    Discretized Gaussian Mixture Likelihoods and Attention Modules"
-    <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
-    Takeuchi, Jiro Katto.
-    Args:
-        N (int): Number of channels)
-    """
-
-    def __init__(self, N, groups=1):
-        super().__init__()
-
-        class ResidualUnit(nn.Module):
-            """Simple residual unit."""
-
-            def __init__(self):
-                super().__init__()
-                self.conv = nn.Sequential(
-                    conv1x1(N, N, groups=groups),
-                    nn.ReLU(inplace=True),
-                    conv3x3(N, N, groups=groups),
-                    nn.ReLU(inplace=True),
-                    conv1x1(N, N, groups=groups),
-                )
-                self.relu = nn.ReLU(inplace=True)
-
-            def forward(self, x):
-                identity = x
-                out = self.conv(x)
-                out += identity
-                out = self.relu(out)
-                return out
-
-        self.conv_a = nn.Sequential(ResidualUnit(), ResidualUnit(), ResidualUnit())
-
-        self.conv_b = nn.Sequential(
-            ResidualUnit(),
-            ResidualUnit(),
-            ResidualUnit(),
-            conv1x1(N, groups, groups=groups),
+        self._branch = nn.Sequential(
+            act1, conv1, act2, conv2
         )
+        self._skip = skip
 
     def forward(self, x):
         identity = x
-        a = self.conv_a(x)
-        b = self.conv_b(x)
-        mask = torch.sigmoid(b)
-        out = a * mask
+        out = self._branch(x)
+
+        if self._skip is not None:
+            identity = self._skip(x)
+
         out += identity
         return out
 
 
+@ModuleRegistry.register
+class ResidualBlockWithStride(_residulBlock):
+    """Residual block with stride for down-sampling.
 
+    Default structure:
+    ```plain
+        +--------------+
+        | Input ----╮  |
+        | GroupNm   |  |
+        | SiLU      |  |
+        | Conv3s2   |  |
+        | GDN       |  |
+        | Conv3s1   |  |
+        | + <-------╯  |
+        | Output       |
+        +--------------+
+    ```
+    """
+    def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1):
+        """Usage:
+        ```python
+            # A block performs 2x down-sampling
+            block = ResidualBlockWithStride(128, 128)
+        ```
+        Args:
+            inChannels (int): Channels of input.
+            outChannels (int): Channels of output.
+            stride (int): stride value (default: 2).
+            groups (int): Group convolution (default: 1).
+        """
+        if stride != 1:
+            skip = conv3x3(inChannels, outChannels, stride=stride)
+        elif inChannels != outChannels:
+            skip = conv1x1(inChannels, outChannels, stride=stride)
+        else:
+            skip = None
+        super().__init__(
+            _baseAct(groups, inChannels),
+            conv3x3(inChannels, outChannels, stride=stride),
+            GenDivNorm(outChannels),
+            conv3x3(outChannels, outChannels),
+            skip)
+
+
+@ModuleRegistry.register
+class ResidualBlockUnShuffle(_residulBlock):
+    """Residual block with PixelUnShuffle for down-sampling.
+
+    Default structure:
+    ```plain
+        +--------------+
+        | Input ----╮  |
+        | GroupNm   |  |
+        | SiLU      |  |
+        | Conv3s1   |  |
+        | PixUnShuf |  |
+        | GDN       |  |
+        | Conv3s1   |  |
+        | + <-------╯  |
+        | Output       |
+        +--------------+
+    ```
+    """
+    def __init__(self, inChannels: int, outChannels: int, downsample: int = 2, groups: int = 1):
+        """Usage:
+        ```python
+            # A block performs 2x down-sampling
+            block = ResidualBlockUnShuffle(128, 128)
+        ```
+        Args:
+            inChannels (int): Channels of input.
+            outChannels (int): Channels of output.
+            downsample (int): Down-sampling rate (default: 2).
+            groups (int): Group convolution (default: 1).
+        """
+        super().__init__(
+            _baseAct(groups, inChannels),
+            pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
+            GenDivNorm(outChannels),
+            conv3x3(outChannels, outChannels),
+            pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
+
+
+@ModuleRegistry.register
+class ResidualBlockShuffle(_residulBlock):
+    """Residual block with PixelShuffle for up-sampling.
+
+    Default structure:
+    ```plain
+        +--------------+
+        | Input ----╮  |
+        | GroupNm   |  |
+        | SiLU      |  |
+        | Conv3s1   |  |
+        | PixShuf   |  |
+        | IGDN      |  |
+        | Conv3s1   |  |
+        | + <-------╯  |
+        | Output       |
+        +--------------+
+    ```
+    """
+    def __init__(self, inChannels: int, outChannels: int, upsample: int = 2, groups: int = 1):
+        """Usage:
+        ```python
+            # A block performs 2x up-sampling
+            block = ResidualBlockShuffle(128, 128)
+        ```
+        Args:
+            inChannels (int): Channels of input.
+            outChannels (int): Channels of output.
+            upsample (int): Up-sampling rate (default: 2).
+            groups (int): Group convolution (default: 1).
+        """
+        super().__init__(
+            _baseAct(groups, inChannels),
+            pixelShuffle3x3(inChannels, outChannels, upsample),
+            GenDivNorm(outChannels, inverse=True),
+            conv3x3(outChannels, outChannels),
+            pixelShuffle3x3(inChannels, outChannels, upsample))
+
+
+@ModuleRegistry.register
+class ResidualBlock(_residulBlock):
+    """Basic residual block.
+
+    Default structure:
+    ```plain
+        +--------------+
+        | Input ----╮  |
+        | GroupNm   |  |
+        | SiLU      |  |
+        | Conv3s1   |  |
+        | GroupNm   |  |
+        | SiLU      |  |
+        | Conv3s1   |  |
+        | + <-------╯  |
+        | Output       |
+        +--------------+
+    ```
+    """
+    def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
+        """Usage:
+        ```python
+            # A block with "same" feature map
+            block = ResidualBlock(128, 128)
+        ```
+        Args:
+            inChannels (int): Channels of input.
+            outChannels (int): Channels of output.
+            groups (int): Group convolution (default: 1).
+        """
+        if inChannels != outChannels:
+            skip = conv1x1(inChannels, outChannels)
+        else:
+            skip = None
+        super().__init__(
+            _baseAct(groups, inChannels),
+            conv3x3(inChannels, outChannels),
+            _baseAct(groups, outChannels),
+            conv3x3(outChannels, outChannels),
+            skip)
+
+
+@ModuleRegistry.register
+class ResidualBlockMasked(_residulBlock):
+    """A residual block with MaskedConv for causal inference.
+
+    Default structure:
+    ```plain
+        +--------------+
+        | Input ----╮  |
+        | MConv5s1A |  |
+        | LReLU     |  |
+        | MConv5s1B |  |
+        | LReLU     |  |
+        | + <-------╯  |
+        | Output       |
+        +--------------+
+    ```
+    """
+    def __init__(self, inChannels, outChannels, maskType: str = "A"):
+        """Usage:
+        ```python
+            # First block
+            block = ResidualBlockMasked(128, 128, "A")
+            # Subsequent blocks
+            block = ResidualBlockMasked(128, 128, "B")
+        ```
+        Args:
+            inChannels (int): Channels of input.
+            outChannels (int): Channels of output.
+            maskType (str): Mask type of MaskedConv2D (default: "A").
+        """
+        if inChannels != outChannels:
+            skip = MaskedConv2d(inChannels, outChannels, maskType=maskType, bias=False, kernel_size=5, stride=1, padding=5 // 2, padding_mode="zeros")
+        else:
+            skip = None
+        super().__init__(
+            nn.ReLU(),
+            MaskedConv2d(inChannels, outChannels, maskType=maskType, bias=False, kernel_size=5, stride=1, padding=5 // 2, padding_mode="zeros"),
+            nn.ReLU(),
+            MaskedConv2d(outChannels, outChannels, maskType="B", bias=False, kernel_size=5, stride=1, padding=5 // 2, padding_mode="zeros"),
+            skip)
+
+
+@ModuleRegistry.register
 class AttentionBlock(nn.Module):
     """Self attention block.
     Simplified variant from `"Learned Image Compression with
     Discretized Gaussian Mixture Likelihoods and Attention Modules"
     <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
     Takeuchi, Jiro Katto.
-    Args:
-        N (int): Number of channels)
-    """
 
+    Default structure:
+    ```plain
+        +----------------------+
+        | Input ----┬--------╮ |
+        | ResBlock  ResBlock | |
+        | |         Sigmoid  | |
+        | * <------ Mask     | |
+        | Masked             | |
+        | + <----------------╯ |
+        | Output               |
+        +----------------------+
+    ```
+    """
     def __init__(self, N, groups=1):
         super().__init__()
 
-        class ResidualUnit(nn.Module):
-            """Simple residual unit."""
-
+        class _residualUnit(nn.Module):
+            """Simplified residual unit."""
             def __init__(self):
                 super().__init__()
                 self.conv = nn.Sequential(
@@ -228,7 +307,6 @@ class AttentionBlock(nn.Module):
                     conv1x1(N // 2, N, groups=groups),
                 )
                 self.relu = nn.ReLU(inplace=True)
-
             def forward(self, x):
                 identity = x
                 out = self.conv(x)
@@ -236,12 +314,12 @@ class AttentionBlock(nn.Module):
                 out = self.relu(out)
                 return out
 
-        self.conv_a = nn.Sequential(ResidualUnit(), ResidualUnit(), ResidualUnit())
+        self.conv_a = nn.Sequential(_residualUnit(), _residualUnit(), _residualUnit())
 
         self.conv_b = nn.Sequential(
-            ResidualUnit(),
-            ResidualUnit(),
-            ResidualUnit(),
+            _residualUnit(),
+            _residualUnit(),
+            _residualUnit(),
             conv1x1(N, N, groups=groups),
         )
 
@@ -255,6 +333,7 @@ class AttentionBlock(nn.Module):
         return out
 
 
+@ModuleRegistry.register
 class NonLocalBlock(nn.Module):
     def __init__(self, N, groups=1):
         super().__init__()
@@ -283,53 +362,3 @@ class NonLocalBlock(nn.Module):
         z = torch.matmul(weights, v).permute(0, 2, 1).reshape(n, self._c, h, w)
         z = self._z(z)
         return x + z
-
-
-class GlobalAttentionBlock(nn.Module):
-    """Residual block with a stride on the first convolution.
-    Args:
-        in_ch (int): number of input channels
-        out_ch (int): number of output channels
-        stride (int): stride value (default: 2)
-    """
-
-    def __init__(self, N, groups=1):
-        super().__init__()
-        self._attention = NonLocalBlock(N, groups=groups)
-        self.leaky_relu = nn.LeakyReLU(inplace=True)
-        self.conv2 = conv3x3(N, N, groups=groups)
-        self.gdn = GenDivNorm(N, beta_min=Consts.Eps)
-
-    def forward(self, x):
-        identity = x
-        out = self._attention(x)
-        out = self.leaky_relu(out)
-        out = self.conv2(out)
-        out = self.gdn(out)
-
-        out += identity
-        return out
-
-
-class DownSample(nn.Module):
-    def __init__(self, channel, groups=1):
-        super().__init__()
-        self._net = nn.Sequential(
-            ResidualBlockWithStride(channel, channel, stride=2, groups=groups),
-            ResidualBlock(channel, channel, groups=groups)
-        )
-
-    def forward(self, x):
-        return self._net(x)
-
-
-class UpSample(nn.Module):
-    def __init__(self, channel, groups=1):
-        super().__init__()
-        self._net = nn.Sequential(
-            ResidualBlock(channel, channel, groups=groups),
-            ResidualBlockUpsample(channel, channel, 2, groups=groups),
-        )
-
-    def forward(self, x):
-        return self._net(x)
