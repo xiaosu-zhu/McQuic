@@ -54,8 +54,8 @@ class Config:
     dataset: str = "clic/train"
     valDataset: str = "clic/valid"
     method: str = "Plain"
-    evalFreq: int = 1
-    testFreq: int = 10
+    valFreq: int = 10
+    testFreq: int = 100
     warmStart: str = "ckpt/global.ckpt"
     repeat: int = 1
 
@@ -84,8 +84,8 @@ class Config:
         return self.warmStart
 
     @property
-    def EvalFreq(self) -> int:
-        return self.evalFreq
+    def ValFreq(self) -> int:
+        return self.valFreq
 
     @property
     def TestFreq(self) -> int:

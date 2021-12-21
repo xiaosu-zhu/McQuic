@@ -118,7 +118,8 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
     if rank == 0:
         saver = Saver(saveDir, "saved.ckpt", config, reserve=continueTrain)
         logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if debug else "INFO", rotateLogs=-1)
-        logger.info("\r\n%s", summary(config))
+        saver.setLogger(logger)
+        saver.info("\r\n%s", summary(config))
     else:
         saver = None
         logger = None

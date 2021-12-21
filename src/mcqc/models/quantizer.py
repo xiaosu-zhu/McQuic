@@ -1,32 +1,50 @@
 import math
-from typing import Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, OrderedDict, Tuple, Union
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import OneHotCategoricalStraightThrough
+from vlutils.base.restorable import Restorable
 
 from mcqc.layers.convs import conv1x1
+from mcqc.models.entropyCoder import EntropyCoder
+from mcqc.utils.specification import CodeSize
 
 
-class CascadedQuantization(nn.Module):
-    def __init__(self, channel: int, level: int, groups: int, k: int):
+
+class BaseQuantizer(nn.Module):
+    def __init__(self, m: int, k: List[int]):
         super().__init__()
+        self.register_buffer("_dummyTensor", torch.empty())
+        self._entropyCoder = EntropyCoder(m, k)
+        self._register_state_dict_hook(self._saveCoderToStateDict)
+        self._register_load_state_dict_pre_hook(self._loadCoderFromStateDict)
 
+    def _saveCoderToStateDict(self, stateDict: OrderedDict[str, Any], prefix: str, localMetadata):
+        stateDict.update({prefix + "_entropyCoder": self._entropyCoder.state_dict()})
+        return stateDict
 
-class VarianceForward(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self._originalMapping = None
-        self._quantizedMapping = None
+    def _loadCoderFromStateDict(self, stateDict: OrderedDict[str, Any], prefix, localMetadata, strict, missingKeys, unexpectedKeys, errorMsgs):
+        coderStateDict = stateDict.pop(prefix + "_entropyCoder")
+        self._entropyCoder.load_state_dict(coderStateDict)
 
-    def forward(self, original, quantized):
-        pass
+    def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
+        raise NotImplementedError
 
+    def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
+        raise NotImplementedError
 
-class VarianceBackward(nn.Module):
-    def __init__(self):
-        super().__init__()
+    def readyForCoding(self):
+        return self._entropyCoder.readyForCoding
+
+    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[bytes], CodeSize]:
+        codes = self.encode(x)
+        return self._entropyCoder.compress(codes, cdfs)
+
+    def decompress(self, binaries: List[bytes], codeSize: CodeSize, cdfs: List[List[List[int]]]) -> torch.Tensor:
+        codes = self._entropyCoder.decompress(binaries, codeSize, cdfs)
+        return self.decode([c.to(self._dummyTensor.device) for c in codes])
 
 
 class _multiCodebookQuantization(nn.Module):
@@ -121,7 +139,8 @@ class _quantizerDecoder(nn.Module):
             xHat = q
         return self._restoreHead(xHat)
 
-class UMGMQuantizer(nn.Module):
+
+class UMGMQuantizer(BaseQuantizer):
     _components = [
         "latentStageEncoder",
         "quantizationHead",
@@ -131,9 +150,9 @@ class UMGMQuantizer(nn.Module):
         "restoreHead"
     ]
     def __init__(self, channel: int, m: int, k: Union[int, List[int]], components: Dict[str, Callable[[], nn.Module]]):
-        super().__init__()
         if isinstance(k, int):
             k = [k]
+        super().__init__(m, k)
         componentFns = [components[key] for key in self._components]
         latentStageEncoderFn, quantizationHeadFn, latentHeadFn, dequantizationHeadFn, sideHeadFn, restoreHeadFn = componentFns
 
@@ -155,6 +174,21 @@ class UMGMQuantizer(nn.Module):
         self._encoders = nn.ModuleList(encoders)
         self._decoders = nn.ModuleList(decoders)
 
+    def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
+        codes = list()
+        for encoder in self._encoders:
+            x, code = encoder.encode(x)
+            codes.append(code)
+        return codes
+
+    def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
+        formerLevel = None
+        for decoder, code in zip(self._decoders, codes[::-1]):
+            quantized = decoder.decode(code)
+            # ↓ restored
+            formerLevel = decoder(quantized, formerLevel)
+        return formerLevel
+
     def forward(self, x: torch.Tensor):
         quantizeds = list()
         codes = list()
@@ -169,7 +203,7 @@ class UMGMQuantizer(nn.Module):
         for decoder, quantized in zip(self._decoders, quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
-        return formerLevel, codes, logits
+        return formerLevel, (codes, logits)
 
 class L2Quantizer(nn.Module):
     def __init__(self, k: int, dIn: int, dHidden: int):
