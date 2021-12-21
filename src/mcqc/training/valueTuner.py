@@ -4,7 +4,7 @@ from vlutils.base import Restorable
 
 from mcqc.utils import ValueTunerRegistry
 
-class _ValueTuner(Restorable):
+class ValueTuner(Restorable):
     def __init__(self, initValue: float = 2e-2):
         super().__init__()
         self._epoch = 0
@@ -25,7 +25,7 @@ class _ValueTuner(Restorable):
 
 
 @ValueTunerRegistry.register
-class CyclicValue(_ValueTuner):
+class CyclicValue(ValueTuner):
     def __init__(self, initValue: float = 2e-2, gamma: float = 1.0, cyclicInterval: int = 400, boostInterval: int = 3, zeroOutRatio: float = 1./3.):
         super().__init__(initValue=initValue)
         self._cyclicInterval = cyclicInterval
@@ -47,7 +47,7 @@ class CyclicValue(_ValueTuner):
 
 
 @ValueTunerRegistry.register
-class ExponentialValue(_ValueTuner):
+class ExponentialValue(ValueTuner):
     def __init__(self, initValue: float = 2e-2, gamma: float = 0.9999):
         super().__init__(initValue=initValue)
         self._gamma = gamma
@@ -57,7 +57,7 @@ class ExponentialValue(_ValueTuner):
 
 
 @ValueTunerRegistry.register
-class StepValue(_ValueTuner):
+class StepValue(ValueTuner):
     def __init__(self, initValue: float = 2e-2, gamma: float = 0.1, stepInterval: int = 1000):
         super().__init__(initValue=initValue)
         self._gamma = gamma
@@ -67,7 +67,7 @@ class StepValue(_ValueTuner):
         self._value = self._initValue * (self._gamma ** (self._epoch // self._stepInterval))
 
 @ValueTunerRegistry.register
-class CosineValue(_ValueTuner):
+class CosineValue(ValueTuner):
     def __init__(self, maxValue: float = 1.0, minValue: float = 0.0, stepInterval: int = 1, totalStep: int = 1000, revert: bool = False):
         super().__init__(initValue=maxValue)
         self._minValue = minValue
@@ -84,7 +84,7 @@ class CosineValue(_ValueTuner):
         self._value = realValue
 
 @ValueTunerRegistry.register
-class CosineValueWithEnd(_ValueTuner):
+class CosineValueWithEnd(ValueTuner):
     def __init__(self, maxValue: float = 1.0, minValue: float = 0.0, stepInterval: int = 1, totalStep: int = 1000, revert: bool = False):
         super().__init__(initValue=maxValue)
         self._minValue = minValue
@@ -105,7 +105,7 @@ class CosineValueWithEnd(_ValueTuner):
 
 
 @ValueTunerRegistry.register
-class JumpValue(_ValueTuner):
+class JumpValue(ValueTuner):
     def __init__(self, initValue: float = 10.0, gamma: float = 0.9, stepInterval: int = 1000, minValue: float = 0.01):
         super().__init__(initValue=initValue)
         self._gamma = gamma
@@ -120,7 +120,7 @@ class JumpValue(_ValueTuner):
 
 
 @ValueTunerRegistry.register
-class JumpAlter(_ValueTuner):
+class JumpAlter(ValueTuner):
     def __init__(self, initValue: float = 10.0, gamma: float = 0.9, stepInterval: int = 10, minValue: float = 0.01, milestone: int = 500, valueAfterMilestone: float = 0.01):
         super().__init__(initValue=initValue)
         self._gamma = gamma

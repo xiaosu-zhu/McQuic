@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 import torch
 from torch import nn
 from mcqc.layers import convs
@@ -7,6 +7,7 @@ from mcqc.layers.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShu
 from mcqc.models.quantizer import L2Quantizer, UMGMQuantizer
 from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
 from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
+from mcqc.utils.specification import FileHeader
 
 
 # class Compressor(nn.Module):
@@ -22,10 +23,34 @@ from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5
 #         xHat = self._decoder(yHat)
 #         return xHat
 
-class Compressor(nn.Module):
-    def __init__(self, channel, m, k):
+
+class BaseCompressor(nn.Module):
+    def __init__(self, encoder, decoder, quantizer):
         super().__init__()
-        self._encoder = nn.Sequential(
+        self._encoder = encoder
+        self._decoder = decoder
+        self._quantizer = quantizer
+
+    def forward(self, x: torch.Tensor):
+        y = self._encoder(x)
+        # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
+        yHat, stats = self._quantizer(y)
+        xHat = self._decoder(yHat)
+        return xHat, yHat, stats
+
+    def compress(self, x: torch.Tensor) -> Tuple[str, FileHeader]:
+        y = self._encoder(x)
+        binaries, header = self._quantizer.compress(y)
+        return binaries, header
+
+    def decompress(self, binaries: str, header: FileHeader) -> torch.Tensor:
+        yHat = self._quantizer.decompress(binaries, header)
+        return self._decoder(yHat)
+
+
+class Compressor(BaseCompressor):
+    def __init__(self, channel, m, k):
+        encoder = nn.Sequential(
             convs.conv1x1(3, channel),
             ResidualBlockWithStride(channel, channel, groups=m),
             ResidualBlock(channel, channel, groups=m),
@@ -34,7 +59,17 @@ class Compressor(nn.Module):
             ResidualBlockWithStride(channel, channel, groups=m),
             ResidualBlock(channel, channel, groups=m)
         )
-        self._quantizer = UMGMQuantizer(channel, m, k, {
+        decoder = nn.Sequential(
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockShuffle(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockShuffle(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            ResidualBlockShuffle(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=m),
+            GroupSwishConv2D(channel, 3),
+        )
+        quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(
                 ResidualBlockWithStride(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
@@ -60,24 +95,7 @@ class Compressor(nn.Module):
                 ResidualBlockShuffle(channel, channel, groups=m)
             ),
         })
-        self._decoder = nn.Sequential(
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockShuffle(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockShuffle(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockShuffle(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            GroupSwishConv2D(channel, 3),
-        )
-
-    def forward(self, x: torch.Tensor):
-        y = self._encoder(x)
-        # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-        yHat, codes, logits = self._quantizer(y)
-        xHat = self._decoder(yHat)
-        return xHat, yHat, codes, logits
-
+        super().__init__(encoder, decoder, quantizer)
 
 
 class PQCompressorBig(nn.Module):
