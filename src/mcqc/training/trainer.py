@@ -1,3 +1,4 @@
+import functools
 import os
 from typing import Callable, List, Optional, Tuple, Type
 from logging import Logger
@@ -21,9 +22,8 @@ from mcqc.consts import Consts
 from mcqc.datasets.dataset import BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.models.composed import Composed
-from mcqc.models.deprecated.whole import WholePQBig
 from mcqc import Config
-from mcqc.training.valueTuner import ValueTuner
+from mcqc.training.valueTuners import ValueTuner
 from mcqc.utils.vision import getTrainingFullTransform, getTrainingPreprocess
 from mcqc.validation import Validator
 
@@ -41,14 +41,14 @@ _logMapping = {
 
 class _baseTrainer(Restorable):
     def __init__(self, config: Config, model: Composed, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], ckpt: dict) -> None:
+        super().__init__()
         self.rank = dist.get_rank()
         self.worldSize = dist.get_world_size()
         torch.cuda.set_device(self.rank)
         self.config = config
 
-        super().__init__()
 
-        self._model = DistributedDataParallel(model.to(self.rank), device_ids=[self.rank], output_device=self.rank, broadcast_buffers=False)
+        self._model = DistributedDataParallel(model.to(self.rank), device_ids=[self.rank], output_device=self.rank)
 
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
         self._optimFn = optimizer
@@ -84,7 +84,7 @@ class _baseTrainer(Restorable):
         del self._scheduler
         self._scheduler = self._schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Schdr.params)
 
-    def _beforeRunHook(self, *args, **kwArgs):
+    def _beforeRunHook(self, step, epoch, *args, **kwArgs):
         pass
 
     def _stepFinishHook(self, step, epoch, *args, **kwArgs):
@@ -93,7 +93,7 @@ class _baseTrainer(Restorable):
     def _epochFinishHook(self, step, epoch, *args, **kwArgs):
         pass
 
-    def _afterRunHook(self, *args, **kwArgs):
+    def _afterRunHook(self, step, epoch, *args, **kwArgs):
         pass
 
     def _reduceLoss(self, losses: Tuple[torch.Tensor]) -> torch.Tensor:
@@ -109,30 +109,31 @@ class _baseTrainer(Restorable):
         if afterRunHook is None:
             afterRunHook = self._afterRunHook
 
-        beforeRunHook()
+        beforeRunHook(self._step, self._epoch)
 
-        totalBatches = len(trainLoader._loader.dataset) // (self._config.BatchSize * self._worldSize) + 1 # type: ignore
+        totalBatches = len(trainLoader._loader.dataset) // (self.config.BatchSize * self.worldSize) + 1 # type: ignore
 
-        for _ in range(self._epoch, self._config.Epoch):
+        for _ in range(self._epoch, self.config.Epoch):
             trainSampler.set_epoch(self._epoch)
+
             for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (self._epoch + 1), total=totalBatches, leave=False, disable=self.rank != 0):
                 self._optimizer.zero_grad()
-                (xHat, yHat, stats), losses = self._model(images)
-                loss = self._reduceLoss(losses)
+                (xHat, yHat, stats), loss = self._model(images)
+                # loss = self._reduceLoss(losses)
                 loss.backward()
                 self._optimizer.step()
 
                 self._step += 1
-                stepFinishHook(self._step, self._epoch, loss=losses)
+                stepFinishHook(self._step, self._epoch, loss=[loss])
 
             self._scheduler.step()
             self._regularizationTuner.step()
             self._temperatureTuner.step()
 
             self._epoch += 1
-            epochFinishHook(self._step, self._epoch)
+            epochFinishHook(self._step, self._epoch, images=images, restored=xHat, logits=stats[1], codes=stats[0])
 
-        afterRunHook()
+        afterRunHook(self._step, self._epoch)
 
 
 class MainTrainer(_baseTrainer):
@@ -140,68 +141,79 @@ class MainTrainer(_baseTrainer):
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a `MainTrainer`, use `PalTrainer` instead.")
 
-        self._saver = saver
-
-        self._validator = Validator(self.rank)
-
-        self._loggingHook = FrequecyHook({
-            1: self.log,
-            self.config.ValFreq: self.validate,
-            self.config.TestFreq: self.test
-        })
-
         super().__init__(config, model, optimizer, scheduler, valueTuners, ckpt)
+
+        self.saver = saver
+
+        self.validator = Validator(self.rank)
+
+        self.loggingHook = FrequecyHook(
+            (1, self.log),
+            (self.config.ValFreq, self.validate),
+            (self.config.TestFreq, self.test)
+        )
+
 
         self._bestDistortion = float("-inf")
 
-    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler):
-        return super().train(trainLoader, trainSampler, self._beforeRunHook, self._stepFinishHook, self._epochFinishHook, self._afterRunHook)
+    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader):
+
+        return super().train(trainLoader, trainSampler,
+            self._beforeRunHook,
+            self._stepFinishHook,
+            functools.partial(self._epochFinishHook, valLoader=valLoader, testLoader=testLoader),
+            self._afterRunHook)
 
     @torch.inference_mode()
-    def _beforeRunHook(self, *args, **kwArgs):
-        if self._step > 0:
-            self._saver.info("Resume training at %3dk steps / %3d epochs.", self._step // 1000, self._epoch)
+    def _beforeRunHook(self, step, epoch, **_):
+        if step > 0:
+            self.saver.info("Resume training at %3dk steps / %3d epochs.", step // 1000, epoch)
+        else:
+            self.saver.info("Start training.")
 
     @torch.inference_mode()
-    def _stepFinishHook(self, step, epoch, *, distortion):
+    def _stepFinishHook(self, step, epoch, *, loss: List[torch.Tensor], **_):
         if self._step % 2 == 0:
             return
-        self._saver.add_scalar(_logMapping["distortion"], distortion, global_step=step)
+        distortion = loss[0]
+        self.saver.add_scalar(_logMapping["distortion"], distortion, global_step=step)
         # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
-        self._saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
-        self._saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=step)
-        self._saver.add_scalar(_logMapping["temperature"], self._temperatureTuner.Value, global_step=step)
+        self.saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
+        self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=step)
+        self.saver.add_scalar(_logMapping["temperature"], self._temperatureTuner.Value, global_step=step)
 
     @torch.inference_mode()
     def _epochFinishHook(self, step, epoch, *args, **kwArgs):
-        self._saver.add_scalar("Stat/Epoch", epoch, step)
-        self._loggingHook(step, *args, **kwArgs)
+        self.saver.add_scalar("Stat/Epoch", epoch, step)
+        self.loggingHook(epoch, step, *args, **kwArgs)
 
-    def log(self, step, epoch, *, images, restored, logits, codes):
-        self._saver.add_histogram("Stat/Logit", logits[0, 0], global_step=step)
+    def log(self, epoch, step, *, images, restored, logits, codes, **_):
+        self.saver.add_histogram("Stat/Logit", logits[0][0, 0], global_step=step)
         for i, c in enumerate(codes):
-            self._saver.add_histogram(f"Stat/Code{i}", c[0, ..., 0].flatten(), global_step=step)
-            self._saver.add_images(f"Train/Code{i}", self._validator.visualizeIntermediate(c), step)
-        self._saver.add_images("Train/Raw", self._validator.tensorToImage(images), global_step=step)
-        self._saver.add_images("Train/Res", self._validator.tensorToImage(restored), global_step=step)
+            self.saver.add_histogram(f"Stat/Code{i}", c[0, 0].flatten(), global_step=step)
+            self.saver.add_images(f"Train/Code{i}", self.validator.visualizeIntermediate(c), step)
+        self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=step)
+        self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=step)
 
-    def validate(self, step, epoch, *, valLoader):
-        avgRate, avgDistortion = self._validator.validate(self._model.module._compressor, valLoader)
+    def validate(self, epoch, step, *, valLoader, **_):
+        return
+        avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, valLoader)
         if avgDistortion > self._bestDistortion:
             self._bestDistortion = avgDistortion
             # path = self._saver._savePath
             # self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
-            self._saver.save(os.path.join(self._saver.SaveDir, "best.ckpt"), **{Consts.Fingerprint: self})
-        self._saver.save(**{Consts.Fingerprint: self})
+            self.saver.save(os.path.join(self.saver.SaveDir, "best.ckpt"), **{Consts.Fingerprint: self})
+        self.saver.save(**{Consts.Fingerprint: self})
         # self._saver.info("[%3dk] Eval: R: %", (step) // 1000, self._scheduler.get_last_lr()[0])
         # self._saver.info("[%3dk]: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
 
-    def test(self, step, epoch, *, testLoader):
-        avgRate, avgDistortion = self._validator.validate(self._model.module._compressor, testLoader)
+    def test(self, epoch, step, *, testLoader, **_):
+        return
+        avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, testLoader)
 
 
 class PalTrainer(_baseTrainer):
@@ -210,8 +222,11 @@ class PalTrainer(_baseTrainer):
             raise AttributeError("You should call `MainTrainer` for main process other than `PalTrainer` to save, log necessary information.")
         super().__init__(config, model, optimizer, scheduler, valueTuners, ckpt)
 
+    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, *_):
+        return super().train(trainLoader, trainSampler)
+
 class Trainer:
-    def __init__(self, config: Config, model: WholePQBig, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueSchedulers: List[Type[_ValueTuner]], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
+    def __init__(self, config: Config, model: Composed, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueSchedulers: List[Type[ValueTuner]], saver: Saver, savePath:str, continueTrain: bool, logger: Logger):
         super().__init__()
         # dist.barrier(device_ids=[self._rank])
 

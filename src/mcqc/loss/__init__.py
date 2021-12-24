@@ -43,7 +43,7 @@ class CodebookSpreading(nn.Module):
         # [k, k]
         intra = (codebook @ codebook.T).triu(1)
 
-        indices = torch.ones_like(intra, dtype=bool).triu(1)
+        indices = torch.ones_like(intra, dtype=torch.bool).triu(1)
 
         # [k, k] distance
         distance = (inter[:, None] - 2 * intra + inter)[indices]
@@ -84,12 +84,12 @@ class CompressionLossBig(nn.Module):
         else:
             self._distortion = self._dPsnr
 
-    def _dPsnr(self, image, restored):
+    def _dPsnr(self, restored, image):
         return F.mse_loss(restored, image)
 
-    def _dSsim(self, image, restored):
+    def _dSsim(self, restored, image):
         return 1 - self._ssim(restored + 1, image + 1)
 
-    def forward(self, images, restored):
-        dLoss = self._distortion(restored, images)
+    def forward(self, restored, image, *_):
+        dLoss = self._distortion(restored, image)
         return dLoss

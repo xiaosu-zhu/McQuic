@@ -1,6 +1,5 @@
-from .consts import Consts
-from .config import Config
-
+from mcqc.consts import Consts
+from mcqc.config import Config
 import mcqc.layers
 import mcqc.loss
 import mcqc.datasets

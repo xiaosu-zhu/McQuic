@@ -1,33 +1,21 @@
 import math
-from typing import Any, Callable, Dict, List, OrderedDict, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Tuple, Union
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import OneHotCategoricalStraightThrough
-from vlutils.base.restorable import Restorable
 
 from mcqc.layers.convs import conv1x1
 from mcqc.models.entropyCoder import EntropyCoder
 from mcqc.utils.specification import CodeSize
 
 
-
 class BaseQuantizer(nn.Module):
     def __init__(self, m: int, k: List[int]):
         super().__init__()
-        self.register_buffer("_dummyTensor", torch.empty())
+        self.register_buffer("_dummyTensor", torch.empty(()))
         self._entropyCoder = EntropyCoder(m, k)
-        self._register_state_dict_hook(self._saveCoderToStateDict)
-        self._register_load_state_dict_pre_hook(self._loadCoderFromStateDict)
-
-    def _saveCoderToStateDict(self, stateDict: OrderedDict[str, Any], prefix: str, localMetadata):
-        stateDict.update({prefix + "_entropyCoder": self._entropyCoder.state_dict()})
-        return stateDict
-
-    def _loadCoderFromStateDict(self, stateDict: OrderedDict[str, Any], prefix, localMetadata, strict, missingKeys, unexpectedKeys, errorMsgs):
-        coderStateDict = stateDict.pop(prefix + "_entropyCoder")
-        self._entropyCoder.load_state_dict(coderStateDict)
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         raise NotImplementedError
@@ -54,6 +42,15 @@ class _multiCodebookQuantization(nn.Module):
         self._k = k
         self._logistic = conv1x1(channel, m * k, bias=False, groups=m)
 
+    def encode(self, x: torch.Tensor):
+        # [n, m * k, h, w]
+        logit = self._logistic(x)
+        n, _, h, w = logit.shape
+        # [n, m, h, w, k] -> [n, m, h, w]
+        code = logit.reshape(n, self._m, self._k, h, w).permute(0, 1, 3, 4, 2).argmax(-1)
+        #      [n, m, h, w]
+        return code
+
     def forward(self, x: torch.Tensor):
         # [n, m * k, h, w]
         logit = self._logistic(x)
@@ -66,12 +63,21 @@ class _multiCodebookQuantization(nn.Module):
         code = quantized.argmax(-1)
         #      [n, m * k, h, w]
         return quantized.permute(0, 1, 4, 2, 3).reshape(n, -1, h, w), code, logit
+
+
 class _multiCodebookDeQuantization(nn.Module):
     def __init__(self, channel: int, m: int, k: int):
         super().__init__()
         self._m = m
         self._k = k
         self._mapping = conv1x1(m * k, channel, bias=False, groups=m)
+
+    def decode(self, code: torch.Tensor):
+        n, m, h, w = code.shape
+        # [n, m, h, w, k]
+        oneHot = F.one_hot(code, self._k)
+        x = oneHot.permute(0, 1, 4, 2, 3).reshape(n, m * self._k, h, w)
+        return self._mapping(x)
 
     def forward(self, x: torch.Tensor):
         # [n, k, h, w]
@@ -93,13 +99,23 @@ class _quantizerEncoder(nn.Module):
     ```
     """
 
-    def __init__(self, quantizer: nn.Module, dequantizer: nn.Module, latentStageEncoder: nn.Module, quantizationHead: nn.Module, latentHead: Union[None, nn.Module]):
+    def __init__(self, quantizer: _multiCodebookQuantization, dequantizer: _multiCodebookDeQuantization, latentStageEncoder: nn.Module, quantizationHead: nn.Module, latentHead: Union[None, nn.Module]):
         super().__init__()
         self._quantizer =  quantizer
         self._dequantizer =  dequantizer
         self._latentStageEncoder =  latentStageEncoder
         self._quantizationHead =  quantizationHead
         self._latentHead =  latentHead
+
+    def encode(self, x: torch.Tensor):
+        # [h, w] -> [h/2, w/2]
+        z = self._latentStageEncoder(x)
+        code = self._quantizer.encode(self._quantizationHead(z))
+        if self._latentHead is None:
+            return code
+        z = self._latentHead(z)
+        #      ↓ residual
+        return z - self._dequantizer.decode(code)
 
     def forward(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
@@ -124,12 +140,20 @@ class _quantizerDecoder(nn.Module):
     ```
     """
 
-    def __init__(self, dequantizer: nn.Module, dequantizationHead: nn.Module, sideHead: Union[None, nn.Module], restoreHead: nn.Module):
+    def __init__(self, dequantizer: _multiCodebookDeQuantization, dequantizationHead: nn.Module, sideHead: Union[None, nn.Module], restoreHead: nn.Module):
         super().__init__()
         self._dequantizer =  dequantizer
         self._dequantizationHead =  dequantizationHead
         self._sideHead =  sideHead
         self._restoreHead =  restoreHead
+
+    def decode(self, code: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
+        q = self._dequantizationHead(self._dequantizer.decode(code))
+        if self._sideHead is not None:
+            xHat = q + self._sideHead(formerLevel)
+        else:
+            xHat = q
+        return self._restoreHead(xHat)
 
     def forward(self, q: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
         q = self._dequantizationHead(self._dequantizer(q))
@@ -164,15 +188,15 @@ class UMGMQuantizer(BaseQuantizer):
             quantizationHead = quantizationHeadFn()
             latentHead = latentHeadFn() if i < len(k) - 1 else None
             dequantizationHead = dequantizationHeadFn()
-            sideHead = sideHeadFn() if i > 0 else None
+            sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
             quantizer = _multiCodebookQuantization(channel, m, ki)
             dequantizer = _multiCodebookDeQuantization(channel, m, ki)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
 
-        self._encoders = nn.ModuleList(encoders)
-        self._decoders = nn.ModuleList(decoders)
+        self._encoders: Iterable[_quantizerEncoder] = nn.ModuleList(encoders) # type: ignore
+        self._decoders: Iterable[_quantizerDecoder] = nn.ModuleList(decoders) # type: ignore
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
@@ -184,9 +208,7 @@ class UMGMQuantizer(BaseQuantizer):
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         formerLevel = None
         for decoder, code in zip(self._decoders, codes[::-1]):
-            quantized = decoder.decode(code)
-            # ↓ restored
-            formerLevel = decoder(quantized, formerLevel)
+            formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
     def forward(self, x: torch.Tensor):
@@ -200,7 +222,7 @@ class UMGMQuantizer(BaseQuantizer):
             codes.append(code)
             logits.append(logit)
         formerLevel = None
-        for decoder, quantized in zip(self._decoders, quantizeds[::-1]):
+        for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
         return formerLevel, (codes, logits)
@@ -342,12 +364,3 @@ class L2Quantizer(nn.Module):
 
         # [n, c, h, w], [n, h, w], [n, h, w, k], [n, h, w, c], [k, c]
         return hard, code, trueCode, logitRaw, (raw, quantized), self._codebook
-
-
-class QuantizerEncoder(nn.Module):
-    def __init__(self, m: int, k: int, d: int):
-        super().__init__()
-        # self._
-
-    def forward(self, x):
-        pass

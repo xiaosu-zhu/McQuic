@@ -17,9 +17,6 @@ dependencies:
   - pip:
     - pyyaml
     - vlutils
-    - pyro-ppl
-    - storchastic
     - lmdb
     # need gcc > 8, nvcc
     - compressai
-    - packaging
