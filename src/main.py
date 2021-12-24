@@ -2,8 +2,8 @@ import functools
 import os
 import math
 import random
+from torch import nn
 
-import apex
 from tqdm.contrib.logging import logging_redirect_tqdm
 import torch
 import torch.multiprocessing as mp
@@ -20,10 +20,12 @@ from vlutils.config import read, summary
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
-from mcqc.algorithms import New, PixelCNN
-from mcqc.models.deprecated.whole import WholePQBig, WholePQ5x5, WholePQPixelCNN
+from mcqc.loss import CompressionLossBig
+from mcqc.models.composed import Composed
+from mcqc.models.compressor import Compressor, PQCompressorBig
+from mcqc.training.trainer import MainTrainer, PalTrainer
 from mcqc.utils import getTrainingTransform, getEvalTransform, getTestTransform
-from mcqc.utils.training import CosineAnnealingWarmupRestarts, CosineValue, CosineValueWithEnd, CyclicLR, CyclicValue, ExponentialValue, JumpAlter, JumpValue, MultiStepLRWithWarmUp, StepValue
+from mcqc.utils.registry import LrSchedulerRegistry, OptimizerRegistry, ValueTunerRegistry
 from mcqc.utils.vision import getTrainingPreprocess
 
 FLAGS = flags.FLAGS
@@ -75,62 +77,30 @@ def _generalConfig(rank: int, worldSize: int):
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
     # dist.barrier(device_ids=[rank])
 
-models = {
-    "Big": WholePQBig,
-    "5x5": WholePQ5x5,
-    "PixelCNN": WholePQPixelCNN
-}
-
-methods = {
-    "New": New,
-    "PixelCNN": PixelCNN
-}
-
-optims = {
-    "Adam": torch.optim.Adam,
-    "SGD": torch.optim.SGD,
-    "Lamb": functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True)
-}
-
-schdrs = {
-    "ReduceLROnPlateau": torch.optim.lr_scheduler.ReduceLROnPlateau,
-    "Exponential": torch.optim.lr_scheduler.ExponentialLR,
-    "MultiStep": torch.optim.lr_scheduler.MultiStepLR,
-    "MultiStepWarmUp": MultiStepLRWithWarmUp,
-    "Cyclic": CyclicLR,
-    "OneCycle": torch.optim.lr_scheduler.OneCycleLR,
-    "CosineWarmRestart": CosineAnnealingWarmupRestarts
-}
-
-regSchdrs = {
-    "Exponential": ExponentialValue,
-    "Cyclic": CyclicValue,
-    "MultiStep": StepValue,
-    "Jump": JumpValue,
-    "JumpAlter": JumpAlter,
-    "Cosine": CosineValue,
-    "CosineWithEnd": CosineValueWithEnd
-}
 
 def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain: bool, debug: bool):
     _generalConfig(rank, worldSize)
     savePath = Saver.composePath(saveDir, "saved.ckpt")
     if rank == 0:
-        saver = Saver(saveDir, "saved.ckpt", config, reserve=continueTrain)
-        logger = configLogging(saver.SaveDir, Consts.LoggerName, "DEBUG" if debug else "INFO", rotateLogs=-1)
-        saver.setLogger(logger)
+        saver = Saver(saveDir, "saved.ckpt", "DEBUG" if debug else "INFO", config, reserve=continueTrain)
         saver.info("\r\n%s", summary(config))
     else:
         saver = None
         logger = None
-    model = models[config.Model.type](config.Model.m, config.Model.k, config.Model.channel, config.Model.withGroup, config.Model.withAtt, config.Model.target, config.Model.alias, config.Model.ema)
+
+    compressor = Compressor(config.Model.channel, config.Model.m, config.Model.k)
+    # compressor = PQCompressorBig(config.Model.m, config.Model.k, config.Model.channel, False, False, False, False, -1)
+    # print(sum([p.numel() for p in compressor.parameters()]))
+    # exit()
+    criterion = CompressionLossBig(config.Model.target)
+    model = Composed(compressor, criterion)
     # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     # def optimWrapper(lr, params, weight_decay):
     #     return torch.optim.AdamW(params, lr, amsgrad=True, eps=Consts.Eps, weight_decay=weight_decay)
     # def schdrWrapper(optim):
     #     return torch.optim.lr_scheduler.ExponentialLR(optim, 0.99)
-    method = methods[config.Method](config, model, optims[config.Optim.type], schdrs.get(config.Schdr.type, None), [regSchdrs.get(config.RegSchdr.type, None), regSchdrs.get(config.TempSchdr.type, None)], saver, savePath, continueTrain, logger)
+    trainer = MainTrainer(config, model, OptimizerRegistry.get("Lamb"), LrSchedulerRegistry.get(config.Schdr.type), (ValueTunerRegistry.get(config.RegSchdr.type), ValueTunerRegistry.get(config.TempSchdr.type)), saver, None) if rank == 0 else PalTrainer(config, model, OptimizerRegistry.get("Lamb"), LrSchedulerRegistry.get(config.Schdr.type), (ValueTunerRegistry.get(config.RegSchdr.type), ValueTunerRegistry.get(config.TempSchdr.type)), None)
 
     trainDataset = BasicLMDB(os.path.join("data", config.Dataset), maxTxns=(config.BatchSize + 4) * worldSize, repeat=config.Repeat, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
@@ -144,11 +114,11 @@ def train(rank: int, worldSize: int, config: Config, saveDir: str, continueTrain
         testDataset = Basic(os.path.join("data", config.ValDataset), transform=getTestTransform())
         valLoader = DataLoader(valDataset, batch_size=min(config.BatchSize, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
         testLoader = DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-    if logger is not None:
-        context = logging_redirect_tqdm([logger])
+    if saver is not None:
+        context = logging_redirect_tqdm([saver.Logger])
         context.__enter__()
-    method.run(prefetcher, trainSampler, valLoader, testLoader)
-    if logger is not None:
+    trainer.train(prefetcher, trainSampler, valLoader, testLoader)
+    if saver is not None:
         context.__exit__(None, None, None)
 
 if __name__ == "__main__":

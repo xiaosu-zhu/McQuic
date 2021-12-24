@@ -36,7 +36,7 @@ class _baseAct(nn.Module):
 
 @ModuleRegistry.register
 class GroupSwishConv2D(nn.Module):
-    def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1):
+    def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
         super().__init__()
         self._net = nn.Sequential(
             _baseAct(groups, inChannels),

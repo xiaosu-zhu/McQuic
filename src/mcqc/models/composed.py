@@ -12,4 +12,4 @@ class Composed(nn.Module):
 
     def forward(self, x):
         xHat, yHat, stats = self._compressor(x)
-        return (xHat, yHat, stats), self._criterion(xHat, yHat, stats)
+        return (xHat, yHat, stats), self._criterion(x, xHat, stats)

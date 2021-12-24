@@ -1,6 +1,7 @@
 
 import torch
 import torch.nn.functional as F
+from torch.utils.data.dataloader import DataLoader
 
 from mcqc.utils.transforms import DeTransform
 from mcqc.evaluation.metrics import MsSSIM, PSNR
@@ -24,5 +25,7 @@ class Validator:
         code = F.interpolate(code, scale_factor=4, mode="nearest")
         return code
 
-    def validate(self):
+    def validate(self, valLoader: DataLoader):
         raise NotImplementedError
+
+    def test(self, testLoader: DataLoader): raise NotImplementedError
