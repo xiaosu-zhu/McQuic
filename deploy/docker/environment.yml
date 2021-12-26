@@ -6,16 +6,14 @@ channels:
 dependencies:
   - conda
   - pip
-  - tensorboard=2.5
+  - tensorboard=2.6
   - tqdm=4.62
   - scipy=1.7
-  - matplotlib=3.4
+  - matplotlib=3.5
   - pip:
     - pyyaml
-    - vlutils>=0.1.2
-    - pyro-ppl==1.7.0
-    - storchastic==0.3.5
-    - lmdb
+    - vlutils>=0.1.6
+    - lmdb==1.2.1
     # need gcc > 8, nvcc
-    - compressai==1.1.6
+    - compressai==1.1.9
     - packaging
