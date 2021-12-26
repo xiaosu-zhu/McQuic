@@ -4,7 +4,7 @@ testFreq: 2
 gpus: 2
 vRam: -1
 wantsMore: false
-dataset: fullDataset
+dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
 batchSize: 4
