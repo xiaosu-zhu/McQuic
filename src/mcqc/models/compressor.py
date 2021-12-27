@@ -66,13 +66,15 @@ class Compressor(BaseCompressor):
             ResidualBlockShuffle(channel, channel, groups=m),
             ResidualBlock(channel, channel, groups=m),
             ResidualBlockShuffle(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            GroupSwishConv2D(channel, 3, groups=m),
+            # ResidualBlock(channel, channel, groups=m),
+            convs.conv1x1(channel, 3),
+            # GroupSwishConv2D(channel, 3, groups=m),
         )
         quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(
                 ResidualBlockWithStride(channel, channel, groups=m),
-                ResidualBlock(channel, channel, groups=m),
+                # GroupSwishConv2D(channel, 3, groups=m),
+                # ResidualBlock(channel, channel, groups=m),
             ),
             "quantizationHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=m),
@@ -83,15 +85,15 @@ class Compressor(BaseCompressor):
                 GroupSwishConv2D(channel, channel, groups=m)
             ),
             "dequantizationHead": lambda: nn.Sequential(
+                GroupSwishConv2D(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
-                GroupSwishConv2D(channel, channel, groups=m)
             ),
             "sideHead": lambda: nn.Sequential(
+                GroupSwishConv2D(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
-                GroupSwishConv2D(channel, channel, groups=m)
             ),
             "restoreHead": lambda: nn.Sequential(
-                ResidualBlock(channel, channel, groups=m),
+                # ResidualBlock(channel, channel, groups=m),
                 ResidualBlockShuffle(channel, channel, groups=m)
             ),
         })

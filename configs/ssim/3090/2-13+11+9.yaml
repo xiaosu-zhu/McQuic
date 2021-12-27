@@ -7,7 +7,7 @@ wantsMore: false
 dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 4
+batchSize: 5
 model:
     type: Big
     target: ssim

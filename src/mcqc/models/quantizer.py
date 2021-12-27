@@ -36,52 +36,89 @@ class BaseQuantizer(nn.Module):
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, channel: int, m: int, k: int):
+    def __init__(self, codebook: nn.Parameter):
         super().__init__()
-        self._m = m
-        self._k = k
-        self._logistic = conv1x1(channel, m * k, bias=False, groups=m)
+        self._m, self._k, self._d = codebook.shape
+        self._codebook = codebook
 
     def encode(self, x: torch.Tensor):
-        # [n, m * k, h, w]
-        logit = self._logistic(x)
-        n, _, h, w = logit.shape
+        # [n, m, h, w, k]
+        distance = self._distance(x)
         # [n, m, h, w, k] -> [n, m, h, w]
-        code = logit.reshape(n, self._m, self._k, h, w).permute(0, 1, 3, 4, 2).argmax(-1)
+        code = distance.argmax(-1)
         #      [n, m, h, w]
         return code
 
+    def _distance(self, x: torch.Tensor):
+        n, _, h, w = x.shape
+        # [n, m, d, h, w]
+        x = x.reshape(n, self._m, self._d, h, w)
+
+        # [n, m, 1, h, w]
+        x2 = (x ** 2).sum(2, keepdim=True)
+        # [m, k, 1, 1]
+        c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
+        # [n, m, d, h, w] * [m, k, d] -sum-> [n, m, k, h, w]
+        inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebook)
+        # inter = (x[:, :, None, ...] * self._codebook[..., None, None]).sum(3)
+        # print(x2.shape)
+        # print(c2.shape)
+        # print(inter.shape)
+        # exit()
+        # [n, m, k, h, w]
+        distance = x2 + c2 - 2 * inter
+        # [n, m, h, w, k]
+        return distance.permute(0, 1, 3, 4, 2)
+
+    def _sample(self, x: torch.Tensor):
+        # [n, m, h, w, k]
+        distance = self._distance(x)
+        logit = distance.log()
+        posterior = OneHotCategoricalStraightThrough(logits=distance.log())
+        # [n, m, h, w, k]
+        sampled = posterior.rsample(())
+        return sampled, logit
+
     def forward(self, x: torch.Tensor):
-        # [n, m * k, h, w]
-        logit = self._logistic(x)
-        n, _, h, w = logit.shape
-        # [n, m, h, w, k]
-        posterior = OneHotCategoricalStraightThrough(logits=logit.reshape(n, self._m, self._k, h, w).permute(0, 1, 3, 4, 2))
-        # [n, m, h, w, k]
-        quantized = posterior.rsample(())
+        n, _, h, w = x.shape
+        sample, logit = self._sample(x)
         # [n, m, h, w]
-        code = quantized.argmax(-1)
-        #      [n, m * k, h, w]
-        return quantized.permute(0, 1, 4, 2, 3).reshape(n, -1, h, w), code, logit
+        code = sample.argmax(-1)
+        #      [n, m, h, w, k]
+        return sample, code, logit
 
 
 class _multiCodebookDeQuantization(nn.Module):
-    def __init__(self, channel: int, m: int, k: int):
+    def __init__(self, codebook: nn.Parameter):
         super().__init__()
-        self._m = m
-        self._k = k
-        self._mapping = conv1x1(m * k, channel, bias=False, groups=m)
+        self._m, self._k, self._d = codebook.shape
+        self._codebook = codebook
 
     def decode(self, code: torch.Tensor):
-        n, m, h, w = code.shape
-        # [n, m, h, w, k]
-        oneHot = F.one_hot(code, self._k)
-        x = oneHot.permute(0, 1, 4, 2, 3).reshape(n, m * self._k, h, w)
-        return self._mapping(x)
+        # codes: [n, m, h, w]
+        n, _, h, w = code.shape
+        # [n, h, w, m]
+        code = code.permute(0, 2, 3, 1)
+        # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
+        ix = torch.arange(self._m, device=code.device).expand_as(code)
+        # [n, h, w, m, d]
+        indexed = self._codebook[ix, code]
+        # [n, c, h, w]
+        return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        # n, m, h, w = code.shape
+        # # [n, m, h, w, k]
+        # oneHot = F.one_hot(code, self._k)
+        # # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d]
+        # return (oneHot[..., None] * self._codebook[:, None, None, ...]).sum(-2)
 
-    def forward(self, x: torch.Tensor):
-        # [n, k, h, w]
-        return self._mapping(x)
+    def forward(self, sample: torch.Tensor):
+        n, m, h, w, k = sample.shape
+        # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
+        return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
+        print(sample[..., None].shape)
+        print(self._codebook[:, None, None, ...].shape)
+        exit()
+        return (sample[..., None] * self._codebook[:, None, None, ...]).sum(-2)
 
 
 class _quantizerEncoder(nn.Module):
@@ -190,8 +227,9 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizationHead = dequantizationHeadFn()
             sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
-            quantizer = _multiCodebookQuantization(channel, m, ki)
-            dequantizer = _multiCodebookDeQuantization(channel, m, ki)
+            codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, ki, channel // m)))
+            quantizer = _multiCodebookQuantization(codebook)
+            dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
 

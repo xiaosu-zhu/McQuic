@@ -180,7 +180,7 @@ def pixelShuffle5x5(inChannels: int, outChannels: int, r: float = 1) -> nn.Conv2
             nn.PixelShuffle(r)
         ) # type: ignore
 
-def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1) -> nn.Conv2d:
+def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1, groups: int = 1) -> nn.Conv2d:
     """A wrapper of 3x3 convolution and a 2x down-sampling by `PixelShuffle`.
 
     Usage:
@@ -204,13 +204,13 @@ def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1) -> nn.Conv2
     if r < 1:
         r = int(1 / r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, padding_mode="reflect"),
+            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode="reflect"),
             nn.PixelUnshuffle(r)
         ) # type: ignore
     else:
         r = int(r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, padding_mode="reflect"),
+            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode="reflect"),
             nn.PixelShuffle(r)
         ) # type: ignore
 
