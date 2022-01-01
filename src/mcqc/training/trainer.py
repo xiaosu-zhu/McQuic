@@ -1,6 +1,6 @@
 import functools
 import os
-from typing import Callable, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 from logging import Logger
 import math
 import copy
@@ -113,12 +113,16 @@ class _baseTrainer(Restorable):
 
         totalBatches = len(trainLoader._loader.dataset) // (self.config.BatchSize * self.worldSize) + 1 # type: ignore
 
+        images: Union[torch.Tensor, None] = None
+        xHat: Union[torch.Tensor, None] = None
+        stats: Dict[str, Any] = {}
+
         for _ in range(self._epoch, self.config.Epoch):
             trainSampler.set_epoch(self._epoch)
 
-            for images in tqdm(trainLoader, ncols=40, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (self._epoch + 1), total=totalBatches, leave=False, disable=self.rank != 0):
+            for images in tqdm(trainLoader, dynamic_ncols=True, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (self._epoch + 1), total=totalBatches, leave=False, disable=self.rank != 0):
                 self._optimizer.zero_grad()
-                (xHat, yHat, stats), loss = self._model(images)
+                xHat, loss, stats = self._model(images)
                 # loss = self._reduceLoss(losses)
                 loss.backward()
                 self._optimizer.step()
@@ -131,7 +135,7 @@ class _baseTrainer(Restorable):
             self._temperatureTuner.step()
 
             self._epoch += 1
-            epochFinishHook(self._step, self._epoch, images=images, restored=xHat, logits=stats[1], codes=stats[0])
+            epochFinishHook(self._step, self._epoch, images=images, restored=xHat, **stats)
 
         afterRunHook(self._step, self._epoch)
 

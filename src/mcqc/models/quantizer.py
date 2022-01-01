@@ -12,6 +12,7 @@ from mcqc.utils.specification import CodeSize
 
 
 class BaseQuantizer(nn.Module):
+    _dummyTensor: torch.Tensor
     def __init__(self, m: int, k: List[int]):
         super().__init__()
         self.register_buffer("_dummyTensor", torch.empty(()))
@@ -20,11 +21,14 @@ class BaseQuantizer(nn.Module):
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         raise NotImplementedError
 
+    def count(self, x: torch.Tensor):
+        self._entropyCoder.updateFreq(self.encode(x))
+
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
 
     def readyForCoding(self):
-        return self._entropyCoder.readyForCoding
+        return self._entropyCoder.readyForCoding()
 
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[bytes], CodeSize]:
         codes = self.encode(x)
@@ -68,7 +72,7 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
         # [n, m, h, w, k]
-        return distance.permute(0, 1, 3, 4, 2)
+        return -distance.permute(0, 1, 3, 4, 2)
 
     def _sample(self, x: torch.Tensor):
         # [n, m, h, w, k]
@@ -263,7 +267,7 @@ class UMGMQuantizer(BaseQuantizer):
         for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
-        return formerLevel, (codes, logits)
+        return formerLevel, codes, logits
 
 class L2Quantizer(nn.Module):
     def __init__(self, k: int, dIn: int, dHidden: int):

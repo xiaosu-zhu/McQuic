@@ -88,7 +88,7 @@ class CompressionLossBig(nn.Module):
         return F.mse_loss(restored, image)
 
     def _dSsim(self, restored, image):
-        return 1 - self._ssim(restored + 1, image + 1)
+        return self._ssim(restored + 1, image + 1)
 
     def forward(self, restored, image, *_):
         dLoss = self._distortion(restored, image)

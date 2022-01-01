@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from mcqc.layers.convs import pixelShuffle3x3, pixelShuffle5x5
-from mcqc.layers.gdn import GenDivNorm
+from mcqc.layers.gdn import GenDivNorm, InvGenDivNorm
 from mcqc.layers.blocks import ResidualBlock, AttentionBlock, ResidualBlockShuffle
 
 
@@ -12,9 +12,9 @@ class BaseDecoder5x5(nn.Module):
         super().__init__()
         self._net = nn.Sequential(
             pixelShuffle5x5(channel, channel, 2),
-            GenDivNorm(channel, inverse=True),
+            InvGenDivNorm(channel),
             pixelShuffle5x5(channel, channel, 2),
-            GenDivNorm(channel, inverse=True),
+            InvGenDivNorm(channel),
             pixelShuffle5x5(channel, 3, 2)
         )
 

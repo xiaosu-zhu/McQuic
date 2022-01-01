@@ -13,6 +13,31 @@
 # limitations under the License.
 # https://github.com/InterDigitalInc/CompressAI/blob/master/compressai/layers/layers.py
 
+
+# Copyright (c) 2020 Patrick Esser and Robin Rombach and Björn Ommer
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+# OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+# OR OTHER DEALINGS IN THE SOFTWARE./
+# https://github.com/CompVis/taming-transformers/blob/master/taming/modules/diffusionmodules/model.py
+
+
+# NOTE: Slightly modified based on [CompVis/taming-transformers] for res-blocks, GroupNorm removed.
+
 from math import sqrt
 from typing import Union
 
@@ -24,28 +49,17 @@ from mcqc.layers.gdn import GenDivNorm
 from mcqc.layers.convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, pixelShuffle3x3
 
 
-# NOTE: Based on [CompVis/taming-transformers]
-class _baseAct(nn.Module):
-    def __init__(self, groups: int, channels: int):
-        super().__init__()
-        self._norm = nn.GroupNorm(groups, channels, 1e-6, True)
-        self._act = nn.SiLU(True)
-    def forward(self, x):
-        return self._act(self._norm(x))
-
-
 @ModuleRegistry.register
 class GroupSwishConv2D(nn.Module):
     def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
         super().__init__()
         self._net = nn.Sequential(
-            _baseAct(groups, inChannels),
+            nn.SiLU(True),
             conv3x3(inChannels, outChannels),
         )
     def forward(self, x: torch.Tensor):
         return self._net(x)
 
-# NOTE: Slightly modified based on [CompVis/taming-transformers]
 class _residulBlock(nn.Module):
     def __init__(self, act1: nn.Module, conv1: nn.Conv2d, act2: nn.Module, conv2: nn.Conv2d, skip: Union[nn.Module, None]):
         super().__init__()
@@ -96,13 +110,13 @@ class ResidualBlockWithStride(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         if stride != 1:
-            skip = conv3x3(inChannels, outChannels, stride=stride)
+            skip = nn.Sequential(conv3x3(inChannels, outChannels, stride=stride), GenDivNorm(outChannels))
         elif inChannels != outChannels:
             skip = conv1x1(inChannels, outChannels, stride=stride)
         else:
             skip = None
         super().__init__(
-            _baseAct(groups, inChannels),
+            nn.SiLU(True),
             conv3x3(inChannels, outChannels, stride=stride),
             GenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
@@ -141,11 +155,11 @@ class ResidualBlockUnShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            _baseAct(groups, inChannels),
+            nn.SiLU(True),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
             GenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
-            pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
+            nn.Sequential(pixelShuffle3x3(inChannels, outChannels, 1 / downsample), GenDivNorm(outChannels)))
 
 
 @ModuleRegistry.register
@@ -180,11 +194,11 @@ class ResidualBlockShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            _baseAct(groups, inChannels),
+            nn.SiLU(True),
             pixelShuffle3x3(inChannels, outChannels, upsample),
             GenDivNorm(outChannels, inverse=True),
             conv3x3(outChannels, outChannels),
-            pixelShuffle3x3(inChannels, outChannels, upsample))
+            nn.Sequential(pixelShuffle3x3(inChannels, outChannels, upsample), GenDivNorm(outChannels, inverse=True)))
 
 
 @ModuleRegistry.register
@@ -222,9 +236,9 @@ class ResidualBlock(_residulBlock):
         else:
             skip = None
         super().__init__(
-            _baseAct(groups, inChannels),
+            nn.SiLU(True),
             conv3x3(inChannels, outChannels),
-            _baseAct(groups, outChannels),
+            nn.SiLU(True),
             conv3x3(outChannels, outChannels),
             skip)
 

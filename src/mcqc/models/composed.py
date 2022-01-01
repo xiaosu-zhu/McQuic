@@ -11,5 +11,11 @@ class Composed(nn.Module):
         self._criterion = criterion
 
     def forward(self, x):
-        xHat, yHat, stats = self._compressor(x)
-        return (xHat, yHat, stats), self._criterion(x, xHat, stats)
+        xHat, yHat, codes, logits = self._compressor(x)
+        loss = self._criterion(x, xHat, codes, logits)
+        statistics = {
+            "loss": loss,
+            "codes": codes,
+            "logits": logits
+        }
+        return xHat, loss, statistics
