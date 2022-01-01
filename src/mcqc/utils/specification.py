@@ -39,11 +39,24 @@ class FileHeader:
     _sep = ":|:"
     def __init__(self, fingerprint: str, codeSize: CodeSize, imageSize: ImageSize) -> None:
         self._fingerprint = fingerprint
-        self._codeSizes = codeSize
-        self._imageSizes = imageSize
+        self._codeSize = codeSize
+        self._imageSize = imageSize
+
+
+    @property
+    def Fingerprint(self) -> str:
+        return self._fingerprint
+
+    @property
+    def CodeSize(self) -> CodeSize:
+        return self._codeSize
+
+    @property
+    def ImageSize(self) -> ImageSize:
+        return self._imageSize
 
     def serialize(self) -> str:
-        return self._sep.join([self._fingerprint, str(self._codeSizes), str(self._imageSizes)])
+        return self._sep.join([self._fingerprint, str(self._codeSize), str(self._imageSize)])
 
     @staticmethod
     def deserialize(raw: str) -> "FileHeader":

@@ -1,3 +1,4 @@
+# Tested under these packages, try newer versions at your own risk
 name: mcqc
 channels:
   - pytorch

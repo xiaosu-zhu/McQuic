@@ -1,13 +1,14 @@
 from typing import List, Tuple
 import torch
 from torch import nn
+
+from mcqc.consts import Consts
 from mcqc.layers import convs
 from mcqc.layers.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
-
-from mcqc.models.quantizer import L2Quantizer, UMGMQuantizer
+from mcqc.models.quantizer import BaseQuantizer, L2Quantizer, UMGMQuantizer
 from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
 from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
-from mcqc.utils.specification import FileHeader
+from mcqc.utils.specification import FileHeader, ImageSize
 
 
 # class Compressor(nn.Module):
@@ -25,7 +26,7 @@ from mcqc.utils.specification import FileHeader
 
 
 class BaseCompressor(nn.Module):
-    def __init__(self, encoder, decoder, quantizer):
+    def __init__(self, encoder: nn.Module, decoder: nn.Module, quantizer: BaseQuantizer):
         super().__init__()
         self._encoder = encoder
         self._decoder = decoder
@@ -34,24 +35,30 @@ class BaseCompressor(nn.Module):
     def forward(self, x: torch.Tensor):
         y = self._encoder(x)
         # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-        yHat, stats = self._quantizer(y)
+        yHat, codes, logits = self._quantizer(y)
         xHat = self._decoder(yHat)
-        return xHat, yHat, stats
+        return xHat, yHat, codes, logits
 
-    def compress(self, x: torch.Tensor) -> Tuple[str, FileHeader]:
+    def count(self, x:torch.Tensor):
         y = self._encoder(x)
-        binaries, header = self._quantizer.compress(y)
+        self._quantizer.count(y)
+
+    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[bytes], FileHeader]:
+        y = self._encoder(x)
+        n, c, h, w = x.shape
+        binaries, codeSize = self._quantizer.compress(y, cdfs)
+        header = FileHeader(Consts.Fingerprint, codeSize, ImageSize(height=h, width=w, channel=c))
         return binaries, header
 
-    def decompress(self, binaries: str, header: FileHeader) -> torch.Tensor:
-        yHat = self._quantizer.decompress(binaries, header)
+    def decompress(self, binaries: List[bytes], cdfs: List[List[List[int]]], header: FileHeader) -> torch.Tensor:
+        yHat = self._quantizer.decompress(binaries, header.CodeSize, cdfs)
         return self._decoder(yHat)
 
 
 class Compressor(BaseCompressor):
     def __init__(self, channel: int, m: int, k: List[int]):
         encoder = nn.Sequential(
-            convs.conv1x1(3, channel),
+            convs.conv3x3(3, channel),
             ResidualBlockWithStride(channel, channel, groups=m),
             ResidualBlock(channel, channel, groups=m),
             ResidualBlockWithStride(channel, channel, groups=m),
@@ -67,8 +74,8 @@ class Compressor(BaseCompressor):
             ResidualBlock(channel, channel, groups=m),
             ResidualBlockShuffle(channel, channel, groups=m),
             # ResidualBlock(channel, channel, groups=m),
-            convs.conv1x1(channel, 3),
-            # GroupSwishConv2D(channel, 3, groups=m),
+            # convs.conv1x1(channel, 3),
+            convs.conv3x3(channel, 3),
         )
         quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(
@@ -78,18 +85,19 @@ class Compressor(BaseCompressor):
             ),
             "quantizationHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=m),
-                GroupSwishConv2D(channel, channel, groups=m)
+                convs.conv1x1(channel, channel, groups=m)
+                # GroupSwishConv2D(channel, channel, groups=m)
             ),
             "latentHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=m),
-                GroupSwishConv2D(channel, channel, groups=m)
+                convs.conv1x1(channel, channel, groups=m)
             ),
             "dequantizationHead": lambda: nn.Sequential(
-                GroupSwishConv2D(channel, channel, groups=m),
+                convs.conv1x1(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
             ),
             "sideHead": lambda: nn.Sequential(
-                GroupSwishConv2D(channel, channel, groups=m),
+                convs.conv1x1(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
             ),
             "restoreHead": lambda: nn.Sequential(

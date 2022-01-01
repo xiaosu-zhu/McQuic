@@ -1,5 +1,6 @@
 # Copyright 2020 by Gongfan Fang, Zhejiang University.
 # All rights reserved.
+from math import sqrt
 import warnings
 
 import torch
@@ -213,7 +214,7 @@ class Ssim(nn.Module):
         self.nonnegative_ssim = nonnegative_ssim
 
     def forward(self, X, Y):
-        return ssim(X, Y, self.win, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K, nonnegative_ssim=self.nonnegative_ssim)
+        return 1.0 - ssim(X, Y, self.win, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K, nonnegative_ssim=self.nonnegative_ssim)
 
 
 class MsSSIM(nn.Module):
@@ -250,7 +251,7 @@ class MsSSIM(nn.Module):
         self.K = K
 
     def forward(self, X, Y):
-        return ms_ssim(X, Y, self.win, self.weights, self._avg_pool, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K)
+        return 1.0 - ms_ssim(X, Y, self.win, self.weights, self._avg_pool, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K)
 
 
 def psnr(x: torch.Tensor, y: torch.Tensor, sizeAverage: bool = False, upperBound: float = 255.0):
@@ -269,3 +270,12 @@ class PSNR(nn.Module):
         mse = ((x.float() - y.float()) ** 2).mean(dim=(1, 2, 3))
         res = 10 * (self._upperBound / mse).log10()
         return res.mean() if self._average else res
+
+
+class Decibel(nn.Module):
+    def __init__(self, upperBound: float) -> None:
+        super().__init__()
+        self._upperBound = upperBound ** 2
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return -10 * (x / self._upperBound).log10()

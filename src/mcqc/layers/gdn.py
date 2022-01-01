@@ -93,6 +93,7 @@ class NonNegativeParametrizer(nn.Module):
         out = out ** 2 - self.pedestal
         return out
 
+
 class GenDivNorm(nn.Module):
     r"""Generalized Divisive Normalization layer.
     Introduced in `"Density Modeling of Images Using a Generalized Normalization
@@ -102,7 +103,7 @@ class GenDivNorm(nn.Module):
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
 
-    def __init__(self, inChannels: int, inverse: bool = False, beta_min: float = 1e-6, gamma_init: float = 0.1):
+    def __init__(self, inChannels: int, beta_min: float = 1e-6, gamma_init: float = 0.1):
         """Generalized Divisive Normalization layer.
 
         Args:
@@ -115,7 +116,6 @@ class GenDivNorm(nn.Module):
 
         beta_min = float(beta_min)
         gamma_init = float(gamma_init)
-        self.inverse = bool(inverse)
 
         self.beta_reparam = NonNegativeParametrizer(minimum=beta_min)
         beta = torch.ones(inChannels)
@@ -135,35 +135,48 @@ class GenDivNorm(nn.Module):
         gamma = gamma.reshape(C, C, 1, 1)
         norm = F.conv2d(x ** 2, gamma, beta)
 
-        if self.inverse:
-            norm = torch.sqrt(norm)
-        else:
-            norm = torch.rsqrt(norm)
+        norm = self._norm(norm)
 
         out = x * norm
 
         return out
 
-class EffGenDivNorm(GenDivNorm):
-    r"""Simplified GDN layer.
-    Introduced in `"Computationally Efficient Neural Image Compression"
-    <http://arxiv.org/abs/1912.08771>`_, by Johnston Nick, Elad Eban, Ariel
-    Gordon, and Johannes Ballé, (2019).
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.rsqrt(x)
+
+
+class InvGenDivNorm(GenDivNorm):
+    r"""I-GDN layer.
+    Introduced in `"Density Modeling of Images Using a Generalized Normalization
+    Transformation" <https://arxiv.org/abs/1511.06281>`_,
+    by Balle Johannes, Valero Laparra, and Eero P. Simoncelli, (2016).
     .. math::
-        y[i] = \frac{x[i]}{\beta[i] + \sum_j(\gamma[j, i] * |x[j]|}
+       y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sqrt(x)
 
-    def forward(self, x):
-        C = x.shape[-3]
 
-        beta = self.beta_reparam(self.beta)
-        gamma = self.gamma_reparam(self.gamma)
-        gamma = gamma.reshape(C, C, 1, 1)
-        norm = F.conv2d(torch.abs(x), gamma, beta)
+# class EffGenDivNorm(GenDivNorm):
+#     r"""Simplified GDN layer.
+#     Introduced in `"Computationally Efficient Neural Image Compression"
+#     <http://arxiv.org/abs/1912.08771>`_, by Johnston Nick, Elad Eban, Ariel
+#     Gordon, and Johannes Ballé, (2019).
+#     .. math::
+#         y[i] = \frac{x[i]}{\beta[i] + \sum_j(\gamma[j, i] * |x[j]|}
+#     """
 
-        if not self.inverse:
-            norm = 1.0 / norm
+#     def forward(self, x):
+#         C = x.shape[-3]
 
-        out = x * norm
+#         beta = self.beta_reparam(self.beta)
+#         gamma = self.gamma_reparam(self.gamma)
+#         gamma = gamma.reshape(C, C, 1, 1)
+#         norm = F.conv2d(torch.abs(x), gamma, beta)
 
-        return out
+#         if not self.inverse:
+#             norm = 1.0 / norm
+
+#         out = x * norm
+
+#         return out
