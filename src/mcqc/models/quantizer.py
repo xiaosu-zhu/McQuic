@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch.distributions import OneHotCategoricalStraightThrough
 
 from mcqc.layers.convs import conv1x1
+from mcqc.layers.gdn import NonNegativeParametrizer
 from mcqc.models.entropyCoder import EntropyCoder
 from mcqc.utils.specification import CodeSize
 
@@ -44,6 +45,7 @@ class _multiCodebookQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
+        self._distanceBound = NonNegativeParametrizer()
 
     def encode(self, x: torch.Tensor):
         # [n, m, h, w, k]
@@ -53,7 +55,7 @@ class _multiCodebookQuantization(nn.Module):
         #      [n, m, h, w]
         return code
 
-    def _distance(self, x: torch.Tensor):
+    def _distance(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
         # [n, m, d, h, w]
         x = x.reshape(n, self._m, self._d, h, w)
@@ -72,13 +74,19 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
         # [n, m, h, w, k]
-        return -distance.permute(0, 1, 3, 4, 2)
+        return distance.permute(0, 1, 3, 4, 2)
+
+    def _logit(self, x: torch.Tensor) -> torch.Tensor:
+        # ensure > 0
+        distance = self._distanceBound(self._distance(x))
+        # map to -∞ ~ +∞
+        logit = -1 * distance.log()
+        return logit
 
     def _sample(self, x: torch.Tensor):
         # [n, m, h, w, k]
-        distance = self._distance(x)
-        logit = distance.log()
-        posterior = OneHotCategoricalStraightThrough(logits=distance.log())
+        logit = self._logit(x)
+        posterior = OneHotCategoricalStraightThrough(logits=logit)
         # [n, m, h, w, k]
         sampled = posterior.rsample(())
         return sampled, logit

@@ -45,7 +45,7 @@ import torch
 from torch import nn
 
 from mcqc.utils import ModuleRegistry
-from mcqc.layers.gdn import GenDivNorm
+from mcqc.layers.gdn import GenDivNorm, InvGenDivNorm
 from mcqc.layers.convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, pixelShuffle3x3
 
 
@@ -54,7 +54,7 @@ class GroupSwishConv2D(nn.Module):
     def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
         super().__init__()
         self._net = nn.Sequential(
-            nn.SiLU(True),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels),
         )
     def forward(self, x: torch.Tensor):
@@ -116,7 +116,7 @@ class ResidualBlockWithStride(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.SiLU(True),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
             GenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
@@ -155,7 +155,7 @@ class ResidualBlockUnShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.SiLU(True),
+            nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
             GenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
@@ -194,11 +194,11 @@ class ResidualBlockShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.SiLU(True),
+            nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
-            GenDivNorm(outChannels, inverse=True),
+            InvGenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
-            nn.Sequential(pixelShuffle3x3(inChannels, outChannels, upsample), GenDivNorm(outChannels, inverse=True)))
+            nn.Sequential(pixelShuffle3x3(inChannels, outChannels, upsample), InvGenDivNorm(outChannels)))
 
 
 @ModuleRegistry.register
@@ -236,9 +236,9 @@ class ResidualBlock(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.SiLU(True),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels),
-            nn.SiLU(True),
+            nn.SiLU(),
             conv3x3(outChannels, outChannels),
             skip)
 
