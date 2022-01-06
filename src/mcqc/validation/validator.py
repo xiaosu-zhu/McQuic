@@ -3,7 +3,7 @@ from typing import Union
 import torch
 import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
-from vlutils.metrics.meter import Meter, Handler
+from vlutils.metrics.meter import Meters, Handler
 from tqdm import tqdm
 
 from mcqc.datasets.prefetcher import Prefetcher
@@ -15,7 +15,7 @@ from mcqc.models.compressor import BaseCompressor
 class Validator:
     def __init__(self, rank: int):
         self._deTrans = DeTransform().to(rank)
-        self._meter = Meter(handlers=[
+        self._meter = Meters(handlers=[
             MsSSIM().to(rank),
             PSNR().to(rank),
             BPP().to(rank)

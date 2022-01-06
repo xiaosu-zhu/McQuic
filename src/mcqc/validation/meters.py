@@ -17,6 +17,7 @@ class MsSSIM(Handler):
 
     def to(self, device):
         self._msSSIM.to(device)
+        return super().to(device)
 
     def handle(self, *, images: torch.ByteTensor, restored: torch.ByteTensor, **_) -> List[float]:
         # [N]
@@ -34,6 +35,7 @@ class PSNR(Handler):
 
     def to(self, device):
         self._psnr.to(device)
+        return super().to(device)
 
     def handle(self, *, images: torch.ByteTensor, restored: torch.ByteTensor, **_) -> List[float]:
         # [N]
