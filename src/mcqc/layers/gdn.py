@@ -68,7 +68,7 @@ class NonNegativeParametrizer(nn.Module):
     Non negative reparametrization.
     Used for stability during training.
     """
-    def __init__(self, minimum: float = 0.0, reparam_offset: float = 2 ** -18):
+    def __init__(self, minimum: float = 0.0, eps: float = 2 ** -18):
         """Non negative reparametrization.
 
         Args:
@@ -77,20 +77,19 @@ class NonNegativeParametrizer(nn.Module):
         """
         super().__init__()
 
-        self.minimum = float(minimum)
-        self.reparam_offset = float(reparam_offset)
+        minimum = float(minimum)
+        eps = float(eps)
 
-        pedestal = self.reparam_offset ** 2
-        self.register_buffer("pedestal", torch.Tensor([pedestal]))
-        bound = (self.minimum + self.reparam_offset ** 2) ** 0.5
-        self.lower_bound = LowerBound(bound)
+        self.register_buffer("eps", torch.Tensor([eps ** 2]))
+        bound = (minimum + eps ** 2) ** 0.5
+        self.lowerBound = LowerBound(bound)
 
     def init(self, x):
-        return torch.sqrt(torch.max(x + self.pedestal, self.pedestal)) # type: ignore
+        return torch.sqrt(torch.max(x + self.eps, self.eps)) # type: ignore
 
     def forward(self, x):
-        out = self.lower_bound(x)
-        out = out ** 2 - self.pedestal
+        out = self.lowerBound(x)
+        out = out ** 2 - self.eps
         return out
 
 
@@ -103,7 +102,7 @@ class GenDivNorm(nn.Module):
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
 
-    def __init__(self, inChannels: int, beta_min: float = 1e-6, gamma_init: float = 0.1):
+    def __init__(self, inChannels: int, groups: int = 1, biasBound: float = 1e-6, weightInit: float = 0.1):
         """Generalized Divisive Normalization layer.
 
         Args:
@@ -114,30 +113,53 @@ class GenDivNorm(nn.Module):
         """
         super().__init__()
 
-        beta_min = float(beta_min)
-        gamma_init = float(gamma_init)
+        self._groups = groups
 
-        self.beta_reparam = NonNegativeParametrizer(minimum=beta_min)
+        biasBound = float(biasBound)
+        weightInit = float(weightInit)
+
+        self.beta_reparam = NonNegativeParametrizer(minimum=biasBound)
         beta = torch.ones(inChannels)
         beta = self.beta_reparam.init(beta)
         self.beta = nn.Parameter(beta) # type: ignore
 
         self.gamma_reparam = NonNegativeParametrizer()
-        gamma = gamma_init * torch.eye(inChannels)
+        # m * [cOut // m, cIn // m] -> [cOut, cIn // m]
+        gamma = [weightInit * torch.eye(inChannels // self._groups) for _ in range(self._groups)]
+        gamma = torch.cat(gamma, 0)
         gamma = self.gamma_reparam.init(gamma)
         self.gamma = nn.Parameter(gamma) # type: ignore
 
+        self._nuReparam = NonNegativeParametrizer(minimum=biasBound)
+        nu = torch.ones(inChannels)
+        nu = self._nuReparam.init(nu)
+        self.nu = nn.Parameter(nu) # type: ignore
+
+        self._tauReparam = NonNegativeParametrizer()
+        tau = [weightInit * torch.eye(inChannels // self._groups) for _ in range(self._groups)]
+        tau = torch.cat(tau, 0)
+        tau = self._tauReparam.init(tau)
+        self.tau = nn.Parameter(tau) # type: ignore
+
     def forward(self, x):
-        C = x.shape[-3]
+        # C = x.shape[-3]
+        nu = self._nuReparam(self.nu)
+        tau = self._tauReparam(self.tau)
+
+        # [C, C // groups, 1, 1]
+        tau = tau[..., None, None]
+
+        bias = F.conv2d(x, tau, nu, groups=self._groups)
 
         beta = self.beta_reparam(self.beta)
         gamma = self.gamma_reparam(self.gamma)
-        gamma = gamma.reshape(C, C, 1, 1)
-        norm = F.conv2d(x ** 2, gamma, beta)
+        # [C, C // groups, 1, 1]
+        gamma = gamma[..., None, None]
+        norm = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
 
         norm = self._norm(norm)
 
-        out = x * norm
+        out = (x - bias) * norm
 
         return out
 

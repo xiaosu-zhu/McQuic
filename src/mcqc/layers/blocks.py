@@ -54,7 +54,7 @@ class GroupSwishConv2D(nn.Module):
     def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
         super().__init__()
         self._net = nn.Sequential(
-            nn.SiLU(),
+            nn.SiLU(True),
             conv3x3(inChannels, outChannels),
         )
     def forward(self, x: torch.Tensor):
@@ -110,15 +110,15 @@ class ResidualBlockWithStride(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         if stride != 1:
-            skip = nn.Sequential(conv3x3(inChannels, outChannels, stride=stride), GenDivNorm(outChannels))
+            skip = conv3x3(inChannels, outChannels, stride=stride)
         elif inChannels != outChannels:
             skip = conv1x1(inChannels, outChannels, stride=stride)
         else:
             skip = None
         super().__init__(
-            nn.SiLU(),
+            nn.SiLU(True),
             conv3x3(inChannels, outChannels, stride=stride),
-            GenDivNorm(outChannels),
+            GenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -155,11 +155,11 @@ class ResidualBlockUnShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.SiLU(),
+            nn.SiLU(True),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
-            GenDivNorm(outChannels),
+            GenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
-            nn.Sequential(pixelShuffle3x3(inChannels, outChannels, 1 / downsample), GenDivNorm(outChannels)))
+            pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
 
 
 @ModuleRegistry.register
@@ -194,11 +194,11 @@ class ResidualBlockShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.SiLU(),
+            nn.SiLU(True),
             pixelShuffle3x3(inChannels, outChannels, upsample),
-            InvGenDivNorm(outChannels),
+            InvGenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
-            nn.Sequential(pixelShuffle3x3(inChannels, outChannels, upsample), InvGenDivNorm(outChannels)))
+            pixelShuffle3x3(inChannels, outChannels, upsample))
 
 
 @ModuleRegistry.register
@@ -236,9 +236,9 @@ class ResidualBlock(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.SiLU(),
+            nn.SiLU(True),
             conv3x3(inChannels, outChannels),
-            nn.SiLU(),
+            nn.SiLU(True),
             conv3x3(outChannels, outChannels),
             skip)
 
