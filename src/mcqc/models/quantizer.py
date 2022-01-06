@@ -150,11 +150,11 @@ class _quantizerEncoder(nn.Module):
 
     def __init__(self, quantizer: _multiCodebookQuantization, dequantizer: _multiCodebookDeQuantization, latentStageEncoder: nn.Module, quantizationHead: nn.Module, latentHead: Union[None, nn.Module]):
         super().__init__()
-        self._quantizer =  quantizer
-        self._dequantizer =  dequantizer
-        self._latentStageEncoder =  latentStageEncoder
-        self._quantizationHead =  quantizationHead
-        self._latentHead =  latentHead
+        self._quantizer = quantizer
+        self._dequantizer = dequantizer
+        self._latentStageEncoder = latentStageEncoder
+        self._quantizationHead = quantizationHead
+        self._latentHead = latentHead
 
     def encode(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
