@@ -88,7 +88,7 @@ class ResidualBlockWithStride(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | SiLU      |  |
+        | LeakyReLU      |  |
         | Conv3s2   |  |
         | GDN       |  |
         | Conv3s1   |  |
@@ -116,7 +116,7 @@ class ResidualBlockWithStride(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.SiLU(True),
+            nn.LeakyReLU(True),
             conv3x3(inChannels, outChannels, stride=stride),
             GenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
@@ -132,7 +132,7 @@ class ResidualBlockUnShuffle(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | SiLU      |  |
+        | LeakyReLU      |  |
         | Conv3s1   |  |
         | PixUnShuf |  |
         | GDN       |  |
@@ -155,7 +155,7 @@ class ResidualBlockUnShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.SiLU(True),
+            nn.LeakyReLU(True),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
             GenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
@@ -171,7 +171,7 @@ class ResidualBlockShuffle(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | SiLU      |  |
+        | LeakyReLU      |  |
         | Conv3s1   |  |
         | PixShuf   |  |
         | IGDN      |  |
@@ -194,7 +194,7 @@ class ResidualBlockShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.SiLU(True),
+            nn.LeakyReLU(True),
             pixelShuffle3x3(inChannels, outChannels, upsample),
             InvGenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
@@ -210,10 +210,10 @@ class ResidualBlock(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | SiLU      |  |
+        | LeakyReLU      |  |
         | Conv3s1   |  |
         | GroupNm   |  |
-        | SiLU      |  |
+        | LeakyReLU      |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -236,9 +236,9 @@ class ResidualBlock(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.SiLU(True),
+            nn.LeakyReLU(True),
             conv3x3(inChannels, outChannels),
-            nn.SiLU(True),
+            nn.LeakyReLU(True),
             conv3x3(outChannels, outChannels),
             skip)
 

@@ -39,10 +39,10 @@ flags.DEFINE_boolean("debug", False, "Set to true to logging verbosely and requi
 
 import signal
 
-@WaitingBar("Waiting for process-group to clear all context...")
 def handler(signum, frame):
-    dist.monitored_barrier(wait_all_ranks=True)
-    dist.destroy_process_group()
+    print("Please wait for process-group to clear all context...")
+    # dist.barrier()
+    # dist.destroy_process_group()
     sys.exit(0)
 
 signal.signal(signal.SIGINT, handler)
