@@ -47,6 +47,7 @@ class _multiCodebookQuantization(nn.Module):
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
         self._distanceBound = NonNegativeParametrizer()
+        self._temperature = nn.Parameter(torch.ones((self._m)))
 
     def encode(self, x: torch.Tensor):
         # [n, m, h, w, k]
@@ -109,8 +110,8 @@ class _multiCodebookQuantization(nn.Module):
         return logit
 
     def _sample(self, x: torch.Tensor):
-        # [n, m, h, w, k]
-        logit = self._logit(x)
+        # [n, m, h, w, k] * [m, 1, 1, 1]
+        logit = self._logit(x) * self._temperature[:, None, None, None]
         posterior = OneHotCategoricalStraightThrough(logits=logit)
         # [n, m, h, w, k]
         sampled = posterior.rsample(())
