@@ -1,5 +1,6 @@
 import math
 from typing import Callable, Dict, Iterable, List, Tuple, Union
+from numpy.random.mtrand import sample
 
 import torch
 from torch import nn
@@ -51,7 +52,7 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, h, w, k]
         distance = self._distance(x)
         # [n, m, h, w, k] -> [n, m, h, w]
-        code = distance.argmax(-1)
+        code = distance.argmin(-1)
         #      [n, m, h, w]
         return code
 
@@ -75,6 +76,30 @@ class _multiCodebookQuantization(nn.Module):
         distance = x2 + c2 - 2 * inter
         # [n, m, h, w, k]
         return distance.permute(0, 1, 3, 4, 2)
+
+        # [n, m, d, h, w] -> [m, n, h, w, d]
+        x = x.reshape(n, self._m, self._d, h, w).permute(1, 0, 3, 4, 2)
+
+        # [m, n, h, w, 1]
+        x2 = (x ** 2).sum(-1, keepdim=True)
+        # [m, k]
+        c2 = (self._codebook ** 2).sum(-1)
+        distances = list()
+        for m in range(len(self._codebook)):
+            # [n, h, w, d]
+            xm = x[m]
+            # [k, d]
+            cm = self._codebook[m]
+            # [n, h, w, k]
+            inter = xm @ cm.T
+            # [n, h, w, 1] + [k] - 2 * [n, h, w, k]
+            distance = x2[m] + c2[m] - 2 * inter
+            distances.append(distance)
+
+        # m * [n, h, w, k] -> [n, m, h, w, k]
+        distance = torch.stack(distances, 1)
+        # [n, m, h, w, k]
+        return distance
 
     def _logit(self, x: torch.Tensor) -> torch.Tensor:
         # ensure > 0
@@ -127,10 +152,16 @@ class _multiCodebookDeQuantization(nn.Module):
         n, m, h, w, k = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
         return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
-        print(sample[..., None].shape)
-        print(self._codebook[:, None, None, ...].shape)
-        exit()
-        return (sample[..., None] * self._codebook[:, None, None, ...]).sum(-2)
+
+        quantizeds = list()
+        for i in range(len(self._codebook)):
+            # [n, h, w, k]
+            oneHot = sample[:, i]
+            # [n, h, w, k] @ [k, d] -> [n, h, w, d]
+            quantized = oneHot @ self._codebook[i]
+            quantizeds.append(quantized)
+        # m * [n, h, w, d] -> [n, h, w, c] -> [n, c, h, w]
+        return torch.cat(quantizeds, -1).permute(0, 3, 1, 2)
 
 
 class _quantizerEncoder(nn.Module):
