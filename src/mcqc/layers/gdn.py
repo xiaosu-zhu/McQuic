@@ -155,16 +155,15 @@ class GenDivNorm(nn.Module):
         gamma = self.gamma_reparam(self.gamma)
         # [C, C // groups, 1, 1]
         gamma = gamma[..., None, None]
-        norm = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
+        std = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
 
-        norm = self._norm(norm)
-
-        out = (x - bias) * norm
-
-        return out
+        return self._normalize(x, bias, std)
 
     def _norm(self, x: torch.Tensor) -> torch.Tensor:
         return torch.rsqrt(x)
+
+    def _normalize(self, x: torch.Tensor, bias: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+        return (x - bias) * torch.rsqrt(std)
 
 
 class InvGenDivNorm(GenDivNorm):
@@ -175,8 +174,8 @@ class InvGenDivNorm(GenDivNorm):
     .. math::
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
-    def _norm(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sqrt(x)
+    def _normalize(self, x: torch.Tensor, bias: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+        return x * torch.sqrt(std) + bias
 
 
 # class EffGenDivNorm(GenDivNorm):
