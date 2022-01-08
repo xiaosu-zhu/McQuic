@@ -20,11 +20,11 @@ import torch.nn.functional as F
 from .base import NonNegativeParametrizer
 
 __all__ = [
-    "GenDivNorm",
-    "InvGenDivNorm"
+    "GenSubDivNorm",
+    "InvGenSubDivNorm"
 ]
 
-class GenDivNorm(nn.Module):
+class GenSubDivNorm(nn.Module):
     r"""Generalized Divisive Normalization layer.
     Introduced in `"Density Modeling of Images Using a Generalized Normalization
     Transformation" <https://arxiv.org/abs/1511.06281>`_,
@@ -97,7 +97,7 @@ class GenDivNorm(nn.Module):
         return (x - bias) * torch.rsqrt(std)
 
 
-class InvGenDivNorm(GenDivNorm):
+class InvGenSubDivNorm(GenSubDivNorm):
     r"""I-GDN layer.
     Introduced in `"Density Modeling of Images Using a Generalized Normalization
     Transformation" <https://arxiv.org/abs/1511.06281>`_,

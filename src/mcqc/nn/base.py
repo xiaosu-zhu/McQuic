@@ -1,4 +1,5 @@
 import math
+from typing import Union
 import torch
 from torch import nn
 
@@ -51,7 +52,6 @@ class LowerBound(nn.Module):
         return self.lower_bound(x)
 
 
-
 class NonNegativeParametrizer(nn.Module):
     """
     Non negative reparametrization.
@@ -96,14 +96,14 @@ class _logExpMinusOne(torch.autograd.Function):
         return passThroughIf * grad_output + remaining * grad_output * x.exp() / (x.exp() - 1 + Consts.Eps), None
 
 class LogExpMinusOne(nn.Module):
-    def __init__(self, eps: float = Consts.Eps) -> None:
+    def __init__(self, eps: Union[torch.Tensor, float] = Consts.Eps) -> None:
         super().__init__()
-        eps: torch.Tensor = torch.tensor(eps, dtype=torch.float)
+        eps = torch.tensor(eps, dtype=torch.float)
         self.register_buffer("_bound", ((1 + eps) / eps).log())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return _logExpMinusOne.apply(x, self._bound)
 
-def logExpMinusOne(x: torch.Tensor, eps: float = Consts.Eps) -> torch.Tensor:
-    eps: torch.Tensor = torch.tensor(eps, dtype=torch.float, device=x.device)
+def logExpMinusOne(x: torch.Tensor, eps: Union[torch.Tensor, float] = Consts.Eps) -> torch.Tensor:
+    eps = torch.tensor(eps, dtype=torch.float, device=x.device)
     return _logExpMinusOne.apply(x, ((1 + eps) / eps).log())

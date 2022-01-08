@@ -45,8 +45,19 @@ import torch
 from torch import nn
 
 from mcqc.utils import ModuleRegistry
-from .gdn import GenDivNorm, InvGenDivNorm
+from .gdn import GenSubDivNorm, InvGenSubDivNorm
 from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3
+
+
+__all__ = [
+    "ResidualBlockWithStride",
+    "ResidualBlockUnShuffle",
+    "ResidualBlockShuffle",
+    "ResidualBlock",
+    "ResidualBlockMasked",
+    "AttentionBlock",
+    "NonLocalBlock"
+]
 
 
 class _residulBlock(nn.Module):
@@ -76,10 +87,9 @@ class ResidualBlockWithStride(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | GroupNm   |  |
         | LeakyReLU |  |
         | Conv3s2   |  |
-        | GDN       |  |
+        | GSDN      |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -107,7 +117,7 @@ class ResidualBlockWithStride(_residulBlock):
         super().__init__(
             nn.LeakyReLU(True),
             conv3x3(inChannels, outChannels, stride=stride),
-            GenDivNorm(outChannels, groups=groups),
+            GenSubDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -120,11 +130,10 @@ class ResidualBlockUnShuffle(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | GroupNm   |  |
         | LeakyReLU |  |
         | Conv3s1   |  |
         | PixUnShuf |  |
-        | GDN       |  |
+        | GSDN      |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -146,7 +155,7 @@ class ResidualBlockUnShuffle(_residulBlock):
         super().__init__(
             nn.LeakyReLU(True),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
-            GenDivNorm(outChannels, groups=groups),
+            GenSubDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
 
@@ -159,11 +168,10 @@ class ResidualBlockShuffle(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | GroupNm   |  |
         | LeakyReLU |  |
         | Conv3s1   |  |
         | PixShuf   |  |
-        | IGDN      |  |
+        | IGSDN     |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -185,7 +193,7 @@ class ResidualBlockShuffle(_residulBlock):
         super().__init__(
             nn.LeakyReLU(True),
             pixelShuffle3x3(inChannels, outChannels, upsample),
-            InvGenDivNorm(outChannels, groups=groups),
+            InvGenSubDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             pixelShuffle3x3(inChannels, outChannels, upsample))
 
@@ -198,10 +206,8 @@ class ResidualBlock(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | GroupNm   |  |
         | LeakyReLU |  |
         | Conv3s1   |  |
-        | GroupNm   |  |
         | LeakyReLU |  |
         | Conv3s1   |  |
         | + <-------╯  |

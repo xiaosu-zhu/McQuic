@@ -1,7 +1,9 @@
 
 from dataclasses import dataclass
-from typing import List
+import os
+from typing import List, Union
 
+import vlutils.logger
 
 @dataclass
 class ImageSize:
@@ -62,3 +64,29 @@ class FileHeader:
     def deserialize(raw: str) -> "FileHeader":
         fingerprint, codeSize, imageSize = raw.split(FileHeader._sep)
         return FileHeader(fingerprint, eval(codeSize), eval(imageSize))
+
+
+class File:
+    def __init__(self, header: FileHeader, content: List[bytes]):
+        self._header = header
+        self._content = content
+
+    def size(self, human: bool = False) -> Union[int, str]:
+        """Compute size of compressed binary, in bytes.
+
+        Args:
+            human (bool, optional): Whether to give a human-readable string (like `-h` option in POSIX). Defaults to False.
+
+        Returns:
+            Union[int, str]: If `human` is True, return integer of total bytes, else return human-readable string.
+        """
+        size = sum(len(x) for x in self._content)
+        if not human:
+            return size
+        return vlutils.logger.readableSize(size)
+
+    def __str__(self) -> str:
+        return f"""
+            Header: {self._header}{os.sep}
+            Size  : {self.size(True)}
+        """

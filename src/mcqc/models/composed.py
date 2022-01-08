@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from mcqc.models.compressor import BaseCompressor
+from .compressor import BaseCompressor
 
 
 class Composed(nn.Module):

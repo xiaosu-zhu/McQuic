@@ -2,12 +2,12 @@ epoch: 1000
 valFreq: 1
 testFreq: 10
 gpus: 8
-vRam: 2000
+vRam: -1
 wantsMore: false
 dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 12
+batchSize: 14
 model:
     type: Big
     target: ssim
