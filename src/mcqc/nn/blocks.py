@@ -45,8 +45,8 @@ import torch
 from torch import nn
 
 from mcqc.utils import ModuleRegistry
-from mcqc.layers.gdn import GenDivNorm, InvGenDivNorm
-from mcqc.layers.convs import MaskedConv2d, conv1x1, conv3x3, conv5x5, pixelShuffle3x3
+from .gdn import GenDivNorm, InvGenDivNorm
+from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3
 
 
 @ModuleRegistry.register
@@ -88,7 +88,7 @@ class ResidualBlockWithStride(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | LeakyReLU      |  |
+        | LeakyReLU |  |
         | Conv3s2   |  |
         | GDN       |  |
         | Conv3s1   |  |
@@ -132,7 +132,7 @@ class ResidualBlockUnShuffle(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | LeakyReLU      |  |
+        | LeakyReLU |  |
         | Conv3s1   |  |
         | PixUnShuf |  |
         | GDN       |  |
@@ -171,7 +171,7 @@ class ResidualBlockShuffle(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | LeakyReLU      |  |
+        | LeakyReLU |  |
         | Conv3s1   |  |
         | PixShuf   |  |
         | IGDN      |  |
@@ -210,10 +210,10 @@ class ResidualBlock(_residulBlock):
         +--------------+
         | Input ----╮  |
         | GroupNm   |  |
-        | LeakyReLU      |  |
+        | LeakyReLU |  |
         | Conv3s1   |  |
         | GroupNm   |  |
-        | LeakyReLU      |  |
+        | LeakyReLU |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
