@@ -6,11 +6,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.distributions import OneHotCategoricalStraightThrough
-from mcqc.nn import convs
-from mcqc.nn.base import LogExpMinusOne, logExpMinusOne
 
-from mcqc.nn.convs import conv1x1
-from mcqc.nn.gdn import NonNegativeParametrizer
+from mcqc.nn import NonNegativeParametrizer, LogExpMinusOne, conv1x1
 from mcqc.models.entropyCoder import EntropyCoder
 from mcqc.utils.specification import CodeSize
 
@@ -34,11 +31,11 @@ class BaseQuantizer(nn.Module):
     def readyForCoding(self):
         return self._entropyCoder.readyForCoding()
 
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[bytes], CodeSize]:
+    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[bytes], List[CodeSize]]:
         codes = self.encode(x)
         return self._entropyCoder.compress(codes, cdfs)
 
-    def decompress(self, binaries: List[bytes], codeSize: CodeSize, cdfs: List[List[List[int]]]) -> torch.Tensor:
+    def decompress(self, binaries: List[bytes], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> torch.Tensor:
         codes = self._entropyCoder.decompress(binaries, codeSize, cdfs)
         return self.decode([c.to(self._dummyTensor.device) for c in codes])
 
@@ -47,7 +44,7 @@ class _multiCodebookQuantization(nn.Module):
     def __init__(self, codebook: nn.Parameter):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
-        self._preProcess = convs.conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
+        self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
         self._wC = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(self._m, self._d, self._d)))
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
@@ -77,11 +74,6 @@ class _multiCodebookQuantization(nn.Module):
         c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
         # [n, m, d, h, w] * [m, k, d] -sum-> [n, m, k, h, w]
         inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebookMapped())
-        # inter = (x[:, :, None, ...] * self._codebook[..., None, None]).sum(3)
-        # print(x2.shape)
-        # print(c2.shape)
-        # print(inter.shape)
-        # exit()
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
         # [n, m, h, w, k]
@@ -139,7 +131,7 @@ class _multiCodebookDeQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
-        self._postProcess = convs.conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
+        self._postProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
         self._wC = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(self._m, self._d, self._d)))
 
     def _codebookMapped(self) -> torch.Tensor:

@@ -2,27 +2,14 @@ from typing import List, Tuple
 import torch
 from torch import nn
 
-from mcqc.consts import Consts
-from mcqc.nn import convs
-from mcqc.nn.blocks import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
-from mcqc.models.quantizer import BaseQuantizer, L2Quantizer, UMGMQuantizer
-from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
-from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
+from mcqc import Consts
+from mcqc.nn import pixelShuffle3x3
+from mcqc.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 from mcqc.utils.specification import FileHeader, ImageSize
 
-
-# class Compressor(nn.Module):
-#     def __init__(self, encoder: nn.Module, quantizer: nn.Module, decoder: nn.Module):
-#         super().__init__()
-#         self._encoder = encoder
-#         self._quantizer = quantizer
-#         self._decoder = decoder
-
-#     def forward(self, x: torch.Tensor):
-#         y = self._encoder(x)
-#         yHat = self._quantizer(y)
-#         xHat = self._decoder(yHat)
-#         return xHat
+from .quantizer import BaseQuantizer, L2Quantizer, UMGMQuantizer
+from .deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
+from .deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
 
 
 class BaseCompressor(nn.Module):
@@ -75,7 +62,7 @@ class Compressor(BaseCompressor):
             # ResidualBlockShuffle(channel, channel, groups=m),
             # ResidualBlock(channel, channel, groups=m),
             # convs.conv1x1(channel, 3),
-            convs.pixelShuffle3x3(channel, 3, 2)
+            pixelShuffle3x3(channel, 3, 2)
         )
         quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(

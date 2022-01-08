@@ -61,7 +61,7 @@ class EntropyCoder(Restorable):
                 raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now `m` is not a constant.")
 
     @torch.inference_mode()
-    def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[bytes], List[CodeSize]]:
+    def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[bytes], CodeSize]:
         compressed = list()
         self._checkShape(codes)
         m = codes[0].shape[1]
@@ -83,7 +83,7 @@ class EntropyCoder(Restorable):
         return compressed, CodeSize(m, heights, widths, self._k)
 
     @torch.inference_mode()
-    def decompress(self, binaries: List[bytes], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
+    def decompress(self, binaries: List[bytes], codeSize: CodeSize, cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
         codes = list()
         indices = torch.arange(codeSize.m)[:, None]
         for lv, (binary, h, w, ki, cdf) in enumerate(zip(binaries, codeSize.heights, codeSize.widths, self._k, cdfs)):
