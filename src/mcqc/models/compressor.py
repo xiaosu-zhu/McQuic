@@ -4,7 +4,7 @@ from torch import nn
 
 from mcqc.consts import Consts
 from mcqc.nn import convs
-from mcqc.nn.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
+from mcqc.nn.blocks import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 from mcqc.models.quantizer import BaseQuantizer, L2Quantizer, UMGMQuantizer
 from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
 from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
@@ -58,8 +58,8 @@ class BaseCompressor(nn.Module):
 class Compressor(BaseCompressor):
     def __init__(self, channel: int, m: int, k: List[int]):
         encoder = nn.Sequential(
-            convs.conv3x3(3, channel),
-            ResidualBlockWithStride(channel, channel, groups=m),
+            # convs.conv3x3(3, channel),
+            ResidualBlockWithStride(3, channel, groups=m),
             ResidualBlock(channel, channel, groups=m),
             ResidualBlockWithStride(channel, channel, groups=m),
             ResidualBlock(channel, channel, groups=m),
@@ -72,16 +72,16 @@ class Compressor(BaseCompressor):
             ResidualBlock(channel, channel, groups=m),
             ResidualBlockShuffle(channel, channel, groups=m),
             ResidualBlock(channel, channel, groups=m),
-            ResidualBlockShuffle(channel, channel, groups=m),
+            # ResidualBlockShuffle(channel, channel, groups=m),
             # ResidualBlock(channel, channel, groups=m),
             # convs.conv1x1(channel, 3),
-            convs.conv3x3(channel, 3),
+            convs.pixelShuffle3x3(channel, 3, 2)
         )
         quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(
                 ResidualBlockWithStride(channel, channel, groups=m),
                 # GroupSwishConv2D(channel, 3, groups=m),
-                # ResidualBlock(channel, channel, groups=m),
+                ResidualBlock(channel, channel, groups=m),
             ),
             "quantizationHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=m),
@@ -101,7 +101,7 @@ class Compressor(BaseCompressor):
                 ResidualBlock(channel, channel, groups=m),
             ),
             "restoreHead": lambda: nn.Sequential(
-                # ResidualBlock(channel, channel, groups=m),
+                ResidualBlock(channel, channel, groups=m),
                 ResidualBlockShuffle(channel, channel, groups=m)
             ),
         })

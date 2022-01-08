@@ -2,9 +2,12 @@ import math
 import torch
 from torch import nn
 
+from mcqc import Consts
 
 __all__ = [
-    "NonNegativeParametrizer"
+    "NonNegativeParametrizer",
+    "LogExpMinusOne",
+    "logExpMinusOne"
 ]
 
 
@@ -54,7 +57,7 @@ class NonNegativeParametrizer(nn.Module):
     Non negative reparametrization.
     Used for stability during training.
     """
-    def __init__(self, minimum: float = 0.0, eps: float = 2 ** -18):
+    def __init__(self, minimum: float = 0.0, eps: float = Consts.Eps):
         """Non negative reparametrization.
 
         Args:
@@ -83,17 +86,17 @@ class _logExpMinusOne(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, bound):
         ctx.save_for_backward(x, bound)
-        return (x.exp() - 1).log()
+        return (x.exp() - 1 + Consts.Eps).log()
 
     @staticmethod
     def backward(ctx, grad_output):
         x, bound = ctx.saved_tensors
         passThroughIf = x > bound
         remaining = ~passThroughIf
-        return passThroughIf * grad_output + remaining * grad_output * x.exp() / (x.exp() - 1 + 1e-18), None
+        return passThroughIf * grad_output + remaining * grad_output * x.exp() / (x.exp() - 1 + Consts.Eps), None
 
 class LogExpMinusOne(nn.Module):
-    def __init__(self, eps: float = 1e-6) -> None:
+    def __init__(self, eps: float = Consts.Eps) -> None:
         super().__init__()
         eps: torch.Tensor = torch.tensor(eps, dtype=torch.float)
         self.register_buffer("_bound", ((1 + eps) / eps).log())
@@ -101,6 +104,6 @@ class LogExpMinusOne(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return _logExpMinusOne.apply(x, self._bound)
 
-def logExpMinusOne(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+def logExpMinusOne(x: torch.Tensor, eps: float = Consts.Eps) -> torch.Tensor:
     eps: torch.Tensor = torch.tensor(eps, dtype=torch.float, device=x.device)
     return _logExpMinusOne.apply(x, ((1 + eps) / eps).log())

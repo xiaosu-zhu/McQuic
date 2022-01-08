@@ -49,8 +49,10 @@ class _multiCodebookQuantization(nn.Module):
         self._m, self._k, self._d = codebook.shape
         self._preProcess = convs.conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
         self._wC = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(self._m, self._d, self._d)))
+        self._scale = math.sqrt(self._k)
         self._codebook = codebook
-        self._distanceBound = LogExpMinusOne()
+        self._logExpMinusOne = LogExpMinusOne()
+        self._zeroBound = NonNegativeParametrizer()
         self._temperature = nn.Parameter(torch.ones((self._m)))
 
     def encode(self, x: torch.Tensor):
@@ -110,16 +112,15 @@ class _multiCodebookQuantization(nn.Module):
         return distance
 
     def _logit(self, x: torch.Tensor) -> torch.Tensor:
-
         # ensure > 0
         # distance = self._distanceBound(self._distance(self._preProcess(x)).exp() - 1)
         # map to -∞ ~ +∞
-        logit = -1 * self._distanceBound(self._distance(self._preProcess(x)))
+        logit = -1 * self._logExpMinusOne(self._distance(self._preProcess(x)) / self._scale)
         return logit
 
     def _sample(self, x: torch.Tensor):
         # [n, m, h, w, k] * [m, 1, 1, 1]
-        logit = self._logit(x) * self._temperature[:, None, None, None]
+        logit = self._logit(x) * self._zeroBound(self._temperature)[:, None, None, None]
         posterior = OneHotCategoricalStraightThrough(logits=logit)
         # [n, m, h, w, k]
         sampled = posterior.rsample(())
