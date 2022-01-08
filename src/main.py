@@ -3,6 +3,7 @@ import os
 import math
 import random
 from torch import nn
+import sys
 
 from tqdm.contrib.logging import logging_redirect_tqdm
 import torch
@@ -13,9 +14,9 @@ import numpy as np
 from absl import app
 from absl import flags
 from vlutils.runtime import queryGPU
-from vlutils.logger import configLogging
+from vlutils.logger import WaitingBar, configLogging
 from vlutils.saver import Saver
-from vlutils.config import read, summary
+from vlutils.config import T, read, summary
 
 from mcqc import Consts, Config
 from mcqc.datasets import Basic, BasicLMDB
@@ -36,6 +37,15 @@ flags.DEFINE_boolean("eval", False, "Evaluate performance. Must specify arg 'pat
 flags.DEFINE_boolean("r", False, "Be careful to set to true. Whether to continue last training (with current config).")
 flags.DEFINE_boolean("debug", False, "Set to true to logging verbosely and require lower gpu.")
 
+import signal
+
+def handler(signum, frame):
+    print("Please wait for process-group to clear all context...")
+    # dist.barrier()
+    # dist.destroy_process_group()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handler)
 
 def main(_):
     if FLAGS.eval:

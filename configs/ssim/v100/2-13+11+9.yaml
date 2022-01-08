@@ -1,13 +1,13 @@
 epoch: 1000
-evalFreq: 1
+valFreq: 1
 testFreq: 10
-gpus: 4
-vRam: -1
+gpus: 8
+vRam: 2000
 wantsMore: false
 dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 10
+batchSize: 4
 model:
     type: Big
     target: ssim
@@ -26,19 +26,19 @@ optim:
         weight_decay: 0.0
         use_nvlamb: true
 schdr:
-    type: CosineWarmRestart
+    type: CosineAnnealingWarmupRestarts
     params:
         first_cycle_steps: 500 # match 10 * testFreq
         warmup_steps: 50
         gamma: 0.1
 tempSchdr:
-    type: CosineWithEnd
+    type: StepValue
     params:
-        maxValue: 1.0
-        minValue: 0.01
-        totalStep: 1050
+        initValue: 1.e-3
+        gamma: 0.993
+        stepInterval: 1
 regSchdr:
-    type: MultiStep
+    type: StepValue
     params:
         initValue: 0.0
         gamma: 1.0
