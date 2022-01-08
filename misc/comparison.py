@@ -5,7 +5,7 @@ from PIL import Image
 
 from compressai.zoo import cheng2020_attn, cheng2020_anchor, mbt2018, bmshj2018_factorized
 
-from mcqc.layers.convs import conv3x3, conv5x5
+from mcqc.nn.convs import conv3x3, conv5x5
 
 
 evalStep = 5

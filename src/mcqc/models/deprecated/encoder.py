@@ -1,9 +1,9 @@
 import torch
 from torch import nn
 
-from mcqc.layers.convs import conv3x3, conv5x5, pixelShuffle3x3
-from mcqc.layers.gdn import GenDivNorm
-from mcqc.layers.blocks import ResidualBlock, ResidualBlockUnShuffle, ResidualBlockWithStride, AttentionBlock
+from mcqc.nn.convs import conv3x3, conv5x5, pixelShuffle3x3
+from mcqc.nn.gdn import GenDivNorm
+from mcqc.nn.blocks import ResidualBlock, ResidualBlockUnShuffle, ResidualBlockWithStride, AttentionBlock
 
 
 class BaseEncoder5x5(nn.Module):

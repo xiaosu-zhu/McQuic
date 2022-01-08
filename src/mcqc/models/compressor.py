@@ -3,8 +3,8 @@ import torch
 from torch import nn
 
 from mcqc.consts import Consts
-from mcqc.layers import convs
-from mcqc.layers.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
+from mcqc.nn import convs
+from mcqc.nn.blocks import GroupSwishConv2D, ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 from mcqc.models.quantizer import BaseQuantizer, L2Quantizer, UMGMQuantizer
 from mcqc.models.deprecated.encoder import Director, DownSampler, EncoderHead, ResidualBaseEncoder, BaseEncoder5x5, Director5x5, DownSampler5x5, EncoderHead5x5
 from mcqc.models.deprecated.decoder import UpSampler, BaseDecoder5x5, UpSampler5x5, ResidualBaseDecoder
@@ -85,19 +85,19 @@ class Compressor(BaseCompressor):
             ),
             "quantizationHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=m),
-                convs.conv1x1(channel, channel, groups=m)
+                # convs.conv1x1(channel, channel, groups=m)
                 # GroupSwishConv2D(channel, channel, groups=m)
             ),
             "latentHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=m),
-                convs.conv1x1(channel, channel, groups=m)
+                # convs.conv1x1(channel, channel, groups=m)
             ),
             "dequantizationHead": lambda: nn.Sequential(
-                convs.conv1x1(channel, channel, groups=m),
+                # convs.conv1x1(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
             ),
             "sideHead": lambda: nn.Sequential(
-                convs.conv1x1(channel, channel, groups=m),
+                # convs.conv1x1(channel, channel, groups=m),
                 ResidualBlock(channel, channel, groups=m),
             ),
             "restoreHead": lambda: nn.Sequential(

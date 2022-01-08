@@ -1,7 +1,7 @@
 import torch
 from torch import nn
-from mcqc.layers.blocks import ResidualBlockMasked
-from mcqc.layers.convs import MaskedConv2d
+from mcqc.nn.blocks import ResidualBlockMasked
+from mcqc.nn.convs import MaskedConv2d
 
 
 class PixelCNN(nn.Module):
