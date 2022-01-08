@@ -56,9 +56,9 @@ class EntropyCoder(Restorable):
         for code in codes:
             n, newM = code.shape[0], code.shape[1]
             if n > 1:
-                raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now batch = 0.")
+                raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now `batch` = 0.")
             if m != newM:
-                raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now m is not a constant.")
+                raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now `m` is not a constant.")
 
     @torch.inference_mode()
     def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[bytes], List[CodeSize]]:
