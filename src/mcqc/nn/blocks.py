@@ -49,17 +49,6 @@ from .gdn import GenDivNorm, InvGenDivNorm
 from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3
 
 
-@ModuleRegistry.register
-class GroupSwishConv2D(nn.Module):
-    def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
-        super().__init__()
-        self._net = nn.Sequential(
-            nn.SiLU(True),
-            conv3x3(inChannels, outChannels),
-        )
-    def forward(self, x: torch.Tensor):
-        return self._net(x)
-
 class _residulBlock(nn.Module):
     def __init__(self, act1: nn.Module, conv1: nn.Conv2d, act2: nn.Module, conv2: nn.Conv2d, skip: Union[nn.Module, None]):
         super().__init__()
