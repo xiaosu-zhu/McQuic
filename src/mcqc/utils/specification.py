@@ -18,6 +18,9 @@ class ImageSize:
     width: int
     channel: int
 
+    def __str__(self) -> str:
+        return f"[{self.width}×{self.height}, {self.channel}]"
+
 
 @dataclass
 class CodeSize:
@@ -35,6 +38,12 @@ class CodeSize:
     heights: List[int]
     widths: List[int]
     k: List[int]
+
+    def __str__(self) -> str:
+        sequence = ", ".join(f"[{w}×{h}, {k}]" for h, w, k in zip(self.heights, self.widths, self.k))
+        return f"""
+        {self.m} code-groups: {sequence}
+"""
 
 
 class FileHeader:
@@ -65,6 +74,13 @@ class FileHeader:
         fingerprint, codeSize, imageSize = raw.split(FileHeader._sep)
         return FileHeader(fingerprint, eval(codeSize), eval(imageSize))
 
+    def __str__(self) -> str:
+        return f"""
+    Fingerprint: {self.Fingerprint}
+    Image size : {self.ImageSize}
+    Code size  : {self.CodeSize}
+"""
+
 
 class File:
     def __init__(self, header: FileHeader, content: List[bytes]):
@@ -86,7 +102,5 @@ class File:
         return vlutils.logger.readableSize(size)
 
     def __str__(self) -> str:
-        return f"""
-            Header: {self._header}{os.sep}
-            Size  : {self.size(True)}
-        """
+        return f"""Header: {self._header}
+Size  : {self.size(True)}"""
