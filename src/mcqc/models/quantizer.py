@@ -49,7 +49,7 @@ class _multiCodebookQuantization(nn.Module):
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
         # self._logExpMinusOne = LogExpMinusOne()
-        # self._zeroBound = NonNegativeParametrizer()
+        self._zeroBound = NonNegativeParametrizer()
         self._temperature = nn.Parameter(torch.ones((self._m)))
 
     def encode(self, x: torch.Tensor):
@@ -107,7 +107,7 @@ class _multiCodebookQuantization(nn.Module):
         # ensure > 0
         # distance = self._distanceBound(self._distance(self._preProcess(x)).exp() - 1)
         # map to -∞ ~ +∞
-        logit = -1 * self._distance(self._preProcess(x)) / self._scale
+        logit = -1 * self._distance(self._preProcess(x))
         return logit
 
     def _sample(self, x: torch.Tensor):
