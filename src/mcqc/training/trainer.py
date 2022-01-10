@@ -1,5 +1,7 @@
 import functools
 import os
+import shutil
+import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 from logging import Logger
 import math
@@ -21,6 +23,7 @@ from vlutils.base import Restorable
 from mcqc.consts import Consts
 from mcqc.datasets.dataset import BasicLMDB
 from mcqc.datasets.prefetcher import Prefetcher
+from mcqc.evaluation.metrics import Decibel
 from mcqc.models.composed import Composed
 from mcqc import Config
 from mcqc.training.valueTuners import ValueTuner
@@ -51,9 +54,9 @@ class _baseTrainer(Restorable):
         self._model = DistributedDataParallel(model.to(self.rank), device_ids=[self.rank], output_device=self.rank)
 
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
-        self._optimFn = optimizer
+        self.optimFn = optimizer
         self._scheduler = scheduler(self._optimizer, **self.config.Schdr.params)
-        self._schdrFn = scheduler
+        self.schdrFn = scheduler
 
         self._regularizationTuner = valueTuners[0](**self.config.RegSchdr.params)
         self._temperatureTuner = valueTuners[1](**self.config.TempSchdr.params)
@@ -78,11 +81,11 @@ class _baseTrainer(Restorable):
 
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self._optimFn(self._model.parameters(), **self.config.Optim.params)
+        self._optimizer = self.optimFn(self._model.parameters(), **self.config.Optim.params)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
-        self._scheduler = self._schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Schdr.params)
+        self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Schdr.params)
 
     def _beforeRunHook(self, step, epoch, *args, **kwArgs):
         pass
@@ -151,17 +154,18 @@ class MainTrainer(_baseTrainer):
 
         self.validator = Validator(self.rank)
 
+        self.formatter = Decibel(1.0).to(self.rank)
+
         self.loggingHook = FrequecyHook(
             (1, self.log),
             (self.config.ValFreq, self.validate),
             (self.config.TestFreq, self.test)
         )
 
-
         self._bestDistortion = float("-inf")
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader):
-
+        self.validate(0, 0, valLoader=valLoader)
         return super().train(trainLoader, trainSampler,
             self._beforeRunHook,
             self._stepFinishHook,
@@ -177,10 +181,10 @@ class MainTrainer(_baseTrainer):
 
     @torch.inference_mode()
     def _stepFinishHook(self, step, epoch, *, loss: List[torch.Tensor], **_):
-        if self._step % 2 == 0:
+        if self._step % 100 != 0:
             return
         distortion = loss[0]
-        self.saver.add_scalar(_logMapping["distortion"], distortion, global_step=step)
+        self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=step)
         # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
@@ -203,19 +207,20 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=step)
 
-    def validate(self, epoch, step, *, valLoader, **_):
-        return
-        avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, valLoader)
-        if avgDistortion > self._bestDistortion:
-            self._bestDistortion = avgDistortion
+    def validate(self, epoch, step, *, valLoader: DataLoader, **_):
+        self.validator.count(epoch, self._model.module._compressor, valLoader)
+        results, summary = self.validator.validate(epoch, self._model.module._compressor, valLoader)
+        self.saver.save(**{Consts.Fingerprint: self})
+        if results[self.config.Model.target] > self._bestDistortion:
+            self._bestDistortion = results[self.config.Model.target]
             # path = self._saver._savePath
             # self._saver._savePath = os.path.join(self._saver.SaveDir, "best.ckpt")
-            self.saver.save(os.path.join(self.saver.SaveDir, "best.ckpt"), **{Consts.Fingerprint: self})
-        self.saver.save(**{Consts.Fingerprint: self})
+            shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
+        self.saver.info(", ".join([f"{key}: {value}" for key, value in summary.items()]))
         # self._saver.info("[%3dk] Eval: R: %", (step) // 1000, self._scheduler.get_last_lr()[0])
         # self._saver.info("[%3dk]: LR = %.2e", (step) // 1000, self._scheduler.get_last_lr()[0])
 
-    def test(self, epoch, step, *, testLoader, **_):
+    def test(self, epoch, step, *, testLoader: DataLoader, **_):
         return
         avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, testLoader)
 
@@ -338,10 +343,10 @@ class Trainer:
             loaded = Saver.load(self._ckpt, mapLocation, False, self._logger, model=self._model, schdr=schdr, step=step, epoch=initEpoch) # , regSchdr=regSchdr, tempSchdr=tempSchdr)
             step = loaded["step"]
             initEpoch = loaded["epoch"]
-            self._optimizer = self._optimFn(self._model.parameters(), **self._config.Optim.params)
+            self._optimizer = self.optimFn(self._model.parameters(), **self._config.Optim.params)
             for group in self._optimizer.param_groups:
                 group.setdefault('initial_lr', group['lr'])
-            self._scheduler = self._schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
+            self._scheduler = self.schdrFn(self._optimizer, last_epoch=schdr.last_epoch, **self._config.Schdr.params)
             self._regScheduler._epoch = initEpoch
             self._tempScheduler._epoch = initEpoch
         # self._reSpreadAll()

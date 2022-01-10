@@ -10,7 +10,7 @@ valDataset: clic/valid
 batchSize: 12
 model:
     type: PixelCNN
-    target: ssim
+    target: MsSSIM
     channel: 128
     k: [8192, 2048, 512]
     m: 2

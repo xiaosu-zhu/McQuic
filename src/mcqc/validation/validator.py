@@ -14,6 +14,7 @@ from mcqc.models.compressor import BaseCompressor
 
 class Validator:
     def __init__(self, rank: int):
+        self.rank = rank
         self._deTrans = DeTransform().to(rank)
         self._meter = Meters(handlers=[
             MsSSIM().to(rank),
@@ -34,17 +35,18 @@ class Validator:
         return code
 
     @torch.inference_mode()
-    def count(self, model: BaseCompressor, trainLoader: Union[DataLoader, Prefetcher]):
-        for image in trainLoader:
-            model.count(image)
+    def count(self, epoch: int, model: BaseCompressor, trainLoader: Union[DataLoader, Prefetcher]):
+        for image in tqdm(trainLoader, dynamic_ncols=True, bar_format="Est [%3d] {n_fmt}/{total_fmt} |{bar}|" % epoch, leave=False, disable=self.rank != 0):
+            model.count(image.to(self.rank, non_blocking=True))
 
     @torch.inference_mode()
-    def validate(self, model: BaseCompressor, valLoader: DataLoader):
+    def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader):
         with model._quantizer.readyForCoding() as cdfs:
-            for images in valLoader:
-                binaries, header = model.compress(images, cdfs)
-                restored = model.decompress(binaries, cdfs, header)
+            for images in tqdm(valLoader, dynamic_ncols=True, bar_format="Val [%3d] {n_fmt}/{total_fmt} |{bar}|" % epoch, leave=False, disable=self.rank != 0):
+                images = images.to(self.rank, non_blocking=True)
+                codes, binaries, header = model.compress(images, cdfs)
+                restored = model.decompress(codes, binaries, cdfs, header)
                 self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored))
-        return self._meter.summary()
+        return self._meter.results(), self._meter.summary()
 
     def test(self, testLoader: DataLoader): raise NotImplementedError

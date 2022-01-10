@@ -30,15 +30,15 @@ class BaseCompressor(nn.Module):
         y = self._encoder(x)
         self._quantizer.count(y)
 
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[bytes], FileHeader]:
+    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[bytes], FileHeader]:
         y = self._encoder(x)
         n, c, h, w = x.shape
-        binaries, codeSize = self._quantizer.compress(y, cdfs)
+        codes, binaries, codeSize = self._quantizer.compress(y, cdfs)
         header = FileHeader(Consts.Fingerprint, codeSize, ImageSize(height=h, width=w, channel=c))
-        return binaries, header
+        return codes, binaries, header
 
-    def decompress(self, binaries: List[bytes], cdfs: List[List[List[int]]], header: FileHeader) -> torch.Tensor:
-        yHat = self._quantizer.decompress(binaries, header.CodeSize, cdfs)
+    def decompress(self, codes, binaries: List[bytes], cdfs: List[List[List[int]]], header: FileHeader) -> torch.Tensor:
+        yHat = self._quantizer.decompress(codes, binaries, header.CodeSize, cdfs)
         return self._decoder(yHat)
 
 

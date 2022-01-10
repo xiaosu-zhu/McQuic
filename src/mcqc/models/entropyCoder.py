@@ -55,7 +55,7 @@ class EntropyCoder(Restorable):
         m = codes[0].shape[1]
         for code in codes:
             n, newM = code.shape[0], code.shape[1]
-            if n > 1:
+            if n < 1:
                 raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now `batch` = 0.")
             if m != newM:
                 raise RuntimeError("Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...]. Now `m` is not a constant.")
@@ -64,35 +64,32 @@ class EntropyCoder(Restorable):
     def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[bytes], CodeSize]:
         compressed = list()
         self._checkShape(codes)
-        m = codes[0].shape[1]
-        indices = torch.arange(m)[:, None]
         heights = list()
         widths = list()
         # [n, m, h, w]
         for lv, (code, ki, cdf) in enumerate(zip(codes, self._k, cdfs)):
-            n, _, h, w = code.shape
+            n, m, h, w = code.shape
+            indices = torch.arange(m)[:, None, None]
             heights.append(h)
             widths.append(w)
-            for codePerImage in code:
-                code = (code[0]).reshape(m, -1)
-                idx = indices.expand_as(code).flatten().int().tolist()
-                cdfSizes = [ki + 2] * m
-                offsets = torch.zeros_like(code).flatten().int().tolist()
-                binary: bytes = self.encooder.encode_with_indexes(code.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
-                compressed.append(binary)
+            idx = indices.expand_as(code).flatten().int().tolist()
+            cdfSizes = [ki + 2] * m
+            offsets = torch.zeros_like(code).flatten().int().tolist()
+            binary: bytes = self.encooder.encode_with_indexes(code.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
+            compressed.append(binary)
         return compressed, CodeSize(m, heights, widths, self._k)
 
     @torch.inference_mode()
     def decompress(self, binaries: List[bytes], codeSize: CodeSize, cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
         codes = list()
-        indices = torch.arange(codeSize.m)[:, None]
+        indices = torch.arange(codeSize.m)[:, None, None]
         for lv, (binary, h, w, ki, cdf) in enumerate(zip(binaries, codeSize.heights, codeSize.widths, self._k, cdfs)):
-            idx = indices.expand(codeSize.m, h * w).flatten().int().tolist()
+            idx = indices.expand(codeSize.m, h, w).flatten().int().tolist()
             # [k + 2] * m
             cdfSizes = [ki + 2] * codeSize.m
-            offsets = torch.zeros(codeSize.m, h * w, dtype=torch.int).flatten().int().tolist()
+            offsets = torch.zeros(codeSize.m, h, w, dtype=torch.int).flatten().int().tolist()
             restored: List[int] = self.decoder.decode_with_indexes(binary, idx, cdf, cdfSizes, offsets)
             # [1, m, h, w]
-            code = torch.tensor(restored).reshape(1, codeSize.m, h, w)
+            code = torch.tensor(restored).reshape(-1, codeSize.m, h, w)
             codes.append(code)
         return codes
