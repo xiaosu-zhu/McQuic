@@ -165,7 +165,6 @@ class MainTrainer(_baseTrainer):
         self._bestDistortion = float("-inf")
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader):
-        self.validate(0, 0, valLoader=valLoader)
         return super().train(trainLoader, trainSampler,
             self._beforeRunHook,
             self._stepFinishHook,
