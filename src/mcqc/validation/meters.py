@@ -10,10 +10,8 @@ from mcqc.evaluation.metrics import Decibel, MsSSIM as M, PSNR as P
 class MsSSIM(Handler):
     def __init__(self, format: str = r"%.2f dB"):
         super().__init__(format=format)
-        self._msSSIM = nn.Sequential(
-            Decibel(1.0),
-            M(sizeAverage=False)
-        )
+        self._msSSIM = M(sizeAverage=False)
+        self._formatter = Decibel(1.0)
 
     def to(self, device):
         self._msSSIM.to(device)
@@ -21,17 +19,14 @@ class MsSSIM(Handler):
 
     def handle(self, *, images: torch.ByteTensor, restored: torch.ByteTensor, **_) -> List[float]:
         # [N]
-        results: torch.Tensor = self._msSSIM(images.float(), restored.float())
+        results: torch.Tensor = self._formatter(self._msSSIM(images.float(), restored.float()))
         return results.tolist()
 
 
 class PSNR(Handler):
     def __init__(self, format: str = r"%.2f dB"):
         super().__init__(format=format)
-        self._psnr = nn.Sequential(
-            Decibel(255.0),
-            P(sizeAverage=False)
-        )
+        self._psnr = P(sizeAverage=False)
 
     def to(self, device):
         self._psnr.to(device)

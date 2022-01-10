@@ -10,7 +10,7 @@ valDataset: clic/valid
 batchSize: 4
 model:
     type: Big
-    target: ssim
+    target: MsSSIM
     channel: 192
     k: [8192, 2048, 512]
     m: 8

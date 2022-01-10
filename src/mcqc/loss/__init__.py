@@ -3,7 +3,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from mcqc.evaluation.metrics import MsSSIM
+from mcqc.evaluation.metrics import Decibel, MsSSIM
 
 
 class L1L2Loss(nn.MSELoss):
@@ -76,9 +76,9 @@ class Regularization(nn.Module):
 class CompressionLossBig(nn.Module):
     def __init__(self, target):
         super().__init__()
-        if target not in ["ssim", "psnr"]:
-            raise ValueError(f"The argument `target` not in (\"ssim\", \"psnr\"), got \"{target}\".")
-        if target == "ssim":
+        if target not in ["MsSSIM", "PSNR"]:
+            raise ValueError(f"The argument `target` not in (\"MsSSIM\", \"PSNR\"), got \"{target}\".")
+        if target == "MsSSIM":
             self._ssim = MsSSIM(data_range=2.0, sizeAverage=True)
             self._distortion = self._dSsim
         else:

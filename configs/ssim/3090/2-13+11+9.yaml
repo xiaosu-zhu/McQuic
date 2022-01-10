@@ -1,16 +1,16 @@
 epoch: 1200
-valFreq: 1
-testFreq: 2
+valFreq: 10
+testFreq: 100
 gpus: 1
 vRam: -1
 wantsMore: false
 dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 5
+batchSize: 10
 model:
     type: Big
-    target: ssim
+    target: MsSSIM
     channel: 128
     k: [8192, 2048, 512]
     m: 2
@@ -33,8 +33,8 @@ optim:
 schdr:
     type: CosineAnnealingWarmupRestarts
     params:
-        first_cycle_steps: 500 # match 10 * testFreq
-        warmup_steps: 50
+        first_cycle_steps: 50 # match 10 * testFreq
+        warmup_steps: 5
         gamma: 0.25
 regSchdr:
     type: StepValue
