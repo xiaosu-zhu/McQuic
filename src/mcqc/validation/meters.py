@@ -1,4 +1,5 @@
 from typing import List
+import itertools
 
 import torch
 from torch import nn
@@ -42,8 +43,8 @@ class BPP(Handler):
     def __init__(self, format: str = r"%.4f"):
         super().__init__(format=format)
 
-    def handle(self,*, images: torch.ByteTensor, binaries: List[bytes], **_) -> List[float]:
-        bits = [len(b) * 8.0 for b in binaries]
+    def handle(self, *, images: torch.ByteTensor, binaries: List[List[bytes]], **_) -> List[float]:
+        bits = [len(bi) * 8 for bi in itertools.chain(*binaries)]
         pixels = images.shape[-2] * images.shape[-1]
         bpps = [bit / pixels for bit in bits]
         return bpps

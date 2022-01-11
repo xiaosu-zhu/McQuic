@@ -1,3 +1,4 @@
+import math
 from typing import List
 from dataclasses import dataclass
 
@@ -58,6 +59,13 @@ class Config:
     testFreq: int = 100
     warmStart: str = "ckpt/global.ckpt"
     repeat: int = 1
+
+    def scaleByWorldSize(self, worldSize: int):
+        batchSize = self.BatchSize * worldSize
+        exponent = math.log2(batchSize)
+        scale = 3 - exponent / 2
+        if "lr" in self.Optim.params:
+            self.Optim.params["lr"] /= (2 ** scale)
 
     @property
     def Repeat(self) -> int:
