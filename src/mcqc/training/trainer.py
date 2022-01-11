@@ -3,7 +3,7 @@ import os
 import shutil
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
-from tqdm import tqdm
+from tqdm.rich import tqdm
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.nn.parallel import DistributedDataParallel
@@ -273,8 +273,7 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
         trainer = MainTrainer(config, model, optimizerFn, schdrFn, valueTunerFns, saver)
         if continueTrain:
             trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
-        with logging_redirect_tqdm([saver.Logger]):
-            trainer.train(prefetcher, trainSampler, valLoader, testLoader)
+        trainer.train(prefetcher, trainSampler, valLoader, testLoader)
     else:
         trainer = PalTrainer(config, model, optimizerFn, schdrFn, valueTunerFns)
         if continueTrain:
