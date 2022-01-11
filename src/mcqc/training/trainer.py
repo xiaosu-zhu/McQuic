@@ -164,7 +164,7 @@ class MainTrainer(_baseTrainer):
         return super().train(trainLoader, trainSampler,
             self._beforeRunHook,
             self._stepFinishHook,
-            functools.partial(self._epochFinishHook, valLoader=valLoader, testLoader=testLoader),
+            functools.partial(self._epochFinishHook, trainLoader=trainLoader, valLoader=valLoader, testLoader=testLoader),
             self._afterRunHook)
 
     def restoreStates(self, ckpt: dict):
@@ -174,7 +174,7 @@ class MainTrainer(_baseTrainer):
     @torch.inference_mode()
     def _beforeRunHook(self, step, epoch, **_):
         if step > 0:
-            self.saver.countedInfo("Resume training at %3dk steps / %3d epochs.", step // 1000, epoch)
+            self.saver.countedInfo("Resume training at %dk steps/%d epochs.", step // 1000, epoch)
         else:
             self.saver.countedInfo("Start training.")
         self.saver.countedInfo("See you at %s", self.saver.TensorboardURL)
