@@ -167,12 +167,17 @@ class MainTrainer(_baseTrainer):
             functools.partial(self._epochFinishHook, valLoader=valLoader, testLoader=testLoader),
             self._afterRunHook)
 
+    def restoreStates(self, ckpt: dict):
+        self.saver.countedInfo("Restore state dict from %s", os.path.relpath(self.saver.SavePath))
+        return super().restoreStates(ckpt)
+
     @torch.inference_mode()
     def _beforeRunHook(self, step, epoch, **_):
         if step > 0:
             self.saver.countedInfo("Resume training at %3dk steps / %3d epochs.", step // 1000, epoch)
         else:
             self.saver.countedInfo("Start training.")
+        self.saver.countedInfo("See you at %s", self.saver.TensorboardURL)
 
     @torch.inference_mode()
     def _stepFinishHook(self, step, epoch, *, loss: List[torch.Tensor], **_):
@@ -233,8 +238,9 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
         saverFn = Saver
     else:
         saverFn = DummySaver
-    saver = saverFn(saveDir, "saved.ckpt", "DEBUG" if debug else "INFO", config, reserve=continueTrain)
-    saver.countedInfo(os.sep + "%s", summary(config))
+    saver = saverFn(saveDir, saveName="saved.ckpt", loggerName=Consts.Fingerprint, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=continueTrain)
+
+    saver.countedInfo("\r\n%s", summary(config))
 
     saver.countedInfo("Create trainer...")
 
