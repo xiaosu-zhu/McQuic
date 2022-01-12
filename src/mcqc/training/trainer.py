@@ -3,7 +3,6 @@ import os
 import shutil
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
-from tqdm.rich import tqdm
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.nn.parallel import DistributedDataParallel
@@ -23,7 +22,7 @@ from mcqc import Config
 from mcqc.models.compressor import Compressor
 from mcqc.loss import CompressionLossBig
 from mcqc.training.valueTuners import ValueTuner
-from mcqc.utils.helper import initializeProcessGroup
+from mcqc.utils.helper import EMATracker, getRichProgress, initializeProcessGroup
 from mcqc.utils.registry import LrSchedulerRegistry, OptimizerRegistry, ValueTunerRegistry
 from mcqc.utils.vision import getEvalTransform, getTestTransform, getTrainingPreprocess, getTrainingTransform
 from mcqc.validation import Validator
@@ -48,6 +47,8 @@ class _baseTrainer(Restorable):
         torch.cuda.set_device(self.rank)
         self.config = config
 
+        self.progress = getRichProgress().__enter__()
+        self.trainingBar = self.progress.add_task("training", start=False, epoch=self._epoch + 1, loss="       ")
 
         self._model = DistributedDataParallel(model.to(self.rank), device_ids=[self.rank], output_device=self.rank)
 
@@ -83,60 +84,89 @@ class _baseTrainer(Restorable):
         del self._scheduler
         self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Schdr.params)
 
+    def _beforeRun(self, hook, *args, totalBatches, **kwargs):
+        hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
+
     def _beforeRunHook(self, step, epoch, *args, **kwArgs):
         pass
+
+    def _afterRun(self, hook, *args, **kwArgs):
+        self.progress.__exit__(None, None, None)
+        hook(self._step, self._epoch, *args, **kwArgs)
+
+    def _afterRunHook(self, step, epoch, *args, **kwArgs):
+        pass
+
+    def _stepStart(self, hook, *args, **kwArgs):
+        hook(self._step, self._epoch, *args, **kwArgs)
+
+    def _stepStartHook(self, step, epoch, *args, **kwArgs):
+        pass
+
+    def _stepFinish(self, hook, *args, **kwArgs):
+        self._step += 1
+        hook(self._step, self._epoch, *args, **kwArgs)
 
     def _stepFinishHook(self, step, epoch, *args, **kwArgs):
         pass
 
-    def _epochFinishHook(self, step, epoch, *args, **kwArgs):
+    def _epochStart(self, hook, *args, trainSampler, **kwArgs):
+        trainSampler.set_epoch(self._epoch)
+        hook(self._step, self._epoch, *args, trainSampler, **kwArgs)
+
+    def _epochStartHook(self, step, epoch, *args, **kwArgs):
         pass
 
-    def _afterRunHook(self, step, epoch, *args, **kwArgs):
+    def _epochFinish(self, hook, *args, **kwArgs):
+        self._scheduler.step()
+        self._regularizationTuner.step()
+        self._temperatureTuner.step()
+        self._epoch += 1
+        hook(self._step, self._epoch, *args, **kwArgs)
+
+    def _epochFinishHook(self, step, epoch, *args, **kwArgs):
         pass
 
     def _reduceLoss(self, losses: Tuple[torch.Tensor]) -> torch.Tensor:
         return sum(losses)
 
-    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, beforeRunHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None):
+    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None):
         if beforeRunHook is None:
             beforeRunHook = self._beforeRunHook
-        if stepFinishHook is None:
-            stepFinishHook = self._stepFinishHook
-        if epochFinishHook is None:
-            epochFinishHook = self._epochFinishHook
         if afterRunHook is None:
             afterRunHook = self._afterRunHook
-
-        beforeRunHook(self._step, self._epoch)
+        if stepStartHook is None:
+            stepStartHook = self._stepStartHook
+        if stepFinishHook is None:
+            stepFinishHook = self._stepFinishHook
+        if epochStartHook is None:
+            epochStartHook = self._epochStartHook
+        if epochFinishHook is None:
+            epochFinishHook = self._epochFinishHook
 
         totalBatches = len(trainLoader._loader.dataset) // (self.config.BatchSize * self.worldSize) + 1 # type: ignore
+
+        self._beforeRun(self._step, self._epoch, beforeRunHook, totalBatches=totalBatches)
 
         images: Union[torch.Tensor, None] = None
         xHat: Union[torch.Tensor, None] = None
         stats: Dict[str, Any] = {}
 
         for _ in range(self._epoch, self.config.Epoch):
-            trainSampler.set_epoch(self._epoch)
+            self._epochStart(self._step, self._epoch, epochStartHook, trainSampler=trainSampler)
+            for images in trainLoader:
+                self._stepStartHook(self._step, self._epoch, stepStartHook)
 
-            for images in tqdm(trainLoader, dynamic_ncols=True, bar_format="Epoch [%3d] {n_fmt}/{total_fmt} |{bar}|" % (self._epoch + 1), total=totalBatches, leave=False, disable=self.rank != 0):
                 self._optimizer.zero_grad()
                 xHat, loss, stats = self._model(images)
                 # loss = self._reduceLoss(losses)
                 loss.backward()
                 self._optimizer.step()
 
-                self._step += 1
-                stepFinishHook(self._step, self._epoch, loss=[loss])
-
-            self._scheduler.step()
-            self._regularizationTuner.step()
-            self._temperatureTuner.step()
-
-            self._epoch += 1
-            epochFinishHook(self._step, self._epoch, images=images, restored=xHat, **stats)
-
-        afterRunHook(self._step, self._epoch)
+                self._stepFinish(self._step, self._epoch, stepFinishHook, loss=[loss])
+                # progress.update(job, advance=1, loss="%2.2fdB" % float(-10 * loss.log10()))
+            self._epochFinish(epochStartHook, images=images, restored=xHat, **stats)
+        self._afterRun(afterRunHook)
 
 class MainTrainer(_baseTrainer):
     def __init__(self, config: Config, model: Composed, optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
@@ -150,6 +180,7 @@ class MainTrainer(_baseTrainer):
         self.validator = Validator(self.rank)
 
         self.formatter = Decibel(1.0).to(self.rank)
+        self.emaTracker = EMATracker(()).to(self.rank)
 
         self.epochFinishCalls = FrequecyHook(
             (1, self.log),
@@ -171,28 +202,40 @@ class MainTrainer(_baseTrainer):
         self.saver.info("Restore state dict from %s", os.path.relpath(self.saver.SavePath))
         return super().restoreStates(ckpt)
 
-    @torch.inference_mode()
-    def _beforeRunHook(self, step, epoch, **_):
-        if step > 0:
-            self.saver.info("Resume training at %dk steps/%d epochs.", step // 1000, epoch)
+    def _beforeRun(self, hook, *args, totalBatches, **kwargs):
+        self.progress.update(self.trainingBar, total=totalBatches)
+        self.progress.start_task(self.trainingBar)
+
+        super()._beforeRun(hook, *args, totalBatches, **kwargs)
+
+        if self._step > 0:
+            self.saver.info("Resume training at %dk steps/%d epochs.", self._step // 1000, self._epoch)
         else:
             self.saver.info("Start training.")
         self.saver.info("See you at %s", self.saver.TensorboardURL)
 
-    @torch.inference_mode()
-    def _stepFinishHook(self, step, epoch, *, loss: List[torch.Tensor], **_):
+    @ torch.inference_mode()
+    def _stepFinishHook(self, *, loss, **_):
+        self.progress.advance(self.trainingBar)
+        distortion = loss[0]
+        emaDistortion = self.emaTracker(distortion)
+        if (distortion - emaDistortion).abs() > emaDistortion * 0.1:
+            self.progress.update(self.trainingBar, loss="%2.2fdB" % self.formatter(distortion))
         if self._step % 100 != 0:
             return
-        distortion = loss[0]
-        self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=step)
+        self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=self._step)
         # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
-        self.saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=step)
-        self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=step)
-        self.saver.add_scalar(_logMapping["temperature"], self._temperatureTuner.Value, global_step=step)
+        self.saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=self._step)
+        self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=self._step)
+        self.saver.add_scalar(_logMapping["temperature"], self._temperatureTuner.Value, global_step=self._step)
+
+    def _epochStart(self, hook, *args, trainSampler, **kwArgs):
+        self.progress.update(self.trainingBar, completed=0, epoch=self._epoch + 1)
+        super()._epochStart(hook, *args, trainSampler, **kwArgs)
 
     @torch.inference_mode()
     def _epochFinishHook(self, step, epoch, *args, **kwArgs):
@@ -231,7 +274,6 @@ class PalTrainer(_baseTrainer):
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, *_):
         return super().train(trainLoader, trainSampler)
-
 
 def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, continueTrain: bool, debug: bool):
     if rank == 0:
