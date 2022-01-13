@@ -1,7 +1,11 @@
+from typing import Type
+
 from torch import nn
-import torch
+from torch.optim.lr_scheduler import _LRScheduler
+from torch.optim.optimizer import Optimizer
 from vlutils.base import Registry
 
+from mcqc.base import ValueTuner
 
 __all__ = [
     "ModuleRegistry",
@@ -10,14 +14,14 @@ __all__ = [
     "OptimizerRegistry"
 ]
 
-class ModuleRegistry(Registry):
+class ModuleRegistry(Registry[Type[nn.Module]]):
     pass
 
-class ValueTunerRegistry(Registry):
+class ValueTunerRegistry(Registry[Type[ValueTuner]]):
     pass
 
-class LrSchedulerRegistry(Registry):
+class LrSchedulerRegistry(Registry[Type[_LRScheduler]]):
     pass
 
-class OptimizerRegistry(Registry):
+class OptimizerRegistry(Registry[Type[Optimizer]]):
     pass
