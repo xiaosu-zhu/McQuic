@@ -33,8 +33,8 @@ class BaseCompressor(nn.Module):
     def reAssignCodebook(self):
         self._quantizer.reAssignCodebook()
 
-    def syncCodebook(self):
-        self._quantizer.syncCodebook()
+    def syncCodebook(self) -> float:
+        return self._quantizer.syncCodebook()
 
     def clearFreq(self):
         return self._quantizer.clearFreq()

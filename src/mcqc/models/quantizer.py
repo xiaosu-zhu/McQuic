@@ -37,7 +37,7 @@ class BaseQuantizer(nn.Module):
     def reAssignCodebook(self):
         raise NotImplementedError
 
-    def syncCodebook(self):
+    def syncCodebook(self) -> float:
         raise NotImplementedError
 
     @property
@@ -89,10 +89,13 @@ class _multiCodebookQuantization(nn.Module):
             selectedIdx = torch.randperm(len(fullAssigned))[:len(neverAssigned)]
             self._codebook.data[m, freqGroup < 1] = fullAssigned[selectedIdx]
 
-    def syncCodebook(self):
+    def syncCodebook(self) -> float:
         codebook = self._codebook.clone().detach()
         dist.broadcast(codebook, 0)
+        diff = codebook != self._codebook
+        proportion = diff.float().mean().item()
         self._codebook.data.copy_(codebook)
+        return proportion
 
     def encode(self, x: torch.Tensor):
         # [n, m, h, w, k]
@@ -235,8 +238,8 @@ class _quantizerEncoder(nn.Module):
         self._quantizationHead = quantizationHead
         self._latentHead = latentHead
 
-    def syncCodebook(self):
-        self._quantizer.syncCodebook()
+    def syncCodebook(self) -> float:
+        return self._quantizer.syncCodebook()
 
     def reAssignCodebook(self, freq: torch.Tensor):
         self._quantizer.reAssignCodebook(freq)
@@ -352,10 +355,12 @@ class UMGMQuantizer(BaseQuantizer):
             # freq: [m, ki]
             encoder.reAssignCodebook(freq)
 
-    def syncCodebook(self):
+    def syncCodebook(self) -> float:
         dist.barrier()
+        proportions: List[float] = list()
         for encoder in self._encoders:
-            encoder.syncCodebook()
+            proportions.append(encoder.syncCodebook())
+        return sum(proportions) / len(proportions)
 
     def forward(self, x: torch.Tensor):
         quantizeds = list()
