@@ -36,6 +36,7 @@ def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str
 class EMATracker(nn.Module):
     def __init__(self, size: Union[torch.Size, List[int], Tuple[int, ...]], momentum: float = 0.9):
         super().__init__()
+        self._shadow: torch.Tensor
         self._decay = 1 - momentum
         self.register_buffer("_shadow", torch.empty(size) * torch.nan)
 

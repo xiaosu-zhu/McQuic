@@ -31,21 +31,23 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
 
     saver.info(summary(config))
 
-    saver.info("Create trainer...")
+    saver.debug("Create trainer...")
 
     initializeProcessGroup(port, rank, worldSize)
+    saver.debug("Init NCCL process group finished.")
 
     optimizerFn = OptimizerRegistry.get("Lamb")
     schdrFn = LrSchedulerRegistry.get(config.Schdr.type)
     valueTunerFns = [ValueTunerRegistry.get(config.RegSchdr.type), ValueTunerRegistry.get(config.TempSchdr.type)]
 
-    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver=saver)
+    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver)
+
+    if continueTrain:
+        trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
 
     trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize)
     valLoader = getValLoader(config.ValDataset, config.BatchSize, disable=rank != 0)
     testLoader = getTestLoader(config.ValDataset, disable=rank != 0)
+    saver.debug("Train, val and test dataset mounted.")
 
-
-    if continueTrain:
-        trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
     trainer.train(trainLoader, trainSampler, valLoader, testLoader)

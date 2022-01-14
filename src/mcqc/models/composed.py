@@ -44,7 +44,7 @@ class Composed(DistributedDataParallel):
     def Compressor(self):
         return self.module._compressor
 
-    def refresh(self, rank: int):
+    def refresh(self, rank: int) -> float:
         if rank == 0:
             self.Compressor.reAssignCodebook()
-        self.Compressor.syncCodebook()
+        return self.Compressor.syncCodebook()
