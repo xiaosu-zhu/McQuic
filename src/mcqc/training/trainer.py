@@ -103,8 +103,12 @@ class _baseTrainer(Restorable):
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
 
+        self.saver.debug("Training loop started.")
+
     def _afterRun(self, hook, *args, **kwArgs):
         hook(self._step, self._epoch, *args, **kwArgs)
+
+        self.saver.debug("Training loop finished.")
 
     def _stepStart(self, hook, *args, **kwArgs):
         hook(self._step, self._epoch, *args, **kwArgs)
@@ -199,6 +203,14 @@ class MainTrainer(_baseTrainer):
 
         super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
 
+    def summary(self):
+        self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.prettyStep, self.formatter(self.bestDistortion))
+        self.saver.info("Test this model by running `python -m mcqc.validation --path %s`", self.saver.SavePath)
+    @property
+    def prettyStep(self):
+        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
+        return f"{(self._step / float(unit)):3.2g}{suffix}"
+
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler,
             beforeRunHook=beforeRunHook,
@@ -223,14 +235,10 @@ class MainTrainer(_baseTrainer):
             self.saver.info("Start training.")
         self.saver.info("See you at %s", self.saver.TensorboardURL)
 
-    @property
-    def prettyStep(self):
-        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
-        return f"{(self._step / float(unit)):3.2g}{suffix}"
-
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
         super()._afterRun(hook, *args, **kwArgs)
+        self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
         self.progress.update(self.trainingBar, advance=1, progress=f"{(self._step % self.trainingBarLength):4d}/{self.trainingBarLength:4d}")

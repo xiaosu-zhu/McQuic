@@ -51,3 +51,6 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
     saver.debug("Train, val and test dataset mounted.")
 
     trainer.train(trainLoader, trainSampler, valLoader, testLoader)
+
+    saver.debug(summary(config))
+    saver.debug("Bye.")

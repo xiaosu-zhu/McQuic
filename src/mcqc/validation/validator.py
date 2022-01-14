@@ -5,7 +5,7 @@ from torch.utils.data.dataloader import DataLoader
 from vlutils.metrics.meter import Meters
 from rich.progress import Progress
 
-from mcqc.utils.transforms import DeTransform
+from mcqc.utils.vision import DeTransform
 from mcqc.validation.meters import MsSSIM, PSNR, BPP
 from mcqc.models.compressor import BaseCompressor
 

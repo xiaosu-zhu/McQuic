@@ -6,3 +6,9 @@ import mcqc.datasets
 import mcqc.models
 import mcqc.training
 import mcqc.utils
+
+
+
+if __name__ == "__main__":
+    from .main import app, main
+    app.run(main)

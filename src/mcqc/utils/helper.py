@@ -1,7 +1,7 @@
 from typing import Any, List, Tuple, Union
 import os
 
-from rich.progress import BarColumn, Progress, SpinnerColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, TimeElapsedColumn
 import torch
 from torch import nn
 import torch.distributed as dist
