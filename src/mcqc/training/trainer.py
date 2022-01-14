@@ -205,7 +205,7 @@ class MainTrainer(_baseTrainer):
 
     def summary(self):
         self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.prettyStep, self.formatter(self.bestDistortion))
-        self.saver.info("Test this model by running `python -m mcqc.validation --path %s`", self.saver.SavePath)
+        self.saver.info("Test this model by `python -m mcqc.validation --path %s`.", os.path.join(self.saver.SaveDir, "best.ckpt"))
     @property
     def prettyStep(self):
         unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
