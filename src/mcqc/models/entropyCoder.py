@@ -15,7 +15,7 @@ class EntropyCoder(Restorable):
         self.decoder = ans.RansDecoder()
 
         super().__init__()
-        self._freq = list(torch.zeros(m, ki, dtype=torch.int) for ki in k)
+        self._freq = list(torch.zeros(m, ki, dtype=torch.long) for ki in k)
         self._k = k
 
     def clearFreq(self):

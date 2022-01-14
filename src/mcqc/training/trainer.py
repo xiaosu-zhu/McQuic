@@ -15,7 +15,7 @@ from rich import filesize
 
 from mcqc.consts import Consts
 from mcqc.datasets.dataset import BasicLMDB
-from mcqc.datasets import getTrainingRefSet
+from mcqc.datasets import getTrainingRefLoader
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.evaluation.metrics import Decibel
 from mcqc.models.composed import Composed
@@ -146,13 +146,13 @@ class MainTrainer(_baseTrainer):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a `MainTrainer`, use `PalTrainer` instead.")
-        super(_baseTrainer).__init__()
+        Restorable.__init__(self)
         self._epoch = 0
         self._step = 0
 
         self.progress = getRichProgress().__enter__()
 
-        self.trainingBar = self.progress.add_task(".....", start=False, progress="preparing", suffix=".........")
+        self.trainingBar = self.progress.add_task(Consts.CDot * 6, start=False, progress="preparing", suffix=Consts.CDot * 9)
 
 
         self.rank = dist.get_rank()
@@ -190,9 +190,8 @@ class MainTrainer(_baseTrainer):
         self._temperatureTuner = valueTuners[1](**self.config.TempSchdr.params)
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        self.validate(trainSet=trainLoader._loader.dataset, valLoader=valLoader)
-        self.test(testLoader=testLoader)
-        self.refresh()
+        self.validate(valLoader=valLoader)
+        self.test(testLoader=testLoader, valLoader=valLoader)
         return super().train(trainLoader, trainSampler,
             beforeRunHook=beforeRunHook,
             afterRunHook=afterRunHook,
@@ -260,22 +259,22 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
-    def validate(self, *_, trainSet: BasicLMDB, valLoader: DataLoader, **__):
+    def validate(self, *_, valLoader: DataLoader, **__):
         self._model.eval()
         results, summary = self.validator.validate(self._epoch, self._model.Compressor, valLoader, self.progress)
         self.saver.save(**{Consts.Fingerprint: self})
-        if results[self.config.Model.target] > self._bestDistortion:
-            self._bestDistortion = results[self.config.Model.target]
+        if results[self.config.Model.target] > self.bestDistortion:
+            self.bestDistortion = results[self.config.Model.target]
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
-        self.saver.info("[%04d]" + ", ".join([f"{key}: {value}" for key, value in summary.items()]), self._epoch)
+        self.saver.info("[%4d] " + ", ".join([f"{key}: {value}" for key, value in summary.items()]), self._epoch)
         self._model.train()
 
-    def test(self, *_, testLoader: DataLoader, **__):
+    def test(self, *_, testLoader: DataLoader, valLoader: DataLoader, **__):
         self._model.eval()
 
         self._model.Compressor.clearFreq()
-        refSet = getTrainingRefSet(self.config.Dataset, self.config.BatchSize)
-        self.validator.count(self._epoch, self._model.Compressor, refSet, self.progress)
+        refLoader = getTrainingRefLoader(self.config.Dataset, self.config.BatchSize)
+        self.validator.count(self._epoch, self._model.Compressor, valLoader, self.progress)
 
         self._model.train()
         return

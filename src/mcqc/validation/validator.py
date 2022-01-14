@@ -36,7 +36,7 @@ class Validator:
     def count(self, epoch: int, model: BaseCompressor, trainLoader: DataLoader, progress: Progress):
         total = len(trainLoader)
         now = 0
-        task = progress.add_task(f"Stat@{epoch:4d}", total=total, progress=f"{now:4d}/{total:4d}")
+        task = progress.add_task(f"Stat@{epoch:4d}", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
         for now, image in enumerate(trainLoader):
             model.count(image.to(self.rank, non_blocking=True))
             progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
@@ -46,7 +46,7 @@ class Validator:
     def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
         total = len(valLoader)
         now = 0
-        task = progress.add_task(f"Val@{epoch:4d}", total=total, progress=f"{now:4d}/{total:4d}")
+        task = progress.add_task(f"Val@{epoch:4d}", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
         with model._quantizer.readyForCoding() as cdfs:
             for now, images in enumerate(valLoader):
                 images = images.to(self.rank, non_blocking=True)

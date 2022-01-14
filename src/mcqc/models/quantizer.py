@@ -74,7 +74,7 @@ class _multiCodebookQuantization(nn.Module):
         self._temperature = nn.Parameter(torch.ones((self._m)))
 
     def reAssignCodebook(self, freq: torch.Tensor):
-        freq = freq.to(self._codebook.device)
+        freq = freq.to(self._codebook.device).clone().detach()
         #       [k, d],        [k]
         for m, (codebookGroup, freqGroup) in enumerate(zip(self._codebook, freq)):
             neverAssigned = codebookGroup[freqGroup < 1]
@@ -82,7 +82,7 @@ class _multiCodebookQuantization(nn.Module):
                 mask = torch.zeros((len(neverAssigned), ), dtype=torch.long, device=self._codebook.device)
                 maskIdx = torch.randperm(len(mask))[self._k // 2:]
                 mask[maskIdx] = 1
-                freqGroup[neverAssigned] = mask
+                freqGroup[freqGroup < 1] = mask
                 neverAssigned = codebookGroup[freqGroup < 1]
             argIdx = torch.argsort(freqGroup, descending=True)[:(self._k - len(neverAssigned))]
             fullAssigned = codebookGroup[argIdx]

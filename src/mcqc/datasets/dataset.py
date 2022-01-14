@@ -181,24 +181,24 @@ class DummyLoader(DataLoader):
     def __init__(self, **_):
         return
 
-def getTrainingSet(rank: int, worldSize: int, datasetName: StrPath, batchSize: int):
+def getTrainLoader(rank: int, worldSize: int, datasetName: StrPath, batchSize: int):
     trainDataset = BasicLMDB(os.path.join("data", datasetName), maxTxns=(batchSize + 4) * worldSize, transform=getTrainingPreprocess())
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
     trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True, persistent_workers=True)
     return Prefetcher(trainLoader, rank, getTrainingTransform()), trainSampler
 
-def getTrainingRefSet(datasetName: StrPath, batchSize: int):
+def getTrainingRefLoader(datasetName: StrPath, batchSize: int):
     trainDataset = BasicLMDB(os.path.join("data", datasetName), maxTxns=(batchSize + 4), transform=getTrainingFullTransform())
     trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True)
     return trainLoader
 
-def getValidationSet(datasetName: StrPath, batchSize: int, disable: bool = False):
+def getValLoader(datasetName: StrPath, batchSize: int, disable: bool = False):
     if disable:
         return DummyLoader()
     valDataset = Basic(os.path.join("data", datasetName), transform=getEvalTransform())
     return DataLoader(valDataset, batch_size=min(batchSize, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
 
-def getTestSet(datasetName: StrPath, disable: bool = False):
+def getTestLoader(datasetName: StrPath, disable: bool = False):
     if disable:
         return DummyLoader()
     testDataset = Basic(os.path.join("data", datasetName), transform=getTestTransform())

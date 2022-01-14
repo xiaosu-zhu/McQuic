@@ -25,6 +25,7 @@ class Consts:
     SaveDir = os.path.join(srcRoot, "../saved")
     Logger = logging.getLogger(LoggerName)
     Eps = 1e-6
+    CDot = "·"
 
 
 
