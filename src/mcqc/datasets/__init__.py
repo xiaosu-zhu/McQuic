@@ -5,7 +5,7 @@ Exports:
     BasicLMDB: A Basic dataset that reads from a LMDB.
     Prefetcher: A DataLoader wrapper that prefetches data for speed-up.
 """
-from .dataset import Basic, BasicLMDB, getValidationSet, getTestSet, getTrainingSet, getTrainingRefSet
+from .dataset import Basic, BasicLMDB, getValLoader, getTestLoader, getTrainLoader, getTrainingRefLoader
 from .prefetcher import Prefetcher
 
 

@@ -9,7 +9,7 @@ from mcqc import Config, Consts
 from mcqc.models.compressor import BaseCompressor, Compressor
 from mcqc.loss import CompressionLossBig
 from mcqc.utils.helper import getSaver, initializeProcessGroup
-from mcqc.datasets import getTrainingSet, getTestSet, getValidationSet
+from mcqc.datasets import getTrainLoader, getTestLoader, getValLoader
 from mcqc.utils.registry import OptimizerRegistry, ValueTunerRegistry, LrSchedulerRegistry
 
 from .trainer import getTrainer
@@ -41,11 +41,11 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
 
     trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver=saver)
 
-    trainingSet, trainSampler = getTrainingSet(rank, worldSize, config.Dataset, config.BatchSize)
-    validationSet = getValidationSet(config.ValDataset, config.BatchSize, disable=rank != 0)
-    testSet = getTestSet(config.ValDataset, disable=rank != 0)
+    trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize)
+    valLoader = getValLoader(config.ValDataset, config.BatchSize, disable=rank != 0)
+    testLoader = getTestLoader(config.ValDataset, disable=rank != 0)
 
 
     if continueTrain:
         trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
-    trainer.train(trainingSet, trainSampler, validationSet, testSet)
+    trainer.train(trainLoader, trainSampler, valLoader, testLoader)
