@@ -180,6 +180,10 @@ class MainTrainer(_baseTrainer):
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a `MainTrainer`, use `PalTrainer` instead.")
 
+        self.rank = dist.get_rank()
+        self.config = config
+        self.saver = saver
+
         self.progress = getRichProgress().__enter__()
         self.trainingBar = self.progress.add_task(Consts.CDot * 6, start=False, progress="preparing", suffix=Consts.CDot * 9)
         self.trainingBarLength = 0
