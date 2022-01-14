@@ -12,6 +12,7 @@ from mcqc.utils import OptimizerRegistry, LrSchedulerRegistry
 srcRoot = os.path.join(os.path.dirname(os.path.abspath(mcqc.__file__)), os.pardir)
 
 class Consts:
+    Name = "mcqc"
     Fingerprint = "aHR0cHM6Ly9naXRodWIuY29tL3hpYW9zdS16aHUvbWNxYw=="
     CheckpointName = "saved.ckpt"
     DumpConfigName = "config.json"

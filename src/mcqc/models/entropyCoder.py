@@ -49,6 +49,10 @@ class EntropyCoder(Restorable):
         finally:
             del cdfs
 
+    @property
+    def Freq(self):
+        return self._freq
+
     def _checkShape(self, codes: List[torch.Tensor]):
         info = "Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...], which is a `level` length list. each code has shape [n, m, h, w]. "
         if len(codes) < 1:

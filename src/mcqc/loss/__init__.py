@@ -92,4 +92,4 @@ class CompressionLossBig(nn.Module):
 
     def forward(self, restored, image, *_):
         dLoss = self._distortion(restored, image)
-        return dLoss
+        return 0.0, dLoss

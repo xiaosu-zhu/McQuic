@@ -1,9 +1,9 @@
 import math
 from typing import Callable, Dict, Iterable, List, Tuple, Union
-from numpy.random.mtrand import sample
 
 import torch
 from torch import nn
+import torch.distributed as dist
 import torch.nn.functional as F
 from torch.distributions import OneHotCategoricalStraightThrough
 
@@ -30,6 +30,19 @@ class BaseQuantizer(nn.Module):
 
     def readyForCoding(self):
         return self._entropyCoder.readyForCoding()
+
+    def clearFreq(self):
+        return self._entropyCoder.clearFreq()
+
+    def reAssignCodebook(self):
+        raise NotImplementedError
+
+    def syncCodebook(self):
+        raise NotImplementedError
+
+    @property
+    def Freq(self):
+        return self._entropyCoder.Freq
 
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
         codes = self.encode(x)
@@ -59,6 +72,27 @@ class _multiCodebookQuantization(nn.Module):
         # self._logExpMinusOne = LogExpMinusOne()
         self._zeroBound = NonNegativeParametrizer(1e-6)
         self._temperature = nn.Parameter(torch.ones((self._m)))
+
+    def reAssignCodebook(self, freq: torch.Tensor):
+        freq = freq.to(self._codebook.device)
+        #       [k, d],        [k]
+        for m, (codebookGroup, freqGroup) in enumerate(zip(self._codebook, freq)):
+            neverAssigned = codebookGroup[freqGroup < 1]
+            if len(neverAssigned) > self._k // 2:
+                mask = torch.zeros((len(neverAssigned), ), dtype=torch.long, device=self._codebook.device)
+                maskIdx = torch.randperm(len(mask))[self._k // 2:]
+                mask[maskIdx] = 1
+                freqGroup[neverAssigned] = mask
+                neverAssigned = codebookGroup[freqGroup < 1]
+            argIdx = torch.argsort(freqGroup, descending=True)[:(self._k - len(neverAssigned))]
+            fullAssigned = codebookGroup[argIdx]
+            selectedIdx = torch.randperm(len(fullAssigned))[:len(neverAssigned)]
+            self._codebook.data[m, freqGroup < 1] = fullAssigned[selectedIdx]
+
+    def syncCodebook(self):
+        codebook = self._codebook.clone().detach()
+        dist.broadcast(codebook, 0)
+        self._codebook.data.copy_(codebook)
 
     def encode(self, x: torch.Tensor):
         # [n, m, h, w, k]
@@ -201,6 +235,12 @@ class _quantizerEncoder(nn.Module):
         self._quantizationHead = quantizationHead
         self._latentHead = latentHead
 
+    def syncCodebook(self):
+        self._quantizer.syncCodebook()
+
+    def reAssignCodebook(self, freq: torch.Tensor):
+        self._quantizer.reAssignCodebook(freq)
+
     def encode(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
@@ -305,6 +345,17 @@ class UMGMQuantizer(BaseQuantizer):
         for decoder, code in zip(self._decoders[::-1], codes[::-1]):
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
+
+    def reAssignCodebook(self):
+        freqs = self.Freq
+        for encoder, freq in zip(self._encoders, freqs):
+            # freq: [m, ki]
+            encoder.reAssignCodebook(freq)
+
+    def syncCodebook(self):
+        dist.barrier()
+        for encoder in self._encoders:
+            encoder.syncCodebook()
 
     def forward(self, x: torch.Tensor):
         quantizeds = list()
