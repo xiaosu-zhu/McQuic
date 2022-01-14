@@ -1,12 +1,10 @@
 
-from typing import Union
 import torch
 import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
-from vlutils.metrics.meter import Meters, Handler
-from tqdm import tqdm
+from vlutils.metrics.meter import Meters
+from rich.progress import Progress
 
-from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.utils.transforms import DeTransform
 from mcqc.validation.meters import MsSSIM, PSNR, BPP
 from mcqc.models.compressor import BaseCompressor
@@ -35,18 +33,28 @@ class Validator:
         return code
 
     @torch.inference_mode()
-    def count(self, epoch: int, model: BaseCompressor, trainLoader: Union[DataLoader, Prefetcher]):
-        for image in tqdm(trainLoader, dynamic_ncols=True, bar_format="Est [%3d] {n_fmt}/{total_fmt} |{bar}|" % epoch, leave=False, disable=self.rank != 0):
+    def count(self, epoch: int, model: BaseCompressor, trainLoader: DataLoader, progress: Progress):
+        total = len(trainLoader)
+        now = 0
+        task = progress.add_task(f"Stat@{epoch:4d}", total=total, progress=f"{now:4d}/{total:4d}")
+        for now, image in enumerate(trainLoader):
             model.count(image.to(self.rank, non_blocking=True))
+            progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
+        progress.remove_task(task)
 
     @torch.inference_mode()
-    def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader):
+    def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
+        total = len(valLoader)
+        now = 0
+        task = progress.add_task(f"Val@{epoch:4d}", total=total, progress=f"{now:4d}/{total:4d}")
         with model._quantizer.readyForCoding() as cdfs:
-            for images in tqdm(valLoader, dynamic_ncols=True, bar_format="Val [%3d] {n_fmt}/{total_fmt} |{bar}|" % epoch, leave=False, disable=self.rank != 0):
+            for now, images in enumerate(valLoader):
                 images = images.to(self.rank, non_blocking=True)
                 codes, binaries, header = model.compress(images, cdfs)
                 restored = model.decompress(codes, binaries, cdfs, header)
                 self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored))
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
+        progress.remove_task(task)
         return self._meter.results(), self._meter.summary()
 
     def test(self, testLoader: DataLoader): raise NotImplementedError

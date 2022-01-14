@@ -6,10 +6,15 @@ import sys
 import lmdb
 import torch
 from torch import Tensor
+from torch.utils.data import DataLoader, DistributedSampler
 from torchvision.io import read_image
 from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
+from vlutils.saver import StrPath
+
+from mcqc.utils.vision import getTrainingFullTransform, getTrainingTransform, getTrainingPreprocess, getEvalTransform, getTestTransform
+from .prefetcher import Prefetcher
 
 
 __all__ = [
@@ -170,3 +175,31 @@ class BasicLMDB(VisionDataset):
 
     def __len__(self) -> int:
         return self._length * self._repeat
+
+
+class DummyLoader(DataLoader):
+    def __init__(self, **_):
+        return
+
+def getTrainingSet(rank: int, worldSize: int, datasetName: StrPath, batchSize: int):
+    trainDataset = BasicLMDB(os.path.join("data", datasetName), maxTxns=(batchSize + 4) * worldSize, transform=getTrainingPreprocess())
+    trainSampler = DistributedSampler(trainDataset, worldSize, rank)
+    trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True, persistent_workers=True)
+    return Prefetcher(trainLoader, rank, getTrainingTransform()), trainSampler
+
+def getTrainingRefSet(datasetName: StrPath, batchSize: int):
+    trainDataset = BasicLMDB(os.path.join("data", datasetName), maxTxns=(batchSize + 4), transform=getTrainingFullTransform())
+    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True)
+    return trainLoader
+
+def getValidationSet(datasetName: StrPath, batchSize: int, disable: bool = False):
+    if disable:
+        return DummyLoader()
+    valDataset = Basic(os.path.join("data", datasetName), transform=getEvalTransform())
+    return DataLoader(valDataset, batch_size=min(batchSize, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+
+def getTestSet(datasetName: StrPath, disable: bool = False):
+    if disable:
+        return DummyLoader()
+    testDataset = Basic(os.path.join("data", datasetName), transform=getTestTransform())
+    return DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)

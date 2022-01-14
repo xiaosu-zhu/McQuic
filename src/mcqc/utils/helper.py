@@ -23,7 +23,7 @@ def initializeProcessGroup(port: str, rank: int, worldSize: int):
 
 
 def getRichProgress(disable: bool = False):
-    return Progress("Epoch [{task.fields[epoch]:4d}]: {task.completed:4.0f}/{task.total:4.0f}", SpinnerColumn(), BarColumn(), TimeElapsedColumn(), "D = {task.fields[loss]:2.2f}dB", transient=True, disable=disable)
+    return Progress("[[i blue]{task.description}[/]]: [progress.percentage]{task.fields[progress]}", SpinnerColumn(), BarColumn(), TimeElapsedColumn(), "{task.fields[suffix]}", transient=True, disable=disable)
 
 
 def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: str = None, activateTensorboard: bool = True, disable: bool = False):

@@ -7,7 +7,7 @@ from vlutils.runtime import queryGPU
 from vlutils.config import read
 
 from mcqc import Consts, Config
-from mcqc.training.trainer import train
+from mcqc.training import train
 
 FLAGS = flags.FLAGS
 

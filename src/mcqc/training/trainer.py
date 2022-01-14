@@ -1,29 +1,28 @@
 import functools
 import os
 import shutil
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Callable, List, Optional, Tuple, Type
 
 import torch
+from torch import nn
 from torch.utils.data import DataLoader, DistributedSampler
-from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
-from vlutils.config import summary
 from vlutils.saver import Saver
 from vlutils.base import FrequecyHook
 from vlutils.base import Restorable
+from rich import filesize
 
 from mcqc.consts import Consts
-from mcqc.datasets.helper import getTestSet, getTrainingSet, getValidationSet
+from mcqc.datasets.dataset import BasicLMDB
+from mcqc.datasets import getTrainingRefSet
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.evaluation.metrics import Decibel
 from mcqc.models.composed import Composed
 from mcqc import Config
-from mcqc.models.compressor import Compressor
-from mcqc.loss import CompressionLossBig
+from mcqc.models.compressor import BaseCompressor
 from mcqc.training.valueTuners import ValueTuner
-from mcqc.utils.helper import EMATracker, getRichProgress, getSaver, initializeProcessGroup, nop
-from mcqc.utils.registry import LrSchedulerRegistry, OptimizerRegistry, ValueTunerRegistry
+from mcqc.utils.helper import EMATracker, getRichProgress, nop
 from mcqc.validation import Validator
 
 
@@ -39,16 +38,16 @@ _logMapping = {
 
 
 class _baseTrainer(Restorable):
-    def __init__(self, config: Config, modelFn: Callable[[], Composed], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], **_) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], **_) -> None:
         super().__init__()
         self.rank = dist.get_rank()
         self.worldSize = dist.get_world_size()
         torch.cuda.set_device(self.rank)
         self.config = config
 
-        model = modelFn()
+        compressor, criterion = modelFn()
 
-        self._model = DistributedDataParallel(model.to(self.rank), device_ids=[self.rank], output_device=self.rank)
+        self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
 
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
         self.optimFn = optimizer
@@ -99,12 +98,20 @@ class _baseTrainer(Restorable):
         trainSampler.set_epoch(self._epoch)
         hook(self._step, self._epoch, *args, trainSampler, **kwArgs)
 
-    def _epochFinish(self, hook, *args, **kwArgs):
+    def _epochFinish(self, hook, *args, trainSet, **kwArgs):
         self._scheduler.step()
         self._regularizationTuner.step()
         self._temperatureTuner.step()
         self._epoch += 1
         hook(self._step, self._epoch, *args, **kwArgs)
+        if self._epoch % self.config.TestFreq == 0:
+            self.refresh()
+
+    @torch.inference_mode()
+    def refresh(self, *_, **__):
+        self._model.eval()
+        self._model.refresh(self.rank)
+        self._model.train()
 
     # def _reduceLoss(self, losses: Tuple[torch.Tensor]) -> torch.Tensor:
     #     return sum(losses)
@@ -117,9 +124,7 @@ class _baseTrainer(Restorable):
         epochStartHook = epochStartHook or nop
         epochFinishHook = epochFinishHook or nop
 
-        totalBatches = len(trainLoader._loader.dataset) // (self.config.BatchSize * self.worldSize) + 1 # type: ignore
-
-        self._beforeRun(beforeRunHook, totalBatches=totalBatches)
+        self._beforeRun(beforeRunHook, totalBatches=len(trainLoader._loader))
 
         for _ in range(self._epoch, self.config.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
@@ -134,11 +139,11 @@ class _baseTrainer(Restorable):
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
                 # progress.update(job, advance=1, loss="%2.2fdB" % float(-10 * loss.log10()))
-            self._epochFinish(epochStartHook, images=images, restored=xHat, codes=codes, logits=logits) # type: ignore
+            self._epochFinish(epochStartHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader._loader.dataset) # type: ignore
         self._afterRun(afterRunHook)
 
 class MainTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Composed], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a `MainTrainer`, use `PalTrainer` instead.")
         super(_baseTrainer).__init__()
@@ -147,7 +152,7 @@ class MainTrainer(_baseTrainer):
 
         self.progress = getRichProgress().__enter__()
 
-        self.trainingBar = self.progress.add_task("training", start=False, epoch=self._epoch + 1, loss=0.0)
+        self.trainingBar = self.progress.add_task(".....", start=False, progress="preparing", suffix=".........")
 
 
         self.rank = dist.get_rank()
@@ -166,15 +171,15 @@ class MainTrainer(_baseTrainer):
         self.epochFinishCalls = torch.inference_mode()(FrequecyHook(
             (1, self.log),
             (self.config.ValFreq, self.validate),
-            (self.config.TestFreq, self.test),
-            (self.config.TestFreq, self.reSpread)
+            (self.config.TestFreq, self.test)
         ))
 
         self.bestDistortion = float("-inf")
+        self.epochSteps = 0
 
+        compressor, criterion = modelFn()
 
-        model = modelFn()
-        self._model = DistributedDataParallel(model.to(self.rank), device_ids=[self.rank], output_device=self.rank)
+        self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
 
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
         self.optimFn = optimizer
@@ -185,12 +190,15 @@ class MainTrainer(_baseTrainer):
         self._temperatureTuner = valueTuners[1](**self.config.TempSchdr.params)
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+        self.validate(trainSet=trainLoader._loader.dataset, valLoader=valLoader)
+        self.test(testLoader=testLoader)
+        self.refresh()
         return super().train(trainLoader, trainSampler,
             beforeRunHook=beforeRunHook,
             afterRunHook=afterRunHook,
             epochStartHook=epochStartHook,
             epochFinishHook=ChainHook(
-                functools.partial(self.epochFinishCalls, trainLoader=trainLoader, valLoader=valLoader, testLoader=testLoader),
+                functools.partial(self.epochFinishCalls, valLoader=valLoader, testLoader=testLoader),
                 epochFinishHook),
             stepStartHook=stepStartHook,
             stepFinishHook=ChainHook(self._stepFinishHook, stepFinishHook))
@@ -201,25 +209,31 @@ class MainTrainer(_baseTrainer):
 
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         self.progress.update(self.trainingBar, total=totalBatches)
+        self.epochSteps = totalBatches
         self.progress.start_task(self.trainingBar)
 
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
 
         if self._step > 0:
-            self.saver.info("Resume training at %dk steps/%d epochs.", self._step // 1000, self._epoch)
+            self.saver.info("Resume training at %s/%d epochs.", self.prettyStep, self._epoch)
         else:
             self.saver.info("Start training.")
         self.saver.info("See you at %s", self.saver.TensorboardURL)
+
+    @property
+    def prettyStep(self):
+        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
+        return f"{(self._step / float(unit)):3.2g}{suffix}"
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
         super()._afterRun(hook, *args, **kwArgs)
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
-        self.progress.advance(self.trainingBar)
+        self.progress.update(self.trainingBar, advance=1, progress=f"{(self._step % self.epochSteps):4d}/{self.epochSteps:4d}")
         emaDistortion = self.emaTracker(distortion)
         if (distortion - emaDistortion).abs() > emaDistortion * 0.05:
-            self.progress.update(self.trainingBar, loss=self.formatter(emaDistortion))
+            self.progress.update(self.trainingBar, suffix=f"D = [b red]{self.formatter(emaDistortion):2.2f}[/]dB")
         if self._step % 100 != 0:
             return
         self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=self._step)
@@ -232,9 +246,10 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=self._step)
         self.saver.add_scalar(_logMapping["temperature"], self._temperatureTuner.Value, global_step=self._step)
 
-    def _epochStart(self, hook, *args, trainSampler, **kwArgs):
-        self.progress.update(self.trainingBar, completed=0, epoch=self._epoch + 1)
-        super()._epochStart(hook, *args, trainSampler=trainSampler, **kwArgs)
+    def _epochStart(self, hook, *args, **kwArgs):
+        self.progress.reset(self.trainingBar)
+        self.progress.update(self.trainingBar, description=f"#{(self._epoch + 1):4d}")
+        super()._epochStart(hook, *args, **kwArgs)
 
     def log(self, *_, images, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
@@ -245,24 +260,29 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
-    def validate(self, *_, trainLoader: DataLoader, valLoader: DataLoader, **__):
-        self.validator.count(self._epoch, self._model.module._compressor, trainLoader) # type: ignore
-        results, summary = self.validator.validate(self._epoch, self._model.module._compressor, valLoader) # type: ignore
+    def validate(self, *_, trainSet: BasicLMDB, valLoader: DataLoader, **__):
+        self._model.eval()
+        results, summary = self.validator.validate(self._epoch, self._model.Compressor, valLoader, self.progress)
         self.saver.save(**{Consts.Fingerprint: self})
         if results[self.config.Model.target] > self._bestDistortion:
             self._bestDistortion = results[self.config.Model.target]
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
         self.saver.info("[%04d]" + ", ".join([f"{key}: {value}" for key, value in summary.items()]), self._epoch)
-
-    def reSpread(self, *_, trainLoader: DataLoader, **__):
-        pass
+        self._model.train()
 
     def test(self, *_, testLoader: DataLoader, **__):
+        self._model.eval()
+
+        self._model.Compressor.clearFreq()
+        refSet = getTrainingRefSet(self.config.Dataset, self.config.BatchSize)
+        self.validator.count(self._epoch, self._model.Compressor, refSet, self.progress)
+
+        self._model.train()
         return
         avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, testLoader)
 
 class PalTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Composed], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], **_) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], **_) -> None:
         if dist.get_rank() == 0:
             raise AttributeError("You should call `MainTrainer` for main process other than `PalTrainer` to save, log necessary information.")
         super().__init__(config, modelFn, optimizer, scheduler, valueTuners)
@@ -270,41 +290,8 @@ class PalTrainer(_baseTrainer):
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
-def getTrainer(rank: int, config: Config, model: Callable[[], Composed], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> _baseTrainer:
+
+def getTrainer(rank: int, config: Config, model: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> _baseTrainer:
     if rank == 0:
         return MainTrainer(config, model, optimizer, scheduler, valueTuners, saver)
     return PalTrainer(config, model, optimizer, scheduler, valueTuners)
-
-def modelFn(channel, m, k, lossTarget) -> Composed:
-    compressor = Compressor(channel, m, k)
-    # compressor = PQCompressorBig(config.Model.m, config.Model.k, config.Model.channel, False, False, False, False, -1)
-    # print(sum([p.numel() for p in compressor.parameters()]))
-    # exit()
-    criterion = CompressionLossBig(lossTarget)
-
-    return Composed(compressor, criterion)
-
-def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, continueTrain: bool, debug: bool):
-    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Fingerprint, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=continueTrain, disable=rank != 0)
-
-    saver.info(summary(config))
-
-    saver.info("Create trainer...")
-
-    initializeProcessGroup(port, rank, worldSize)
-
-
-    optimizerFn = OptimizerRegistry.get("Lamb")
-    schdrFn = LrSchedulerRegistry.get(config.Schdr.type)
-    valueTunerFns = [ValueTunerRegistry.get(config.RegSchdr.type), ValueTunerRegistry.get(config.TempSchdr.type)]
-
-    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver=saver)
-
-    trainingSet, trainSampler = getTrainingSet(rank, worldSize, config.Dataset, config.BatchSize)
-    validationSet = getValidationSet(config.ValDataset, config.BatchSize, disable=rank != 0)
-    testSet = getTestSet(config.ValDataset, disable=rank != 0)
-
-
-    if continueTrain:
-        trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
-    trainer.train(trainingSet, trainSampler, validationSet, testSet)

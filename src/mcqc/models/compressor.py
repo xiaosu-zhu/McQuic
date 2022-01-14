@@ -30,6 +30,22 @@ class BaseCompressor(nn.Module):
         y = self._encoder(x)
         self._quantizer.count(y)
 
+    def reAssignCodebook(self):
+        self._quantizer.reAssignCodebook()
+
+    def syncCodebook(self):
+        self._quantizer.syncCodebook()
+
+    def clearFreq(self):
+        return self._quantizer.clearFreq()
+
+    def readyForCoding(self):
+        return self._quantizer.readyForCoding()
+
+    @property
+    def Freq(self):
+        return self._quantizer.Freq
+
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[bytes], FileHeader]:
         y = self._encoder(x)
         n, c, h, w = x.shape
