@@ -25,9 +25,9 @@ def main(_):
         logging.getLogger().setLevel(logging.DEBUG)
     if FLAGS.eval:
         if FLAGS.path is None or (len(FLAGS.path) > 0 and FLAGS.path.isspace()):
-            raise ValueError(f"When --eval, --path must be set, got {FLAGS.path}.")
+            raise ValueError(f"When `--eval`, `--path` must be set, got {FLAGS.path}.")
         if not os.path.exists(FLAGS.path):
-            raise ValueError(f"Invalid --path={FLAGS.path}, no such directory.")
+            raise ValueError(f"Invalid `--path={FLAGS.path}`, no such directory.")
         saveDir = FLAGS.path
         config = read(os.path.join(saveDir, Consts.DumpConfigName), None, Config)
         # Test(config, saveDir)
