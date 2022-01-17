@@ -220,7 +220,6 @@ class MainTrainer(_baseTrainer):
     # Save necessary info.
     def _terminatedHandler(self, signum, frame):
         self.saver.critical("Main process was interrupted, try to save necessary info.")
-        self.validator.interrupt()
         self.progress.__exit__(None, None, None)
         self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
         self.saver.save(**{Consts.Fingerprint: self})
