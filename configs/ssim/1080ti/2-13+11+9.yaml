@@ -1,7 +1,7 @@
 epoch: 1200
 valFreq: 10
 testFreq: 100
-gpus: 3
+gpus: 1
 vRam: -1
 wantsMore: false
 dataset: compression
