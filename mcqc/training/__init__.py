@@ -29,7 +29,7 @@ def modelFn(channel, m, k, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
 def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, continueTrain: bool, debug: bool):
     saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=continueTrain, disable=rank != 0)
 
-    saver.info(summary(config))
+    saver.info("Here is whole config during this run: \r\n %s", summary(config))
 
     saver.debug("Create trainer...")
 
