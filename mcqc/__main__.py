@@ -42,6 +42,7 @@ def main(_):
         worldSize = len(gpus)
         config.scaleByWorldSize(worldSize)
         # `daemon` is True --- Way to handle SIGINT globally.
+        # Give up handling SIGINT by yourself... PyTorch hacks it.
         mp.spawn(train, (worldSize, FLAGS.master_port, config, saveDir, FLAGS.resume, FLAGS.debug), worldSize, daemon=True) # type: ignore
 
 if __name__ == "__main__":
