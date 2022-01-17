@@ -19,15 +19,6 @@ flags.DEFINE_boolean("eval", False, "Evaluate performance. Must specify arg 'pat
 flags.DEFINE_boolean("resume", False, "Be careful to set to true. Whether to continue last training (with current config).", short_name="r")
 flags.DEFINE_boolean("debug", False, "Set to true to logging verbosely and require lower gpu.", short_name="D")
 
-# import signal
-
-# def handler(signum, frame):
-#     print("Please wait for process-group to clear all context...")
-#     # dist.barrier()
-#     # dist.destroy_process_group()
-#     sys.exit(0)
-
-# signal.signal(signal.SIGINT, handler)
 
 def main(_):
     if FLAGS.debug:
@@ -50,7 +41,8 @@ def main(_):
         gpus = queryGPU(needGPUs=config.GPUs, wantsMore=config.WantsMore, needVRamEachGPU=(config.VRam + 256) if config.VRam > 0 else -1, writeOSEnv=True)
         worldSize = len(gpus)
         config.scaleByWorldSize(worldSize)
-        mp.spawn(train, (worldSize, FLAGS.master_port, config, saveDir, FLAGS.resume, FLAGS.debug), worldSize) # type: ignore
+        # `daemon` is True --- Way to handle SIGINT globally.
+        mp.spawn(train, (worldSize, FLAGS.master_port, config, saveDir, FLAGS.resume, FLAGS.debug), worldSize, daemon=True) # type: ignore
 
 if __name__ == "__main__":
     app.run(main)

@@ -2,6 +2,7 @@ import functools
 import os
 import shutil
 from typing import Callable, List, Optional, Tuple, Type
+import signal
 
 import torch
 from torch import nn
@@ -14,7 +15,6 @@ from vlutils.base import Restorable
 from rich import filesize
 
 from mcqc.consts import Consts
-from mcqc.datasets.dataset import BasicLMDB
 from mcqc.datasets import getTrainingRefLoader
 from mcqc.datasets.prefetcher import Prefetcher
 from mcqc.evaluation.metrics import Decibel
@@ -70,9 +70,13 @@ class _baseTrainer(Restorable):
         self._epoch = 0
         self._step = 0
 
+    @property
+    def PrettyStep(self):
+        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
+        return f"{(self._step / float(unit)):3.2g}{suffix}"
 
     def restoreStates(self, ckpt: dict):
-        self.saver.info("Restored state dict from %s", os.path.relpath(self.saver.SavePath))
+        self.saver.info("Restored state dict from `%s`", os.path.relpath(self.saver.SavePath))
         self.load_state_dict(ckpt, False)
 
         self.saver.debug("Restore network parameters finished.")
@@ -102,12 +106,15 @@ class _baseTrainer(Restorable):
 
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
+        if self._step > 0:
+            self.saver.info("Resume training at %s/%d epochs.", self.PrettyStep, self._epoch)
+        else:
+            self.saver.info("Start training.")
 
         self.saver.debug("Training loop started.")
 
     def _afterRun(self, hook, *args, **kwArgs):
         hook(self._step, self._epoch, *args, **kwArgs)
-
         self.saver.debug("Training loop finished.")
 
     def _stepStart(self, hook, *args, **kwArgs):
@@ -201,19 +208,32 @@ class MainTrainer(_baseTrainer):
 
         self.epochFinishCalls = torch.inference_mode()(hooks)
 
-        self.saver.debug("Main trainer hooks: %s", hooks)
+        self.saver.debug("Main trainer hooks: \r\n%s", hooks)
 
-        self.bestDistortion = float("-inf")
+        self.bestDistortion = torch.tensor(float("-inf"))
+
+        signal.signal(signal.SIGTERM, self._terminatedHandler)
 
         super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
 
+    # Handle SIGTERM when main process is terminated.
+    # Save necessary info.
+    def _terminatedHandler(self, signum, frame):
+        self.saver.critical("Main process was interrupted, try to save necessary info.")
+        self.validator.interrupt()
+        self.progress.__exit__(None, None, None)
+        self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
+        self.saver.save(**{Consts.Fingerprint: self})
+        self.saver.critical("Find the last checkpoint at `%s`", os.path.relpath(self.saver.SavePath))
+        self.summary()
+        self.saver.critical("QUIT.")
+        # reset to default SIGTERM handler
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        signal.raise_signal(signal.SIGTERM)
+
     def summary(self):
-        self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.prettyStep, self.formatter(self.bestDistortion))
-        self.saver.info("Test this model by `python -m mcqc.validation --path %s`.", os.path.join(self.saver.SaveDir, "best.ckpt"))
-    @property
-    def prettyStep(self):
-        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
-        return f"{(self._step / float(unit)):3.2g}{suffix}"
+        self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.PrettyStep, self.formatter(self.bestDistortion))
+        self.saver.info("Test this model by `python -m mcqc.validation --path %s`.", os.path.relpath(os.path.join(self.saver.SaveDir, "best.ckpt")))
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler,
@@ -232,12 +252,7 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.trainingBar)
 
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
-
-        if self._step > 0:
-            self.saver.info("Resume training at %s/%d epochs.", self.prettyStep, self._epoch)
-        else:
-            self.saver.info("Start training.")
-        self.saver.info("See you at %s", self.saver.TensorboardURL)
+        self.saver.info("See you at `%s`", self.saver.TensorboardURL)
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
