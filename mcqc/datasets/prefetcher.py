@@ -88,3 +88,6 @@ class Prefetcher:
         except StopIteration:
             self._nextSample = None
             self._exhausted = True
+
+    def __str__(self) -> str:
+        return f"With transform\r\n`{self._transform}`"

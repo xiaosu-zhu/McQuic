@@ -79,6 +79,7 @@ class Basic(VisionDataset):
             msg = "Found 0 files in subfolders of: {}\n".format(self.root)
             msg += "Supported extensions are: {}".format(",".join(IMG_EXTENSIONS))
             raise RuntimeError(msg)
+        self.root = root
         self.loader = default_loader
         self.extensions = IMG_EXTENSIONS
         self.samples = samples
@@ -102,6 +103,9 @@ class Basic(VisionDataset):
     def __len__(self) -> int:
         return len(self.samples)
 
+    def __str__(self) -> str:
+        return f"Basic at `{self.root}` with transform: \r\n`{self.transform}`"
+
 
 class BasicLMDB(VisionDataset):
     """A Basic dataset that reads from a LMDB.
@@ -123,6 +127,7 @@ class BasicLMDB(VisionDataset):
             transform (Optional[Callable], optional): Transform applies to images. Defaults to None.
         """
         super().__init__(root, transform=transform)
+        self._root = root
         self._maxTxns = maxTxns
         # env and txn is lazy-loaded in ddp. They can't be pickled
         self._env: Union[lmdb.Environment, None] = None
@@ -170,3 +175,6 @@ class BasicLMDB(VisionDataset):
 
     def __len__(self) -> int:
         return self._length * self._repeat
+
+    def __str__(self) -> str:
+        return f"LMDB at `{self.root}` with transform: \r\n`{self.transform}`"

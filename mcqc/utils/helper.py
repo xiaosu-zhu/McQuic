@@ -1,4 +1,5 @@
-from typing import Any, List, Tuple, Union
+import logging
+from typing import Any, List, Tuple, Union, Optional
 import os
 
 from rich.progress import BarColumn, Progress, TimeElapsedColumn
@@ -10,16 +11,22 @@ import numpy as np
 from vlutils.saver import Saver, DummySaver, StrPath
 
 
-def initializeProcessGroup(port: str, rank: int, worldSize: int):
+def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = port
+    logger.debug("DDP master addr: `%s`", "localhost")
+    logger.debug("DDP master port: `%s`", port)
     torch.autograd.set_detect_anomaly(False) # type: ignore
     torch.backends.cudnn.benchmark = True # type: ignore
+    logger.debug("Autograd detect anomaly = `%s`", False)
+    logger.debug("         CuDNN bechmark = `%s`", True)
     torch.manual_seed(3407)
     random.seed(3407)
-    torch.cuda.set_device(rank)
     np.random.seed(3407)
+    logger.debug("            Random seed = `%d`", 3407)
+    torch.cuda.set_device(rank)
     dist.init_process_group("nccl", world_size=worldSize, rank=rank)
+    logger.debug("Process group = `%s`, world size = `%d`", "NCCL", worldSize)
 
 
 def getRichProgress(disable: bool = False):

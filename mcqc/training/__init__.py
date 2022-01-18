@@ -8,7 +8,7 @@ from vlutils.config import summary
 from mcqc import Config, Consts
 from mcqc.models.compressor import BaseCompressor, Compressor
 from mcqc.loss import CompressionLossBig
-from mcqc.utils.helper import getSaver, initializeProcessGroup
+from mcqc.utils.helper import getSaver, initializeBaseConfigs
 from mcqc.datasets import getTrainLoader, getTestLoader, getValLoader
 from mcqc.utils.registry import OptimizerRegistry, ValueTunerRegistry, LrSchedulerRegistry
 
@@ -29,28 +29,28 @@ def modelFn(channel, m, k, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
 def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, continueTrain: bool, debug: bool):
     saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=continueTrain, disable=rank != 0)
 
-    saver.info("Here is whole config during this run: \r\n %s", summary(config))
+    saver.info("Here is the whole config during this run: \r\n%s", summary(config))
 
-    saver.debug("Create trainer...")
+    saver.debug("Creating the world...")
 
-    initializeProcessGroup(port, rank, worldSize)
-    saver.debug("Init NCCL process group finished.")
+    initializeBaseConfigs(port, rank, worldSize, logger=saver)
+    saver.debug("Base configs initialized.")
 
-    optimizerFn = OptimizerRegistry.get("Lamb")
-    schdrFn = LrSchedulerRegistry.get(config.Schdr.type)
-    valueTunerFns = [ValueTunerRegistry.get(config.RegSchdr.type), ValueTunerRegistry.get(config.TempSchdr.type)]
+    optimizerFn = OptimizerRegistry.get("Lamb", logger=saver)
+    schdrFn = LrSchedulerRegistry.get(config.Schdr.type, logger=saver)
+    valueTunerFns = [ValueTunerRegistry.get(config.RegSchdr.type, saver), ValueTunerRegistry.get(config.TempSchdr.type, logger=saver)]
 
     trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver)
 
     if continueTrain:
         trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
 
-    trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize)
-    valLoader = getValLoader(config.ValDataset, config.BatchSize, disable=rank != 0)
-    testLoader = getTestLoader(config.ValDataset, disable=rank != 0)
+    trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize, logger=saver)
+    valLoader = getValLoader(config.ValDataset, config.BatchSize, disable=rank != 0, logger=saver)
+    testLoader = getTestLoader(config.ValDataset, disable=rank != 0, logger=saver)
     saver.debug("Train, val and test dataset mounted.")
 
     trainer.train(trainLoader, trainSampler, valLoader, testLoader)
 
     saver.debug(summary(config))
-    saver.debug("Bye.")
+    saver.info("Bye.")
