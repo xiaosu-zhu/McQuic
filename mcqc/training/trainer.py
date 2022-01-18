@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.saver import Saver
+from vlutils.logger import trackingFunctionCalls
 from vlutils.base import FrequecyHook
 from vlutils.base import Restorable
 from rich import filesize
@@ -45,28 +46,31 @@ class _baseTrainer(Restorable):
         self.saver = saver
 
         self.rank = dist.get_rank()
+        self.saver.debug("%s is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
         torch.cuda.set_device(self.rank)
         self.config = config
 
         self.saver.debug("Creating model...")
-        compressor, criterion = modelFn()
+        compressor, criterion = trackingFunctionCalls(modelFn, self.saver)()
         self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
         self.saver.debug("Model created.")
 
         self.saver.debug("Creating optimizer...")
+        optimizer = trackingFunctionCalls(optimizer, self.saver)
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
         self.optimFn = optimizer
         self.saver.debug("Optimizer created.")
 
         self.saver.debug("Creating LR scheduler...")
+        scheduler = trackingFunctionCalls(scheduler, self.saver)
         self._scheduler = scheduler(self._optimizer, **self.config.Schdr.params)
         self.schdrFn = scheduler
         self.saver.debug("LR scheduler created.")
 
         self.saver.debug("Creating value tuner...")
-        self._regularizationTuner = valueTuners[0](**self.config.RegSchdr.params)
-        self._temperatureTuner = valueTuners[1](**self.config.TempSchdr.params)
+        self._regularizationTuner = trackingFunctionCalls(valueTuners[0], self.saver)(**self.config.RegSchdr.params)
+        self._temperatureTuner = trackingFunctionCalls(valueTuners[1], self.saver)(**self.config.TempSchdr.params)
         self.saver.debug("Value tuner created.")
 
         self._epoch = 0
@@ -131,7 +135,7 @@ class _baseTrainer(Restorable):
         trainSampler.set_epoch(self._epoch)
         hook(self._step, self._epoch, *args, trainSampler, **kwArgs)
 
-        self.saver.debug("Epoch %4d started.", self._epoch)
+        self.saver.debug("Epoch %4d started.", self._epoch + 1)
 
     def _epochFinish(self, hook, *args, trainSet, **kwArgs):
         self._scheduler.step()
