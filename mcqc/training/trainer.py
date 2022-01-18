@@ -49,24 +49,24 @@ class _baseTrainer(Restorable):
         torch.cuda.set_device(self.rank)
         self.config = config
 
+        self.saver.debug("Creating model...")
         compressor, criterion = modelFn()
         self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
-
         self.saver.debug("Model created.")
 
+        self.saver.debug("Creating optimizer...")
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
         self.optimFn = optimizer
-
         self.saver.debug("Optimizer created.")
 
+        self.saver.debug("Creating LR scheduler...")
         self._scheduler = scheduler(self._optimizer, **self.config.Schdr.params)
         self.schdrFn = scheduler
-
         self.saver.debug("LR scheduler created.")
 
+        self.saver.debug("Creating value tuner...")
         self._regularizationTuner = valueTuners[0](**self.config.RegSchdr.params)
         self._temperatureTuner = valueTuners[1](**self.config.TempSchdr.params)
-
         self.saver.debug("Value tuner created.")
 
         self._epoch = 0
