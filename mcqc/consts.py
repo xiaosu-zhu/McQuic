@@ -26,6 +26,7 @@ class Consts:
     Logger = logging.getLogger(LoggerName)
     Eps = 1e-6
     CDot = "·"
+    TimeOut = 15
 
 
 
