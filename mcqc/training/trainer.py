@@ -3,6 +3,7 @@ import os
 import shutil
 from typing import Callable, List, Optional, Tuple, Type
 import signal
+import threading
 
 import torch
 from torch import nn
@@ -69,6 +70,7 @@ class _baseTrainer(Restorable):
 
         self._epoch = 0
         self._step = 0
+        self.saver.debug("%s created.", self.__class__.__name__)
 
     @property
     def PrettyStep(self):
@@ -212,14 +214,21 @@ class MainTrainer(_baseTrainer):
 
         self.bestDistortion = torch.tensor(float("-inf"))
 
+        super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
+
         signal.signal(signal.SIGTERM, self._terminatedHandler)
 
-        super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
+    def _kill(self, signum, frame):
+        self.saver.critical("Timeout exceeds, killed.")
+        signal.raise_signal(signal.SIGKILL)
 
     # Handle SIGTERM when main process is terminated.
     # Save necessary info.
     def _terminatedHandler(self, signum, frame):
+        signal.signal(signal.SIGALRM, self._kill)
+        signal.alarm(Consts.TimeOut)
         self.saver.critical("Main process was interrupted, try to save necessary info.")
+        self.saver.critical("This post-process will be killed after %d secs if stuck.", Consts.TimeOut)
         self.progress.__exit__(None, None, None)
         self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
         self.saver.save(**{Consts.Fingerprint: self})
