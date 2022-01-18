@@ -1,6 +1,7 @@
 import functools
 import os
 import shutil
+from time import sleep
 from typing import Callable, List, Optional, Tuple, Type
 import signal
 import threading
@@ -218,15 +219,16 @@ class MainTrainer(_baseTrainer):
 
         signal.signal(signal.SIGTERM, self._terminatedHandler)
 
-    def _kill(self, signum, frame):
+    def _kill(self):
+        sleep(Consts.TimeOut)
         self.saver.critical("Timeout exceeds, killed.")
         signal.raise_signal(signal.SIGKILL)
 
     # Handle SIGTERM when main process is terminated.
     # Save necessary info.
     def _terminatedHandler(self, signum, frame):
-        signal.signal(signal.SIGALRM, self._kill)
-        signal.alarm(Consts.TimeOut)
+        killer = threading.Thread(target=self._kill, daemon=True)
+        killer.start()
         self.saver.critical("Main process was interrupted, try to save necessary info.")
         self.saver.critical("This post-process will be killed after %d secs if stuck.", Consts.TimeOut)
         self.progress.__exit__(None, None, None)
