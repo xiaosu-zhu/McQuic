@@ -40,18 +40,26 @@ def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str
         return Saver(saveDir, saveName, loggerName, loggingLevel, config, autoManage, maxItems, reserve, dumpFile, activateTensorboard)
 
 
-class EMATracker(nn.Module):
+class DiffEMATracker(nn.Module):
     def __init__(self, size: Union[torch.Size, List[int], Tuple[int, ...]], momentum: float = 0.9):
         super().__init__()
+        self._diffShadow: torch.Tensor
         self._shadow: torch.Tensor
+        self._previous: torch.Tensor
         self._decay = 1 - momentum
         self.register_buffer("_shadow", torch.empty(size) * torch.nan)
+        self.register_buffer("_diffShadow", torch.empty(size) * torch.nan)
+        self.register_buffer("_previous", torch.empty(size) * torch.nan)
 
     def forward(self, x: torch.Tensor):
-        if torch.all(torch.isnan(self._shadow)):
-            return self._shadow.copy_(x)
+        if torch.all(torch.isnan(self._diffShadow)):
+            self._previous.copy_(x)
+            return self._shadow.zero_(), self._diffShadow.zero_().add_(1)
         self._shadow -= self._decay * (self._shadow - x)
-        return self._shadow
+        diff = x - self._previous
+        self._diffShadow -= self._decay * (self._diffShadow - diff)
+        self._previous.copy_(x)
+        return self._shadow, self._diffShadow
 
 
 def nop(*_, **__):

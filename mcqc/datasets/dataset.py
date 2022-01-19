@@ -10,6 +10,7 @@ from torchvision.io import read_image
 from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
+from vlutils.runtime import relativePath
 
 
 __all__ = [
@@ -104,7 +105,7 @@ class Basic(VisionDataset):
         return len(self.samples)
 
     def __str__(self) -> str:
-        return f"Basic at `{self.root}` with transform: \r\n`{self.transform}`"
+        return f"Basic at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
 
 
 class BasicLMDB(VisionDataset):
@@ -177,4 +178,4 @@ class BasicLMDB(VisionDataset):
         return self._length * self._repeat
 
     def __str__(self) -> str:
-        return f"LMDB at `{self.root}` with transform: \r\n`{self.transform}`"
+        return f"LMDB at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
