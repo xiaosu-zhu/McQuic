@@ -31,7 +31,7 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
 
     saver.info("Here is the whole config during this run: \r\n%s", summary(config))
 
-    saver.debug("Creating the world...")
+    saver.debug("Creating the world···")
 
     initializeBaseConfigs(port, rank, worldSize, logger=saver)
     saver.debug("Base configs initialized.")

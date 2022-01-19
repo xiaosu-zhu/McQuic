@@ -76,12 +76,12 @@ class _baseTrainer(Restorable):
 
         self._epoch = 0
         self._step = 0
-        self.saver.debug("%s created.", self.__class__.__name__)
+        self.saver.debug("<%s> created.", self.__class__.__name__)
 
     @property
     def PrettyStep(self):
         unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
-        return f"{(self._step / float(unit)):3.2g}{suffix}"
+        return f"{(self._step // unit):3d}{suffix}"
 
     def restoreStates(self, ckpt: dict):
         self.saver.info("Restored state dict from `%s`", relativePath(self.saver.SavePath))
@@ -196,7 +196,7 @@ class _baseTrainer(Restorable):
 class MainTrainer(_baseTrainer):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
         if dist.get_rank() != 0:
-            raise AttributeError("A sub-process should not to be a `MainTrainer`, use `PalTrainer` instead.")
+            raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
         self.rank = dist.get_rank()
         self.config = config
@@ -346,7 +346,7 @@ class MainTrainer(_baseTrainer):
 class PalTrainer(_baseTrainer):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
         if dist.get_rank() == 0:
-            raise AttributeError("You should call `MainTrainer` for main process other than `PalTrainer` to save, log necessary information.")
+            raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
