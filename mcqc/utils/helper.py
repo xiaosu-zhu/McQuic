@@ -12,9 +12,9 @@ from vlutils.saver import Saver, DummySaver, StrPath
 
 
 def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging):
-    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = port
-    logger.debug("DDP master addr: `%s`", "localhost")
+    logger.debug("DDP master addr: `%s`", "127.0.0.1")
     logger.debug("DDP master port: `%s`", port)
     torch.autograd.set_detect_anomaly(False) # type: ignore
     torch.backends.cudnn.benchmark = True # type: ignore

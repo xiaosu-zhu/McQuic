@@ -105,7 +105,7 @@ class Basic(VisionDataset):
         return len(self.samples)
 
     def __str__(self) -> str:
-        return f"Basic at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
+        return f"<Basic> at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
 
 
 class BasicLMDB(VisionDataset):
@@ -178,4 +178,4 @@ class BasicLMDB(VisionDataset):
         return self._length * self._repeat
 
     def __str__(self) -> str:
-        return f"LMDB at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
+        return f"<LMDB> at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"

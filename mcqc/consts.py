@@ -29,7 +29,6 @@ class Consts:
     TimeOut = 15
 
 
-
 OptimizerRegistry.register("Adam")(torch.optim.Adam)
 OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
 
