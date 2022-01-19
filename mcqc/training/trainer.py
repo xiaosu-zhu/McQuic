@@ -15,6 +15,7 @@ from vlutils.saver import Saver
 from vlutils.logger import trackingFunctionCalls
 from vlutils.base import FrequecyHook
 from vlutils.base import Restorable
+from vlutils.runtime import relativePath
 from rich import filesize
 
 from mcqc.consts import Consts
@@ -25,7 +26,7 @@ from mcqc.models.composed import Composed
 from mcqc import Config
 from mcqc.models.compressor import BaseCompressor
 from mcqc.training.valueTuners import ValueTuner
-from mcqc.utils.helper import EMATracker, getRichProgress, nop
+from mcqc.utils.helper import DiffEMATracker, getRichProgress, nop
 from mcqc.validation import Validator
 
 
@@ -83,7 +84,7 @@ class _baseTrainer(Restorable):
         return f"{(self._step / float(unit)):3.2g}{suffix}"
 
     def restoreStates(self, ckpt: dict):
-        self.saver.info("Restored state dict from `%s`", os.path.relpath(self.saver.SavePath))
+        self.saver.info("Restored state dict from `%s`", relativePath(self.saver.SavePath))
         self.load_state_dict(ckpt, False)
 
         self.saver.debug("Restore network parameters finished.")
@@ -139,8 +140,11 @@ class _baseTrainer(Restorable):
 
     def _epochFinish(self, hook, *args, trainSet, **kwArgs):
         self._scheduler.step()
+        self.saver.debug("Lr is set to %.2e.", self._scheduler.get_last_lr()[0])
         self._regularizationTuner.step()
+        self.saver.debug("Reg is set to %.2e.", self._regularizationTuner.Value)
         self._temperatureTuner.step()
+        self.saver.debug("Temperature is set to %.2e.", self._temperatureTuner.Value)
         self._epoch += 1
         hook(self._step, self._epoch, *args, **kwArgs)
         if self._epoch % self.config.TestFreq == 0:
@@ -205,15 +209,18 @@ class MainTrainer(_baseTrainer):
         self.validator = Validator(self.rank)
 
         self.formatter = Decibel(1.0).to(self.rank)
-        self.emaTracker = EMATracker(()).to(self.rank)
+        self.diffTracker = DiffEMATracker((), momentum=0.95).to(self.rank)
 
         hooks = FrequecyHook(
             (1, self.log),
             (self.config.ValFreq, self.validate),
             (self.config.TestFreq, self.test)
         )
+        # hooks are called by epoch, not step
+        def hookWrapper(step, epoch, *args, **kwArgs):
+            return hooks(epoch, step, epoch, *args, **kwArgs)
 
-        self.epochFinishCalls = torch.inference_mode()(hooks)
+        self.epochFinishCalls = torch.inference_mode()(hookWrapper)
 
         self.saver.debug("Main trainer hooks: \r\n%s", hooks)
 
@@ -238,7 +245,7 @@ class MainTrainer(_baseTrainer):
         self.progress.__exit__(None, None, None)
         self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
         self.saver.save(**{Consts.Fingerprint: self})
-        self.saver.critical("Find the last checkpoint at `%s`", os.path.relpath(self.saver.SavePath))
+        self.saver.critical("Find the last checkpoint at `%s`", relativePath(self.saver.SavePath))
         self.summary()
         self.saver.critical("QUIT.")
         # reset to default SIGTERM handler
@@ -247,7 +254,7 @@ class MainTrainer(_baseTrainer):
 
     def summary(self):
         self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.PrettyStep, self.formatter(self.bestDistortion))
-        self.saver.info("Test this model by `python -m mcqc.validation --path %s`.", os.path.relpath(os.path.join(self.saver.SaveDir, "best.ckpt")))
+        self.saver.info("Test this model by `python -m mcqc.validation --path %s`.", relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler,
@@ -275,9 +282,10 @@ class MainTrainer(_baseTrainer):
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
         self.progress.update(self.trainingBar, advance=1, progress=f"{(self._step % self.trainingBarLength):4d}/{self.trainingBarLength:4d}")
-        emaDistortion = self.emaTracker(distortion)
-        if (distortion - emaDistortion).abs() > emaDistortion * 0.05:
-            self.progress.update(self.trainingBar, suffix=f"D = [b red]{self.formatter(emaDistortion):2.2f}[/]dB")
+        moment, diff = self.diffTracker(self.formatter(distortion))
+        interval = 2.0 / (diff.abs() + Consts.Eps).sqrt()
+        if self._step % interval.clamp_(1.0, 100.0).round_().int() == 0:
+            self.progress.update(self.trainingBar, suffix=f"D = [b red]{moment:2.2f}[/]dB")
         if self._step % 100 != 0:
             return
         self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=self._step)
