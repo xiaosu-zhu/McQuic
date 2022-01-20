@@ -1,4 +1,4 @@
-`python -O -m mcqc -c CONFIG_PATH`
+`python -O -m mcqc.training -c CONFIG_PATH`
 
 # McQuic
 
