@@ -139,14 +139,17 @@ class _baseTrainer(Restorable):
         self.saver.debug("Epoch %4d started.", self._epoch + 1)
 
     def _epochFinish(self, hook, *args, trainSet, **kwArgs):
+        self._epoch += 1
+
         self._scheduler.step()
         self.saver.debug("Lr is set to %.2e.", self._scheduler.get_last_lr()[0])
         self._regularizationTuner.step()
         self.saver.debug("Reg is set to %.2e.", self._regularizationTuner.Value)
         self._temperatureTuner.step()
         self.saver.debug("Temperature is set to %.2e.", self._temperatureTuner.Value)
-        self._epoch += 1
-        hook(self._step, self._epoch, *args, **kwArgs)
+
+        hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
+
         if self._epoch % self.config.TestFreq == 0:
             self.refresh()
 
@@ -190,7 +193,7 @@ class _baseTrainer(Restorable):
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
                 # progress.update(job, advance=1, loss="%2.2fdB" % float(-10 * loss.log10()))
-            self._epochFinish(epochStartHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader._loader.dataset) # type: ignore
+            self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader._loader.dataset) # type: ignore
         self._afterRun(afterRunHook)
 
 class MainTrainer(_baseTrainer):
@@ -209,12 +212,13 @@ class MainTrainer(_baseTrainer):
         self.validator = Validator(self.rank)
 
         self.formatter = Decibel(1.0).to(self.rank)
-        self.diffTracker = DiffEMATracker((), momentum=0.95).to(self.rank)
+        self.diffTracker = DiffEMATracker(()).to(self.rank)
 
         hooks = FrequecyHook(
             (1, self.log),
             (self.config.ValFreq, self.validate),
-            (self.config.TestFreq, self.test)
+            (self.config.TestFreq, self.test),
+            logger=self.saver
         )
         # hooks are called by epoch, not step
         def hookWrapper(step, epoch, *args, **kwArgs):
