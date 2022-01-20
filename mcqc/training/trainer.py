@@ -228,7 +228,7 @@ class MainTrainer(_baseTrainer):
 
         self.saver.debug("Main trainer hooks: \r\n%s", hooks)
 
-        self.bestDistortion = torch.tensor(float("-inf"))
+        self.bestDistortion = float("-inf")
 
         super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
 
@@ -257,7 +257,7 @@ class MainTrainer(_baseTrainer):
         signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
-        self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.PrettyStep, self.formatter(self.bestDistortion))
+        self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.PrettyStep, self.bestDistortion)
         self.saver.info("Test this model by `python -m mcqc.validation --path %s`.", relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
