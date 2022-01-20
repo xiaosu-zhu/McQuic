@@ -47,7 +47,7 @@ class _baseTrainer(Restorable):
         self.saver = saver
 
         self.rank = dist.get_rank()
-        self.saver.debug("%s is located at rank `%d`", self.__class__.__name__, self.rank)
+        self.saver.debug("<%s> is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
         torch.cuda.set_device(self.rank)
         self.config = config
@@ -141,6 +141,8 @@ class _baseTrainer(Restorable):
     def _epochFinish(self, hook, *args, trainSet, **kwArgs):
         self._epoch += 1
 
+        self.saver.debug("Epoch %4d finished.", self._epoch)
+
         self._scheduler.step()
         self.saver.debug("Lr is set to %.2e.", self._scheduler.get_last_lr()[0])
         self._regularizationTuner.step()
@@ -152,8 +154,6 @@ class _baseTrainer(Restorable):
 
         if self._epoch % self.config.TestFreq == 0:
             self.refresh()
-
-        self.saver.debug("Epoch %4d finished.", self._epoch)
 
     @torch.inference_mode()
     def refresh(self, *_, **__):
@@ -315,8 +315,7 @@ class MainTrainer(_baseTrainer):
             self.saver.add_images(f"Train/Code{i}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
-
-        self.saver.debug("Append log at %d steps.", self._step)
+        self.saver.debug("Append visualizations at %d steps.", self._step)
 
     def validate(self, *_, valLoader: DataLoader, **__):
         self.saver.debug("Start validation at epoch %4d.", self._epoch)

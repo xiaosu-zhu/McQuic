@@ -1,6 +1,9 @@
 `python -O -m mcqc -c CONFIG_PATH`
 
-# mcqc
+# McQuic
+
+Here is McQuic, aka ***M***ulti-***c***odebook ***Q***uantizers for neural ***i***mage ***c***ompression.
+
 ```bash
 docker run -u $(id -u):$(id -g) --gpus all --rm -it --ipc=host -v /raid/zhuxiaosu/codes/mcqc:/workspace/mcqc -v /raid/zhuxiaosu/datasets:/workspace/mcqc/data zhongbazhu/mcqc:base /bin/bash
 ```

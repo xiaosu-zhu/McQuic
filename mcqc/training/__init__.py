@@ -48,7 +48,7 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
     trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize, logger=saver)
     valLoader = getValLoader(config.ValDataset, config.BatchSize, disable=rank != 0, logger=saver)
     testLoader = getTestLoader(config.ValDataset, disable=rank != 0, logger=saver)
-    saver.debug("Train, val and test dataset mounted.")
+    saver.debug("Train, validation and test datasets mounted.")
 
     trainer.train(trainLoader, trainSampler, valLoader, testLoader)
 
