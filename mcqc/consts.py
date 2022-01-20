@@ -9,7 +9,7 @@ import apex
 import mcqc
 from mcqc.utils import OptimizerRegistry, LrSchedulerRegistry
 
-srcRoot = os.path.join(os.path.dirname(os.path.abspath(mcqc.__file__)), os.pardir)
+srcRoot = os.path.dirname(os.path.abspath(mcqc.__file__))
 
 class Consts:
     Name = "mcqc"
