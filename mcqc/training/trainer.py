@@ -26,7 +26,7 @@ from mcqc.models.composed import Composed
 from mcqc import Config
 from mcqc.models.compressor import BaseCompressor
 from mcqc.training.valueTuners import ValueTuner
-from mcqc.utils.helper import DiffEMATracker, getRichProgress, nop
+from mcqc.utils.helper import DiffEMATracker, EpochFrequencyHook, checkHook, getRichProgress, nop
 from mcqc.validation import Validator
 
 
@@ -171,12 +171,12 @@ class _baseTrainer(Restorable):
     #     return sum(losses)
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        beforeRunHook = beforeRunHook or nop
-        afterRunHook = afterRunHook or nop
-        stepStartHook = stepStartHook or nop
-        stepFinishHook = stepFinishHook or nop
-        epochStartHook = epochStartHook or nop
-        epochFinishHook = epochFinishHook or nop
+        beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
+        afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
+        stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
+        stepFinishHook = checkHook(stepFinishHook, "StepFinishHook", self.saver)
+        epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
+        epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
         self._beforeRun(beforeRunHook, totalBatches=len(trainLoader._loader))
 
@@ -214,19 +214,14 @@ class MainTrainer(_baseTrainer):
         self.formatter = Decibel(1.0).to(self.rank)
         self.diffTracker = DiffEMATracker(()).to(self.rank)
 
-        hooks = FrequecyHook(
+        hooks = EpochFrequencyHook(
             (1, self.log),
             (self.config.ValFreq, self.validate),
             (self.config.TestFreq, self.test),
             logger=self.saver
         )
-        # hooks are called by epoch, not step
-        def hookWrapper(step, epoch, *args, **kwArgs):
-            return hooks(epoch, step, epoch, *args, **kwArgs)
 
-        self.epochFinishCalls = torch.inference_mode()(hookWrapper)
-
-        self.saver.debug("Main trainer hooks: \r\n%s", hooks)
+        self.epochFinishCalls = hooks
 
         self.bestDistortion = float("-inf")
 

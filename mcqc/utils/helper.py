@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List, Tuple, Union, Optional
+from typing import Any, List, Tuple, Union, Optional, Dict
 import os
 
 from rich.progress import BarColumn, Progress, TimeElapsedColumn
@@ -9,6 +9,8 @@ import torch.distributed as dist
 import random
 import numpy as np
 from vlutils.saver import Saver, DummySaver, StrPath
+from vlutils.runtime import functionFullName
+from vlutils.base.freqHook import FrequecyHook
 
 
 def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging):
@@ -30,7 +32,7 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging
 
 
 def getRichProgress(disable: bool = False):
-    return Progress("[[i blue]{task.description}[/]]: [progress.percentage]{task.fields[progress]}", BarColumn(None), TimeElapsedColumn(), "{task.fields[suffix]}", refresh_per_second=2, speed_estimate_period=300, transient=True, disable=disable, expand=True)
+    return Progress("[[i blue]{task.description}[/]]: [progress.percentage]{task.fields[progress]}", BarColumn(None), TimeElapsedColumn(), "{task.fields[suffix]}", speed_estimate_period=300, transient=True, disable=disable, expand=True)
 
 
 def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: str = None, activateTensorboard: bool = True, disable: bool = False):
@@ -64,3 +66,17 @@ class DiffEMATracker(nn.Module):
 
 def nop(*_, **__):
     pass
+
+def checkHook(function, name, logger=logging):
+    if function is None:
+        logger.debug("No \"%s\".", name)
+        return nop
+    fullName = functionFullName(function)
+    logger.debug("\"%s\" is `%s`.", name, fullName)
+    return function
+
+
+class EpochFrequencyHook(FrequecyHook):
+    def __call__(self, step: int, epoch: int, *args: Any, **kwArgs: Any) -> Dict[int, Any]:
+        with torch.inference_mode():
+            return super().__call__(epoch, step, epoch, *args, **kwArgs)
