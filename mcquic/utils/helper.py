@@ -1,13 +1,14 @@
 import logging
-from typing import Any, List, Tuple, Union, Optional, Dict
+from typing import Any, List, Tuple, Union, Dict
 import os
 
-from rich.progress import BarColumn, Progress, TimeElapsedColumn
+from rich.progress import BarColumn, TimeElapsedColumn, TimeRemainingColumn
 import torch
 from torch import nn
 import torch.distributed as dist
 import random
 import numpy as np
+from vlutils.custom import RichProgress
 from vlutils.saver import Saver, DummySaver, StrPath
 from vlutils.runtime import functionFullName
 from vlutils.base.freqHook import FrequecyHook
@@ -31,8 +32,8 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging
     logger.debug("Process group = `%s`, world size = `%d`", "NCCL", worldSize)
 
 
-def getRichProgress(disable: bool = False):
-    return Progress("[[i blue]{task.description}[/]]: [progress.percentage]{task.fields[progress]}", BarColumn(None), TimeElapsedColumn(), "{task.fields[suffix]}", speed_estimate_period=300, transient=True, disable=disable, expand=True)
+def getRichProgress(disable: bool = False) -> RichProgress:
+    return RichProgress("[i blue]{task.description}[/][progress.percentage]{task.fields[progress]}", TimeElapsedColumn(), BarColumn(None), TimeRemainingColumn(), "{task.fields[suffix]}", refresh_per_second=2, transient=True, disable=disable, expand=True)
 
 
 def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: str = None, activateTensorboard: bool = True, disable: bool = False):

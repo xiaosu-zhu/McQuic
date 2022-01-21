@@ -206,8 +206,8 @@ class MainTrainer(_baseTrainer):
         self.saver = saver
 
         self.progress = getRichProgress().__enter__()
-        self.trainingBar = self.progress.add_task(Consts.CDot * 6, start=False, progress="preparing", suffix=Consts.CDot * 9)
-        self.trainingBarLength = 0
+        self.trainingBar = self.progress.add_task("", start=False, progress="preparing", suffix=Consts.CDot * 10)
+        self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
         self.validator = Validator(self.rank)
 
@@ -268,8 +268,9 @@ class MainTrainer(_baseTrainer):
 
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         self.progress.update(self.trainingBar, total=totalBatches)
-        self.trainingBarLength = totalBatches
+        self.progress.update(self.epochBar, total=self.config.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Epoch:4d}]")
         self.progress.start_task(self.trainingBar)
+        self.progress.start_task(self.epochBar)
 
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
         self.saver.info("See you at `%s`", self.saver.TensorboardURL)
@@ -280,11 +281,13 @@ class MainTrainer(_baseTrainer):
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
-        self.progress.update(self.trainingBar, advance=1, progress=f"{(self._step % self.trainingBarLength):4d}/{self.trainingBarLength:4d}")
+        task = self.progress.get_task(self.trainingBar)
+        self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]")
+        self.progress.update(self.epochBar, advance=1)
         moment, diff = self.diffTracker(self.formatter(distortion))
         interval = 2.0 / (diff.abs() + Consts.Eps).sqrt()
         if self._step % interval.clamp_(1.0, 100.0).round_().int() == 0:
-            self.progress.update(self.trainingBar, suffix=f"D = [b red]{moment:2.2f}[/]dB")
+            self.progress.update(self.trainingBar, suffix=f"D = [b green]{moment:2.2f}[/]dB")
         if self._step % 100 != 0:
             return
         self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=self._step)
@@ -299,7 +302,7 @@ class MainTrainer(_baseTrainer):
 
     def _epochStart(self, hook, *args, **kwArgs):
         self.progress.reset(self.trainingBar)
-        self.progress.update(self.trainingBar, description=f"#{(self._epoch + 1):4d}")
+        self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Epoch:4d}]")
         super()._epochStart(hook, *args, **kwArgs)
 
     def log(self, *_, images, restored, codes, logits, **__):
@@ -320,6 +323,7 @@ class MainTrainer(_baseTrainer):
         self.saver.save(**{Consts.Fingerprint: self})
         if results[self.config.Model.target] > self.bestDistortion:
             self.bestDistortion = results[self.config.Model.target]
+            self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
         self.saver.info("[%4d] " + ", ".join([f"{key}: {value}" for key, value in summary.items()]), self._epoch)
         self._model.train()

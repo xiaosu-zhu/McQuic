@@ -436,7 +436,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
             #         else:
             #             group['momentum'] = momentum
 
-            return [(max_lr - min_lr)*self.step_in_cycle / self.warmup_steps + min_lr for min_lr, max_lr in zip(self.min_lrs, self.max_lrs)]
+            return [(max_lr - min_lr) * self.step_in_cycle / self.warmup_steps + min_lr for min_lr, max_lr in zip(self.min_lrs, self.max_lrs)]
         else:
             return [min_lr + (max_lr - min_lr) \
                     * (1 + math.cos(math.pi * (self.step_in_cycle-self.warmup_steps) \
