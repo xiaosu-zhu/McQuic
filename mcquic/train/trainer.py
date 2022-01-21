@@ -206,7 +206,7 @@ class MainTrainer(_baseTrainer):
         self.saver = saver
 
         self.progress = getRichProgress().__enter__()
-        self.trainingBar = self.progress.add_task("", start=False, progress="preparing", suffix=Consts.CDot * 10)
+        self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
         self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
         self.validator = Validator(self.rank)
