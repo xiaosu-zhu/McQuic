@@ -1,16 +1,16 @@
-`python -O -m mcqc.training -c CONFIG_PATH`
+`python -O -m mcquic.train -c CONFIG_PATH`
 
 # McQuic
 
 Here is ***McQuic***, *aka* ***M***ulti-***c***odebook ***Qu***antizers for neural ***i***mage ***c***ompression.
 
 ```bash
-docker run -u $(id -u):$(id -g) --gpus all --rm -it --ipc=host -v /raid/zhuxiaosu/codes/mcqc:/workspace/mcqc -v /raid/zhuxiaosu/datasets:/workspace/mcqc/data zhongbazhu/mcqc:base /bin/bash
+docker run -u $(id -u):$(id -g) --gpus all --rm -it --ipc=host -v /raid/zhuxiaosu/codes/mcquic:/workspace/mcquic -v /raid/zhuxiaosu/datasets:/workspace/mcquic/data zhongbazhu/mcquic:base /bin/bash
 ```
 
 # tensorflow-gpu
 ```bash
-docker run -u $(id -u):$(id -g) --gpus all --rm -it --ipc=host -v /raid/zhuxiaosu/codes/mcqc:/workspace/mcqc -v /raid/zhuxiaosu/datasets:/workspace/mcqc/data tensorflow/tensorflow:2.5.1-gpu /bin/bash
+docker run -u $(id -u):$(id -g) --gpus all --rm -it --ipc=host -v /raid/zhuxiaosu/codes/mcquic:/workspace/mcquic -v /raid/zhuxiaosu/datasets:/workspace/mcquic/data tensorflow/tensorflow:2.5.1-gpu /bin/bash
 ```
 
 

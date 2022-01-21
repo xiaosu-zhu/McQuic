@@ -1,5 +1,5 @@
 # Tested under these packages, try newer versions at your own risk
-name: mcqc
+name: mcquic
 channels:
   - pytorch
   - defaults
