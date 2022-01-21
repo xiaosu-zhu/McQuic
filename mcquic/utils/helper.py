@@ -33,7 +33,7 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging
 
 
 def getRichProgress(disable: bool = False) -> RichProgress:
-    return RichProgress("[i blue]{task.description}[/][progress.percentage]{task.fields[progress]}", TimeElapsedColumn(), BarColumn(None), TimeRemainingColumn(), "{task.fields[suffix]}", refresh_per_second=2, transient=True, disable=disable, expand=True)
+    return RichProgress("[i blue]{task.description}[/][b magenta]{task.fields[progress]}", TimeElapsedColumn(), BarColumn(None), TimeRemainingColumn(), "{task.fields[suffix]}", refresh_per_second=2, transient=True, disable=disable, expand=True)
 
 
 def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: str = None, activateTensorboard: bool = True, disable: bool = False):
