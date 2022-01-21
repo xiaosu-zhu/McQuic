@@ -1,4 +1,4 @@
-name: mcqc
+name: mcquic
 channels:
   - pytorch
   - defaults

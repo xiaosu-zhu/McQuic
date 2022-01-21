@@ -7,12 +7,12 @@ RUN conda env update --name base --file environment.yml --prune
 
 RUN rm environment.yml
 
-RUN git clone https://github.com/xiaosu-zhu/mcqc.git && cd mcqc/src && pip install -e .
+RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic/src && pip install -e .
 
-RUN cd mcqc && ln -s /workspace/datasets data
+RUN cd mcquic && ln -s /workspace/datasets data
 
-# COPY ../../mcqc ./
+# COPY ../../mcquic ./
 
-# RUN cd mcqc/src && pip install -e .
+# RUN cd mcquic/src && pip install -e .
 
-WORKDIR /workspace/mcqc
+WORKDIR /workspace/mcquic
