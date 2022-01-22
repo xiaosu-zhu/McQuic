@@ -166,6 +166,7 @@ class _baseTrainer(Restorable):
         self.saver.debug("%.2f%% of codebook is re-assigned.", reAssignProportion * 100)
 
         self.saver.debug("End refresh at epoch %4d.", self._epoch)
+        return reAssignProportion
 
     # def _reduceLoss(self, losses: Tuple[torch.Tensor]) -> torch.Tensor:
     #     return sum(losses)
@@ -209,7 +210,7 @@ class MainTrainer(_baseTrainer):
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
         self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
-        self.validator = Validator(self.rank)
+        self.validator = Validator(self.config, self.rank)
 
         self.formatter = Decibel(1.0).to(self.rank)
         self.diffTracker = DiffEMATracker(()).to(self.rank)
@@ -272,6 +273,9 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
+        self.saver.info("Before training starts, we need to collect necessary info.")
+        self.count()
+
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
         self.saver.info("See you at `%s`", self.saver.TensorboardURL)
 
@@ -305,12 +309,25 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Epoch:4d}]")
         super()._epochStart(hook, *args, **kwArgs)
 
+    @torch.inference_mode()
+    def count(self):
+        self.saver.debug("Make statistics on the whole training set to get CDF for entropy coder.")
+        self._model.Compressor.clearFreq()
+        refLoader = getTrainingRefLoader(self.config.Dataset, self.config.BatchSize)
+        codeUsage = self.validator.count(self._epoch, self._model.Compressor, refLoader, self.progress)
+        self.saver.add_scalar(f"Eval/CodeUsage", codeUsage, global_step=self._step)
+
+    def refresh(self, *_, **__):
+        reAssignProportion = super().refresh()
+        self.saver.add_scalar("Train/ReAssignProportion", reAssignProportion, global_step=self._step)
+
     def log(self, *_, images, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         self.saver.add_histogram("Stat/Logit", logits[0][0, 0], global_step=self._step)
+        # [n, m, h, w]
         for i, c in enumerate(codes):
-            self.saver.add_histogram(f"Stat/Code{i}", c[0, 0].flatten(), global_step=self._step)
-            self.saver.add_images(f"Train/Code{i}", self.validator.visualizeIntermediate(c), self._step)
+            self.saver.add_histogram(f"Stat/CodeLv{i}", c[0, 0].float().flatten(), global_step=self._step)
+            self.saver.add_images(f"Train/CodeLv{i}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.debug("Append visualizations at %d steps.", self._step)
@@ -320,12 +337,18 @@ class MainTrainer(_baseTrainer):
 
         self._model.eval()
         results, summary = self.validator.validate(self._epoch, self._model.Compressor, valLoader, self.progress)
+
+        self.saver.add_scalar(f"Eval/MsSSIM", results["MsSSIM"], global_step=self._step)
+        self.saver.add_scalar(f"Eval/PSNR", results["PSNR"], global_step=self._step)
+        self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
+        self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
+
         self.saver.save(**{Consts.Fingerprint: self})
         if results[self.config.Model.target] > self.bestDistortion:
             self.bestDistortion = results[self.config.Model.target]
             self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
-        self.saver.info("[%4d] " + ", ".join([f"{key}: {value}" for key, value in summary.items()]), self._epoch)
+        self.saver.info("[%4d] %s", self._epoch, summary)
         self._model.train()
 
         self.saver.debug("End validation at epoch %4d.", self._epoch)
@@ -335,9 +358,7 @@ class MainTrainer(_baseTrainer):
 
         self._model.eval()
 
-        self._model.Compressor.clearFreq()
-        refLoader = getTrainingRefLoader(self.config.Dataset, self.config.BatchSize)
-        self.validator.count(self._epoch, self._model.Compressor, valLoader, self.progress)
+        self.count()
 
         self._model.train()
 

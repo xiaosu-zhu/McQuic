@@ -30,10 +30,10 @@ class BaseCompressor(nn.Module):
         y = self._encoder(x)
         self._quantizer.count(y)
 
-    def reAssignCodebook(self):
-        self._quantizer.reAssignCodebook()
+    def reAssignCodebook(self) -> float:
+        return self._quantizer.reAssignCodebook()
 
-    def syncCodebook(self) -> float:
+    def syncCodebook(self):
         return self._quantizer.syncCodebook()
 
     def clearFreq(self):
@@ -46,15 +46,21 @@ class BaseCompressor(nn.Module):
     def Freq(self):
         return self._quantizer.Freq
 
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[bytes], FileHeader]:
+    @property
+    def CodeUsage(self):
+        return sum(float((freq > 0).sum()) / k for freq, k in zip(self._quantizer.Freq, self._quantizer._k)) / len(self._quantizer._k)
+
+    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
         y = self._encoder(x)
         n, c, h, w = x.shape
-        codes, binaries, codeSize = self._quantizer.compress(y, cdfs)
-        header = FileHeader(Consts.Fingerprint, codeSize, ImageSize(height=h, width=w, channel=c))
+        # codes: lv * [n, m, h, w]
+        # binaries: List of binary, len = n, len(binaries[0]) = level
+        codes, binaries, codeSizes = self._quantizer.compress(y, cdfs)
+        header = [FileHeader(Consts.Fingerprint, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
         return codes, binaries, header
 
-    def decompress(self, codes, binaries: List[bytes], cdfs: List[List[List[int]]], header: FileHeader) -> torch.Tensor:
-        yHat = self._quantizer.decompress(codes, binaries, header.CodeSize, cdfs)
+    def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> torch.Tensor:
+        yHat = self._quantizer.decompress(binaries, [header.CodeSize for header in headers], cdfs)
         return self._decoder(yHat)
 
 
