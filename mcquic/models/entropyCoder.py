@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import List, Tuple, Generator
 
 import torch
+from torch import nn
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 from vlutils.base.restorable import Restorable
@@ -9,26 +10,41 @@ from vlutils.base.restorable import Restorable
 from mcquic.utils.specification import CodeSize
 
 
-class EntropyCoder(Restorable):
-    def __init__(self, m: int, k: List[int]):
+class EntropyCoder(nn.Module):
+    def __init__(self, m: int, k: List[int], ema: float = 0.9):
+        super().__init__()
+
         self.encooder = ans.RansEncoder()
         self.decoder = ans.RansDecoder()
 
-        super().__init__()
-        self._freq = list(torch.zeros(m, ki, dtype=torch.long) for ki in k)
+        self._freq = nn.ParameterList(nn.Parameter(torch.zeros(m, ki, dtype=torch.long), requires_grad=False) for ki in k)
+        # initial value is uniform
+        self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
         self._k = k
+
+        self._decay = 1 - ema
 
     def clearFreq(self):
         self._freq = list(torch.zeros_like(x) for x in self._freq)
 
     @torch.no_grad()
-    def updateFreq(self, codes: List[torch.Tensor]):
-        # [n, m, h, w]
-        for lv, code in enumerate(codes):
-            code = code.detach().cpu()
-            # [n, h, w]
-            for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
-                self._freq[lv][m] += torch.bincount(codeAtM.flatten(), minlength=len(self._freq[lv][m]))
+    def updateFreq(self, codes: List[torch.Tensor], hard: bool = True):
+        if hard:
+            # Direct accumulate freq
+            # [n, m, h, w]
+            for lv, code in enumerate(codes):
+                # [n, h, w]
+                for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
+                    self._freq[lv][m] += torch.bincount(codeAtM.flatten(), minlength=len(self._freq[lv][m]))
+        else:
+            # Update freq by EMA
+            # [n, m, h, w]
+            for lv, code in enumerate(codes):
+                # [n, h, w]
+                for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
+                    self._freqEMA[lv][m] -= self._decay * (self._freqEMA[lv][m] - torch.bincount(codeAtM.flatten(), minlength=len(self._freq[lv][m])))
+                    # normalize and round to integer
+                    self._freq[lv][m] = ((self._freqEMA[lv][m] / self._freqEMA[lv][m].sum()) * self._k[lv] * 10).round().long()
 
     @contextmanager
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
@@ -132,4 +148,4 @@ class EntropyCoder(Restorable):
                 # [m, h, w]
                 code = torch.tensor(restored).reshape(codeSize.m, h, w)
                 codes[lv].append(code)
-        return [torch.stack(c, 0) for c in codes]
+        return [torch.stack(c, 0).to(self._freq[0].device) for c in codes]

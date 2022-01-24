@@ -7,7 +7,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch.distributions import OneHotCategoricalStraightThrough
 
-from mcquic.nn import NonNegativeParametrizer, LogExpMinusOne, conv1x1
+from mcquic.nn import NonNegativeParametrizer, conv1x1
 from mcquic.models.entropyCoder import EntropyCoder
 from mcquic.utils.specification import CodeSize
 
@@ -16,15 +16,14 @@ class BaseQuantizer(nn.Module):
     _dummyTensor: torch.Tensor
     def __init__(self, m: int, k: List[int]):
         super().__init__()
-        self.register_buffer("_dummyTensor", torch.empty(()))
         self._entropyCoder = EntropyCoder(m, k)
         self._k = k
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         raise NotImplementedError
 
-    def count(self, x: torch.Tensor):
-        self._entropyCoder.updateFreq(self.encode(x))
+    def updateFreq(self, code: List[torch.Tensor]):
+        self._entropyCoder.updateFreq(code, hard=False)
 
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
@@ -51,20 +50,19 @@ class BaseQuantizer(nn.Module):
         binaries, codeSize = self._entropyCoder.compress(codes, cdfs)
         return codes, binaries, codeSize
 
-    def _validateCode(self, codes: List[torch.Tensor], decompressed: List[torch.Tensor]):
-        for code, restored in zip(codes, decompressed):
+    def _validateCode(self, refCodes: List[torch.Tensor], decompressed: List[torch.Tensor]):
+        for code, restored in zip(refCodes, decompressed):
             if torch.any(code != restored):
                 raise RuntimeError("Got wrong decompressed result from entropy coder.")
 
     def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> torch.Tensor:
         decompressed = self._entropyCoder.decompress(binaries, codeSize, cdfs)
-        decompressed = [c.to(self._dummyTensor.device) for c in decompressed]
         # self._validateCode(codes, decompressed)
         return self.decode(decompressed)
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.05):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
@@ -74,6 +72,7 @@ class _multiCodebookQuantization(nn.Module):
         # self._logExpMinusOne = LogExpMinusOne()
         self._zeroBound = NonNegativeParametrizer(1e-6)
         self._temperature = nn.Parameter(torch.ones((self._m)))
+        self._permutationRate = permutationRate
 
     def reAssignCodebook(self, freq: torch.Tensor)-> float:
         codebook = self._codebook.clone().detach()
@@ -158,18 +157,23 @@ class _multiCodebookQuantization(nn.Module):
         logit = -1 * self._distance(self._preProcess(x))
         return logit
 
-    def _sample(self, x: torch.Tensor):
+    def _sample(self, x: torch.Tensor, temperature: float):
         # [n, m, h, w, k] * [m, 1, 1, 1]
         logit = self._logit(x) * self._zeroBound(self._temperature)[:, None, None, None]
-        posterior = OneHotCategoricalStraightThrough(logits=logit)
+
+        # add random mask to pick a different index.
+        permutation = torch.rand_like(logit) < self._permutationRate
+        logit.masked_fill_(permutation, 1e9)
+
+        posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]
         sampled = posterior.rsample(())
         return sampled, logit
 
-    def forward(self, x: torch.Tensor):
-        sample, logit = self._sample(x)
+    def forward(self, x: torch.Tensor, temperature: float):
+        sample, logit = self._sample(x, temperature)
         # [n, m, h, w]
-        code = sample.argmax(-1)
+        code = logit.argmax(-1)
         #      [n, m, h, w, k]
         return sample, code, logit
 
@@ -257,10 +261,10 @@ class _quantizerEncoder(nn.Module):
         #      ↓ residual,                         [n, m, h, w]
         return z - self._dequantizer.decode(code), code
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, temperature: float):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
-        q, code, logit = self._quantizer(self._quantizationHead(z))
+        q, code, logit = self._quantizer(self._quantizationHead(z), temperature)
         if self._latentHead is None:
             return q, None, code, logit
         z = self._latentHead(z)
@@ -368,13 +372,13 @@ class UMGMQuantizer(BaseQuantizer):
         for encoder in self._encoders:
             encoder.syncCodebook()
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, temperature: float):
         quantizeds = list()
         codes = list()
         logits = list()
         for encoder in self._encoders:
             #          ↓ residual
-            quantized, x, code, logit = encoder(x)
+            quantized, x, code, logit = encoder(x, temperature)
             quantizeds.append(quantized)
             codes.append(code)
             logits.append(logit)
@@ -382,6 +386,9 @@ class UMGMQuantizer(BaseQuantizer):
         for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
+
+        self.updateFreq(codes)
+
         return formerLevel, codes, logits
 
 class L2Quantizer(nn.Module):
