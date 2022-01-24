@@ -30,17 +30,6 @@ from mcquic.utils.helper import DiffEMATracker, EpochFrequencyHook, checkHook, g
 from mcquic.validate import Validator
 
 
-_logMapping = {
-    "distortion": "Loss/Distortion",
-    "auxiliary": "Loss/Auxiliary",
-    "predict": "Loss/Context",
-    "bpp": "Stat/Reg",
-    "lr": "Stat/LR",
-    "regCoeff": "Stat/Reg",
-    "temperature": "Stat/T"
-}
-
-
 class _baseTrainer(Restorable):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver, **_) -> None:
         super().__init__()
@@ -187,7 +176,7 @@ class _baseTrainer(Restorable):
                 self._stepStart(stepStartHook)
 
                 self._optimizer.zero_grad()
-                xHat, (rate, distortion), codes, logits = self._model(images)
+                xHat, (rate, distortion), codes, logits = self._model(images, self._temperatureTuner.Value)
                 # loss = self._reduceLoss(losses)
                 (rate + distortion).backward()
                 self._optimizer.step()
@@ -273,8 +262,8 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
-        self.saver.info("Before training starts, we need to collect necessary info.")
-        self.count()
+        # self.saver.info("Before training starts, we need to collect necessary info.")
+        # self.count()
 
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
         self.saver.info("See you at `%s`", self.saver.TensorboardURL)
@@ -294,15 +283,15 @@ class MainTrainer(_baseTrainer):
             self.progress.update(self.trainingBar, suffix=f"D = [b green]{moment:2.2f}[/]dB")
         if self._step % 100 != 0:
             return
-        self.saver.add_scalar("Loss/Distortion", self.formatter(distortion), global_step=self._step)
+        self.saver.add_scalar("Stat/DLoss", self.formatter(distortion), global_step=self._step)
         # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
         # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
         # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
-        self.saver.add_scalar(_logMapping["lr"], self._scheduler.get_last_lr()[0], global_step=self._step)
-        self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=self._step)
-        self.saver.add_scalar(_logMapping["temperature"], self._temperatureTuner.Value, global_step=self._step)
+        self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
+        # self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=self._step)
+        self.saver.add_scalar("Stat/T", self._temperatureTuner.Value, global_step=self._step)
 
     def _epochStart(self, hook, *args, **kwArgs):
         self.progress.reset(self.trainingBar)
@@ -314,22 +303,24 @@ class MainTrainer(_baseTrainer):
         self.saver.debug("Make statistics on the whole training set to get CDF for entropy coder.")
         self._model.Compressor.clearFreq()
         refLoader = getTrainingRefLoader(self.config.Dataset, self.config.BatchSize)
-        codeUsage = self.validator.count(self._epoch, self._model.Compressor, refLoader, self.progress)
-        self.saver.add_scalar(f"Eval/CodeUsage", codeUsage, global_step=self._step)
+        # codeUsage = self.validator.count(self._epoch, self._model.Compressor, refLoader, self.progress)
+        self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
     def refresh(self, *_, **__):
         reAssignProportion = super().refresh()
-        self.saver.add_scalar("Train/ReAssignProportion", reAssignProportion, global_step=self._step)
+        self.saver.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=self._step)
 
     def log(self, *_, images, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         self.saver.add_histogram("Stat/Logit", logits[0][0, 0], global_step=self._step)
-        # [n, m, h, w]
-        for i, c in enumerate(codes):
-            self.saver.add_histogram(f"Stat/CodeLv{i}", c[0, 0].float().flatten(), global_step=self._step)
-            self.saver.add_images(f"Train/CodeLv{i}", self.validator.visualizeIntermediate(c), self._step)
+        freq = self._model.Compressor.Freq
+        # [m, ki]
+        for lv, (fr, c) in enumerate(zip(freq, codes)):
+            self.saver.add_histogram(f"Stat/FreqLv{lv}", fr[0].flatten(), global_step=self._step)
+            self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
+
         self.saver.debug("Append visualizations at %d steps.", self._step)
 
     def validate(self, *_, valLoader: DataLoader, **__):
@@ -358,7 +349,7 @@ class MainTrainer(_baseTrainer):
 
         self._model.eval()
 
-        self.count()
+        # self.count()
 
         self._model.train()
 

@@ -1,7 +1,7 @@
-epoch: 1200
-valFreq: 10
-testFreq: 100
-gpus: 1
+epoch: 400
+valFreq: 4
+testFreq: 40
+gpus: 2
 vRam: -1
 wantsMore: false
 dataset: compression
@@ -33,9 +33,9 @@ optim:
 schdr:
     type: CosineAnnealingWarmupRestarts
     params:
-        first_cycle_steps: 100 # match 10 * testFreq
-        warmup_steps: 10
-        gamma: 0.9
+        first_cycle_steps: 200 # match 10 * testFreq
+        warmup_steps: 20
+        gamma: 0.25
 regSchdr:
     type: StepValue
     params:
@@ -43,11 +43,11 @@ regSchdr:
         gamma: 0.993
         stepInterval: 1
 tempSchdr:
-    type: StepValue
+    type: CosineValue
     params:
-        initValue: 1.
-        gamma: 1.0
-        stepInterval: 1
+        maxValue: 1.
+        minValue: 0.1
+        totalStep: 800
 # regSchdr:
 #     type: Cosine
 #     params:

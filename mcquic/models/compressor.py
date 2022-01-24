@@ -19,16 +19,16 @@ class BaseCompressor(nn.Module):
         self._decoder = decoder
         self._quantizer = quantizer
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, temperature: float):
         y = self._encoder(x)
         # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-        yHat, codes, logits = self._quantizer(y)
+        yHat, codes, logits = self._quantizer(y, temperature)
         xHat = self._decoder(yHat)
         return xHat, yHat, codes, logits
 
-    def count(self, x:torch.Tensor):
-        y = self._encoder(x)
-        self._quantizer.count(y)
+    # def count(self, x:torch.Tensor):
+    #     y = self._encoder(x)
+    #     self._quantizer.count(y)
 
     def reAssignCodebook(self) -> float:
         return self._quantizer.reAssignCodebook()

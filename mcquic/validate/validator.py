@@ -36,16 +36,17 @@ class Validator:
         code = F.interpolate(code[:, :1], scale_factor=4, mode="nearest")
         return code
 
-    @torch.inference_mode()
-    def count(self, epoch: int, model: BaseCompressor, trainLoader: DataLoader, progress: Progress) -> float:
-        total = len(trainLoader)
-        now = 0
-        task = progress.add_task(f"[Stat@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
-        for now, image in enumerate(trainLoader):
-            model.count(image.to(self._rank, non_blocking=True))
-            progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
-        progress.remove_task(task)
-        return model.CodeUsage
+    # @torch.inference_mode()
+    # def count(self, epoch: int, model: BaseCompressor, trainLoader: DataLoader, progress: Progress) -> float:
+    #     total = len(trainLoader)
+    #     now = 0
+    #     task = progress.add_task(f"[Stat@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
+    #     for now, image in enumerate(trainLoader):
+    #         model.count(image.to(self._rank, non_blocking=True))
+    #         progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
+    #     progress.stop_task(task)
+    #     progress.remove_task(task)
+    #     return model.CodeUsage
 
     @torch.inference_mode()
     def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
