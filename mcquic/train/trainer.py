@@ -278,7 +278,7 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]")
         self.progress.update(self.epochBar, advance=1)
         moment, diff = self.diffTracker(self.formatter(distortion))
-        interval = 2.0 / (diff.abs() + Consts.Eps).sqrt()
+        interval = 2.0 / (diff.abs() + Consts.Eps)
         if self._step % interval.clamp_(1.0, 100.0).round_().int() == 0:
             self.progress.update(self.trainingBar, suffix=f"D = [b green]{moment:2.2f}[/]dB")
         if self._step % 100 != 0:

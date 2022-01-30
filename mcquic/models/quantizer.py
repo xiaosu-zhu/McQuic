@@ -71,7 +71,7 @@ class _multiCodebookQuantization(nn.Module):
         self._codebook = codebook
         # self._logExpMinusOne = LogExpMinusOne()
         self._zeroBound = NonNegativeParametrizer(1e-6)
-        self._temperature = nn.Parameter(torch.ones((self._m)))
+        self._logTemperature = nn.Parameter(torch.zeros((self._m, self._k)))
         self._permutationRate = permutationRate
 
     def reAssignCodebook(self, freq: torch.Tensor)-> float:
@@ -124,7 +124,7 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
         # [n, m, h, w, k]
-        return distance.sqrt().permute(0, 1, 3, 4, 2)
+        return distance.permute(0, 1, 3, 4, 2)
 
         # [n, m, d, h, w] -> [m, n, h, w, d]
         x = x.reshape(n, self._m, self._d, h, w).permute(1, 0, 3, 4, 2)
@@ -158,12 +158,12 @@ class _multiCodebookQuantization(nn.Module):
         return logit
 
     def _sample(self, x: torch.Tensor, temperature: float):
-        # [n, m, h, w, k] * [m, 1, 1, 1]
-        logit = self._logit(x) * self._zeroBound(self._temperature)[:, None, None, None]
+        # [n, m, h, w, k] * [m, 1, 1, k]
+        logit = self._logit(x) * self._logTemperature.exp()[:, None, None, :]
 
         # add random mask to pick a different index.
-        permutation = torch.rand_like(logit) < self._permutationRate
-        logit.masked_fill_(permutation, 1e9)
+        # permutation = torch.rand_like(logit) < self._permutationRate
+        # logit.masked_fill_(permutation, 1e9)
 
         posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]
