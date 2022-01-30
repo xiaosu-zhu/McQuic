@@ -19,10 +19,10 @@ class Consts:
     NewestDir = "latest"
     LoggerName = "main"
     RootDir = srcRoot
-    LogDir = os.path.join(srcRoot, "../log")
+    LogDir = os.path.abspath(os.path.join(srcRoot, "../log"))
     TempDir = "/tmp/mcquic/"
-    DataDir = os.path.join(srcRoot, "../data")
-    SaveDir = os.path.join(srcRoot, "../saved")
+    DataDir = os.path.abspath(os.path.join(srcRoot, "../data"))
+    SaveDir = os.path.abspath(os.path.join(srcRoot, "../saved"))
     Logger = logging.getLogger(LoggerName)
     Eps = 1e-6
     CDot = "·"

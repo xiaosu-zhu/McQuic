@@ -1,8 +1,8 @@
-epoch: 400
+epoch: 2000
 valFreq: 4
 testFreq: 40
 gpus: 2
-vRam: -1
+vRam: 20000
 wantsMore: false
 dataset: compression
 repeat: 1 # duplicate images in one epoch
