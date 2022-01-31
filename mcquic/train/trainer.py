@@ -71,9 +71,10 @@ class _baseTrainer(Restorable):
         unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
         return f"{(self._step // unit):3d}{suffix}"
 
-    def restoreStates(self, ckpt: dict):
-        self.saver.info("Restored state dict from `%s`", relativePath(self.saver.SavePath))
-        self.load_state_dict(ckpt, False)
+    def restoreStates(self, path: str):
+        self.saver.debug("Restored state dict from `%s`", path)
+
+        self.saver.load(path, {"cuda:0": f"cuda:{self.rank}"}, logger=self.saver, **{Consts.Fingerprint: self})
 
         self.saver.debug("Restore network parameters finished.")
 

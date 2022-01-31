@@ -11,6 +11,7 @@ from mcquic.utils import OptimizerRegistry, LrSchedulerRegistry
 
 srcRoot = os.path.dirname(os.path.abspath(mcquic.__file__))
 
+os.makedirs("/tmp/mcquic/", exist_ok=True)
 class Consts:
     Name = "mcquic"
     Fingerprint = "aHR0cHM6Ly9naXRodWIuY29tL3hpYW9zdS16aHUvbWNxYw=="

@@ -42,6 +42,7 @@ def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str
     else:
         return Saver(saveDir, saveName, loggerName, loggingLevel, config, autoManage, maxItems, reserve, dumpFile, activateTensorboard)
 
+getSaver.__doc__ = Saver.__doc__
 
 class EMATracker(nn.Module):
     def __init__(self, size: Union[torch.Size, List[int], Tuple[int, ...]], momentum: float = 0.9):
