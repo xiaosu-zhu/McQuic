@@ -33,7 +33,7 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging
 
 
 def getRichProgress(disable: bool = False) -> RichProgress:
-    return RichProgress("[i blue]{task.description}[/][b magenta]{task.fields[progress]}", TimeElapsedColumn(), BarColumn(None), TimeRemainingColumn(), "{task.fields[suffix]}", refresh_per_second=2, transient=True, disable=disable, expand=True)
+    return RichProgress("[i blue]{task.description}[/][b magenta]{task.fields[progress]}", TimeElapsedColumn(), BarColumn(None), TimeRemainingColumn(), "{task.fields[suffix]}", refresh_per_second=6, transient=True, disable=disable, expand=True)
 
 
 def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: str = None, activateTensorboard: bool = True, disable: bool = False):
@@ -43,26 +43,19 @@ def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str
         return Saver(saveDir, saveName, loggerName, loggingLevel, config, autoManage, maxItems, reserve, dumpFile, activateTensorboard)
 
 
-class DiffEMATracker(nn.Module):
+class EMATracker(nn.Module):
     def __init__(self, size: Union[torch.Size, List[int], Tuple[int, ...]], momentum: float = 0.9):
         super().__init__()
-        self._diffShadow: torch.Tensor
         self._shadow: torch.Tensor
-        self._previous: torch.Tensor
         self._decay = 1 - momentum
         self.register_buffer("_shadow", torch.empty(size) * torch.nan)
-        self.register_buffer("_diffShadow", torch.empty(size) * torch.nan)
-        self.register_buffer("_previous", torch.empty(size) * torch.nan)
 
     def forward(self, x: torch.Tensor):
-        if torch.all(torch.isnan(self._diffShadow)):
-            self._previous.copy_(x)
-            return self._shadow.zero_(), self._diffShadow.zero_().add_(1)
+        if torch.all(torch.isnan(self._shadow)):
+            self._shadow.copy_(x)
+            return self._shadow
         self._shadow -= self._decay * (self._shadow - x)
-        diff = x - self._previous
-        self._diffShadow -= self._decay * (self._diffShadow - diff)
-        self._previous.copy_(x)
-        return self._shadow, self._diffShadow
+        return self._shadow
 
 
 def nop(*_, **__):

@@ -13,7 +13,6 @@ from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.saver import Saver
 from vlutils.logger import trackingFunctionCalls
-from vlutils.base import FrequecyHook
 from vlutils.base import Restorable
 from vlutils.runtime import relativePath
 from rich import filesize
@@ -26,7 +25,7 @@ from mcquic.models.composed import Composed
 from mcquic import Config
 from mcquic.models.compressor import BaseCompressor
 from mcquic.train.valueTuners import ValueTuner
-from mcquic.utils.helper import DiffEMATracker, EpochFrequencyHook, checkHook, getRichProgress, nop
+from mcquic.utils.helper import EMATracker, EpochFrequencyHook, checkHook, getRichProgress
 from mcquic.validate import Validator
 
 
@@ -182,7 +181,6 @@ class _baseTrainer(Restorable):
                 self._optimizer.step()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
-                # progress.update(job, advance=1, loss="%2.2fdB" % float(-10 * loss.log10()))
             self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader._loader.dataset) # type: ignore
         self._afterRun(afterRunHook)
 
@@ -202,7 +200,7 @@ class MainTrainer(_baseTrainer):
         self.validator = Validator(self.config, self.rank)
 
         self.formatter = Decibel(1.0).to(self.rank)
-        self.diffTracker = DiffEMATracker(()).to(self.rank)
+        self.diffTracker = EMATracker(()).to(self.rank)
 
         hooks = EpochFrequencyHook(
             (1, self.log),
@@ -274,16 +272,17 @@ class MainTrainer(_baseTrainer):
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
+
+        distortionDB = self.formatter(distortion)
+        moment = self.diffTracker(distortionDB)
+
         task = self.progress.get_task(self.trainingBar)
-        self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]")
+        self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
         self.progress.update(self.epochBar, advance=1)
-        moment, diff = self.diffTracker(self.formatter(distortion))
-        interval = 2.0 / (diff.abs() + Consts.Eps)
-        if self._step % interval.clamp_(1.0, 100.0).round_().int() == 0:
-            self.progress.update(self.trainingBar, suffix=f"D = [b green]{moment:2.2f}[/]dB")
+
         if self._step % 100 != 0:
             return
-        self.saver.add_scalar("Stat/DLoss", self.formatter(distortion), global_step=self._step)
+        self.saver.add_scalar("Stat/DLoss", distortionDB, global_step=self._step)
         # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
@@ -312,11 +311,13 @@ class MainTrainer(_baseTrainer):
 
     def log(self, *_, images, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
+        # First level, first image, first group
         self.saver.add_histogram("Stat/Logit", logits[0][0, 0], global_step=self._step)
         freq = self._model.Compressor.Freq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
-            self.saver.add_histogram(f"Stat/FreqLv{lv}", fr[0].flatten(), global_step=self._step)
+            self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
+            # self.saver.add_histogram(f"Stat/FreqLv{lv}", fr[0], global_step=self._step)
             self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)

@@ -1,7 +1,7 @@
 epoch: 2000
-valFreq: 4
-testFreq: 40
-gpus: 2
+valFreq: 10
+testFreq: 100
+gpus: 4
 vRam: 20000
 wantsMore: false
 dataset: compression
@@ -35,7 +35,7 @@ schdr:
     params:
         first_cycle_steps: 200 # match 10 * testFreq
         warmup_steps: 20
-        gamma: 0.25
+        gamma: 0.9
 regSchdr:
     type: StepValue
     params:
@@ -47,7 +47,7 @@ tempSchdr:
     params:
         maxValue: 1.
         minValue: 0.1
-        totalStep: 800
+        totalStep: 2000
 # regSchdr:
 #     type: Cosine
 #     params:
