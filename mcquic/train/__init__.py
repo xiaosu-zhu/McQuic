@@ -1,4 +1,5 @@
-from typing import Tuple
+from typing import Tuple, Union
+import os
 
 import torch
 from torch import nn
@@ -26,8 +27,8 @@ def modelFn(channel, m, k, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
 
     return compressor, criterion
 
-def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, continueTrain: bool, debug: bool):
-    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=continueTrain, disable=rank != 0)
+def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: Union[str, None], debug: bool):
+    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=resume is not None, disable=rank != 0)
 
     saver.info("Here is the whole config during this run: \r\n%s", summary(config))
 
@@ -42,7 +43,7 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, co
 
     trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver)
 
-    if continueTrain:
+    if resume is not None and os.path.exists(resume) and resume.endswith("ckpt"):
         trainer.restoreStates(torch.load(saver.SavePath, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint])
 
     trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize, logger=saver)

@@ -62,7 +62,7 @@ class BaseQuantizer(nn.Module):
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.05):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.01):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
@@ -162,8 +162,11 @@ class _multiCodebookQuantization(nn.Module):
         logit = self._logit(x) * self._logTemperature.exp()[:, None, None, :]
 
         # add random mask to pick a different index.
-        # permutation = torch.rand_like(logit) < self._permutationRate
-        # logit.masked_fill_(permutation, 1e9)
+        # [n, m, h, w]
+        needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate
+        # target will set to zero (one of k) but don't break gradient
+        mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
+        logit[needPerm] -= mask.detach()
 
         posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]

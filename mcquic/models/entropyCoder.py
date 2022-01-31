@@ -44,7 +44,8 @@ class EntropyCoder(nn.Module):
                 for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
                     self._freqEMA[lv][m] -= self._decay * (self._freqEMA[lv][m] - torch.bincount(codeAtM.flatten(), minlength=len(self._freq[lv][m])))
                     # normalize and round to integer
-                    self._freq[lv][m] = ((self._freqEMA[lv][m] / self._freqEMA[lv][m].sum()) * self._k[lv] * 10).round().long()
+                    # precision: 16 bits
+                    self._freq[lv][m] = (self._freqEMA[lv][m] / self._freqEMA[lv][m].sum() * 65536).round().long()
 
     @contextmanager
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
