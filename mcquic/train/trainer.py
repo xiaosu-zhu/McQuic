@@ -260,9 +260,6 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
-        # self.saver.info("Before training starts, we need to collect necessary info.")
-        # self.count()
-
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
         self.saver.info("See you at `%s`", self.saver.TensorboardURL)
 
@@ -297,14 +294,6 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Epoch:4d}]")
         super()._epochStart(hook, *args, **kwArgs)
 
-    @torch.inference_mode()
-    def count(self):
-        self.saver.debug("Make statistics on the whole training set to get CDF for entropy coder.")
-        self._model.Compressor.clearFreq()
-        refLoader = getTrainingRefLoader(self.config.Dataset, self.config.BatchSize)
-        # codeUsage = self.validator.count(self._epoch, self._model.Compressor, refLoader, self.progress)
-        self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
-
     def refresh(self, *_, **__):
         reAssignProportion = super().refresh()
         self.saver.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=self._step)
@@ -321,6 +310,7 @@ class MainTrainer(_baseTrainer):
             self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
+        self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
         self.saver.debug("Append visualizations at %d steps.", self._step)
 
@@ -349,8 +339,6 @@ class MainTrainer(_baseTrainer):
         self.saver.debug("Start test at epoch %4d.", self._epoch)
 
         self._model.eval()
-
-        # self.count()
 
         self._model.train()
 
