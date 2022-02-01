@@ -36,9 +36,6 @@ class BaseCompressor(nn.Module):
     def syncCodebook(self):
         return self._quantizer.syncCodebook()
 
-    def clearFreq(self):
-        return self._quantizer.clearFreq()
-
     def readyForCoding(self):
         return self._quantizer.readyForCoding()
 

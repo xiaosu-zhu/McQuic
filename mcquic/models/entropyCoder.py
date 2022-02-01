@@ -5,7 +5,6 @@ import torch
 from torch import nn
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
-from vlutils.base.restorable import Restorable
 
 from mcquic.utils.specification import CodeSize
 
@@ -13,44 +12,31 @@ from mcquic.utils.specification import CodeSize
 class EntropyCoder(nn.Module):
     def __init__(self, m: int, k: List[int], ema: float = 0.9):
         super().__init__()
-
         self.encooder = ans.RansEncoder()
         self.decoder = ans.RansDecoder()
-
-        self._freq = nn.ParameterList(nn.Parameter(torch.zeros(m, ki, dtype=torch.long), requires_grad=False) for ki in k)
         # initial value is uniform
         self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
         self._k = k
-
         self._decay = 1 - ema
-
-    def clearFreq(self):
-        self._freq = list(torch.zeros_like(x) for x in self._freq)
 
     @torch.no_grad()
     def updateFreq(self, codes: List[torch.Tensor], hard: bool = True):
-        if hard:
-            # Direct accumulate freq
-            # [n, m, h, w]
-            for lv, code in enumerate(codes):
-                # [n, h, w]
-                for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
-                    self._freq[lv][m] += torch.bincount(codeAtM.flatten(), minlength=len(self._freq[lv][m]))
-        else:
-            # Update freq by EMA
-            # [n, m, h, w]
-            for lv, code in enumerate(codes):
-                # [n, h, w]
-                for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
-                    self._freqEMA[lv][m] -= self._decay * (self._freqEMA[lv][m] - torch.bincount(codeAtM.flatten(), minlength=len(self._freq[lv][m])))
-                    # normalize and round to integer
-                    # precision: 16 bits
-                    self._freq[lv][m] = (self._freqEMA[lv][m] / self._freqEMA[lv][m].sum() * 65536).round().long()
+        # Update freq by EMA
+        # [n, m, h, w]
+        for lv, code in enumerate(codes):
+            # [n, h, w]
+            for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
+                count = torch.bincount(codeAtM.flatten(), minlength=len(self._freqEMA[lv][m]))
+                # up trigger don't perform EMA
+                rmsMask = count > self._freqEMA[lv][m]
+                ema = self._decay * count + (1 - self._decay) * self._freqEMA[lv][m]
+                combined = count * rmsMask + ema * ~rmsMask
+                self._freqEMA[lv][m].copy_(combined)
 
     @contextmanager
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
         cdfs = list()
-        for freq in self._freq:
+        for freq in self.Freq:
             cdfAtLv = list()
             for freqAtM in freq:
                 total = freqAtM.sum()
@@ -68,7 +54,14 @@ class EntropyCoder(nn.Module):
 
     @property
     def Freq(self):
-        return self._freq
+        """Yields list of `[m, k]` tensors.
+
+        Yields:
+            torch.Tensor: `[m, k]` tensor of level `l`.
+        """
+        for freqEMA in self._freqEMA:
+            # normalize with precision 16bits.
+            yield (freqEMA / freqEMA.sum(-1, keepdim=True) * 65536).round().long()
 
     def _checkShape(self, codes: List[torch.Tensor]):
         info = "Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...], which is a `level` length list. each code has shape [n, m, h, w]. "

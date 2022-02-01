@@ -25,12 +25,6 @@ class _composed(Module):
     def readyForCoding(self):
         return self._compressor.readyForCoding()
 
-    # def count(self, x: Tensor):
-    #     return self._compressor.count(x)
-
-    def clearFreq(self):
-        self._compressor.clearFreq()
-
     @property
     def Freq(self):
         return self._compressor._quantizer._entropyCoder.Freq
