@@ -5,9 +5,8 @@ import torch
 from torch import nn
 import torch.distributed as dist
 import torch.nn.functional as F
-from torch.distributions import OneHotCategoricalStraightThrough
 
-from mcquic.nn import NonNegativeParametrizer, conv1x1
+from mcquic.nn import conv1x1
 from mcquic.models.entropyCoder import EntropyCoder
 from mcquic.utils.specification import CodeSize
 
@@ -69,8 +68,6 @@ class _multiCodebookQuantization(nn.Module):
         self._wC = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(self._m, self._d, self._d)))
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
-        # self._logExpMinusOne = LogExpMinusOne()
-        self._zeroBound = NonNegativeParametrizer(1e-6)
         self._logTemperature = nn.Parameter(torch.zeros((self._m, self._k)))
         self._permutationRate = permutationRate
 
@@ -110,6 +107,7 @@ class _multiCodebookQuantization(nn.Module):
     def _codebookMapped(self) -> torch.Tensor:
         return torch.einsum("mkd,mcd->mkc", self._codebook, self._wC)
 
+    # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def _distance(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
         # [n, m, d, h, w]
@@ -126,30 +124,6 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, h, w, k]
         return distance.permute(0, 1, 3, 4, 2)
 
-        # [n, m, d, h, w] -> [m, n, h, w, d]
-        x = x.reshape(n, self._m, self._d, h, w).permute(1, 0, 3, 4, 2)
-
-        # [m, n, h, w, 1]
-        x2 = (x ** 2).sum(-1, keepdim=True)
-        # [m, k]
-        c2 = (self._codebook ** 2).sum(-1)
-        distances = list()
-        for m in range(len(self._codebook)):
-            # [n, h, w, d]
-            xm = x[m]
-            # [k, d]
-            cm = self._codebook[m]
-            # [n, h, w, k]
-            inter = xm @ cm.T
-            # [n, h, w, 1] + [k] - 2 * [n, h, w, k]
-            distance = x2[m] + c2[m] - 2 * inter
-            distances.append(distance)
-
-        # m * [n, h, w, k] -> [n, m, h, w, k]
-        distance = torch.stack(distances, 1)
-        # [n, m, h, w, k]
-        return distance
-
     def _logit(self, x: torch.Tensor) -> torch.Tensor:
         # ensure > 0
         # distance = self._distanceBound(self._distance(self._preProcess(x)).exp() - 1)
@@ -163,14 +137,15 @@ class _multiCodebookQuantization(nn.Module):
 
         # add random mask to pick a different index.
         # [n, m, h, w]
-        needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate
+        # needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate * temperature
         # target will set to zero (one of k) but don't break gradient
-        mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
-        logit[needPerm] -= mask.detach()
+        # mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
+        # logit[needPerm] -= mask.detach()
 
-        posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
+        # NOTE: STE: code usage is very low; RelaxedOneHotCat: Doesn't have STE trick
+        # So reverse back to F.gumbel_softmax
         # [n, m, h, w, k]
-        sampled = posterior.rsample(())
+        sampled = F.gumbel_softmax(logit, temperature, True)
         return sampled, logit
 
     def forward(self, x: torch.Tensor, temperature: float):
