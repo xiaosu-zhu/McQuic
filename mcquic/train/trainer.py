@@ -302,7 +302,7 @@ class MainTrainer(_baseTrainer):
     def log(self, *_, images, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
-        self.saver.add_histogram("Stat/Logit", logits[0][0, 0], global_step=self._step)
+        self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log(), global_step=self._step)
         freq = self._model.Compressor.Freq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):

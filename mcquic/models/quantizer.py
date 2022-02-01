@@ -30,9 +30,6 @@ class BaseQuantizer(nn.Module):
     def readyForCoding(self):
         return self._entropyCoder.readyForCoding()
 
-    def clearFreq(self):
-        return self._entropyCoder.clearFreq()
-
     def reAssignCodebook(self) -> float:
         raise NotImplementedError
 
