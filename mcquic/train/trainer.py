@@ -141,7 +141,7 @@ class _baseTrainer(Restorable):
 
         hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
 
-        if self._epoch % self.config.TestFreq == 0:
+        if self._epoch % self.config.ValFreq == 0:
             self.refresh()
 
     @torch.inference_mode()
