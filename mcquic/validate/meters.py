@@ -70,6 +70,10 @@ class Visualization(Handler):
         return restored.detach()
 
     @property
+    def ShowInSummary(self) -> bool:
+        return False
+
+    @property
     def Result(self):
         # percentage of usage of all codes
         return self._temp
