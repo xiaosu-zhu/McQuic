@@ -4,6 +4,7 @@ from typing import Callable, Dict, Iterable, List, Tuple, Union
 import torch
 from torch import nn
 import torch.distributed as dist
+from torch.distributions import OneHotCategoricalStraightThrough
 import torch.nn.functional as F
 
 from mcquic.nn import conv1x1
@@ -62,7 +63,6 @@ class _multiCodebookQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
-        self._wC = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(self._m, self._d, self._d)))
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
         self._logTemperature = nn.Parameter(torch.zeros((self._m, self._k)))
@@ -101,9 +101,6 @@ class _multiCodebookQuantization(nn.Module):
         #      [n, m, h, w]
         return code
 
-    def _codebookMapped(self) -> torch.Tensor:
-        return torch.einsum("mkd,mcd->mkc", self._codebook, self._wC)
-
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def _distance(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
@@ -115,7 +112,7 @@ class _multiCodebookQuantization(nn.Module):
         # [m, k, 1, 1]
         c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
         # [n, m, d, h, w] * [m, k, d] -sum-> [n, m, k, h, w]
-        inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebookMapped())
+        inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebook)
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
         # [n, m, h, w, k]
@@ -141,8 +138,9 @@ class _multiCodebookQuantization(nn.Module):
 
         # NOTE: STE: code usage is very low; RelaxedOneHotCat: Doesn't have STE trick
         # So reverse back to F.gumbel_softmax
+        posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]
-        sampled = F.gumbel_softmax(logit, temperature, True)
+        sampled = posterior.rsample(())
         return sampled, logit
 
     def forward(self, x: torch.Tensor, temperature: float):
@@ -159,10 +157,6 @@ class _multiCodebookDeQuantization(nn.Module):
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
         self._postProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
-        self._wC = nn.Parameter(torch.nn.init.kaiming_normal_(torch.empty(self._m, self._d, self._d)))
-
-    def _codebookMapped(self) -> torch.Tensor:
-        return torch.einsum("mkd,mcd->mkc", self._codebook, self._wC)
 
     def decode(self, code: torch.Tensor):
         # codes: [n, m, h, w]
@@ -172,7 +166,7 @@ class _multiCodebookDeQuantization(nn.Module):
         # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
         ix = torch.arange(self._m, device=code.device).expand_as(code)
         # [n, h, w, m, d]
-        indexed = self._codebookMapped()[ix, code]
+        indexed = self._codebook[ix, code]
         # [n, c, h, w]
         return self._postProcess(indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2))
         # n, m, h, w = code.shape
@@ -184,7 +178,7 @@ class _multiCodebookDeQuantization(nn.Module):
     def forward(self, sample: torch.Tensor):
         n, m, h, w, k = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
-        return self._postProcess(torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebookMapped()).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w))
+        return self._postProcess(torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w))
 
         quantizeds = list()
         for i in range(len(self._codebook)):

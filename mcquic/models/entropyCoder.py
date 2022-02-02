@@ -142,4 +142,4 @@ class EntropyCoder(nn.Module):
                 # [m, h, w]
                 code = torch.tensor(restored).reshape(codeSize.m, h, w)
                 codes[lv].append(code)
-        return [torch.stack(c, 0).to(self._freq[0].device) for c in codes]
+        return [torch.stack(c, 0).to(self._freqEMA[0].device) for c in codes]
