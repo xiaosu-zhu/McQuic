@@ -9,7 +9,7 @@ from mcquic.config import Config
 
 from mcquic.utils.vision import DeTransform
 from mcquic.validate.meters import MsSSIM, PSNR, BPP, UniqueCodes, Visualization
-from mcquic.models.compressor import BaseCompressor
+from mcquic.modules.compressor import BaseCompressor
 
 
 class Validator:

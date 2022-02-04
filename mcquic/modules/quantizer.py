@@ -8,7 +8,7 @@ from torch.distributions import OneHotCategoricalStraightThrough
 import torch.nn.functional as F
 
 from mcquic.nn import conv1x1
-from mcquic.models.entropyCoder import EntropyCoder
+from mcquic.modules.entropyCoder import EntropyCoder
 from mcquic.utils.specification import CodeSize
 
 
@@ -59,7 +59,7 @@ class BaseQuantizer(nn.Module):
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.01):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
@@ -125,26 +125,27 @@ class _multiCodebookQuantization(nn.Module):
         logit = -1 * self._distance(self._preProcess(x))
         return logit
 
-    def _sample(self, x: torch.Tensor, temperature: float):
+    def _sample(self, x: torch.Tensor, temperature: float, rateScale: float):
         # [n, m, h, w, k] * [m, 1, 1, k]
         logit = self._logit(x) * self._logTemperature.exp()[:, None, None, :]
 
         # add random mask to pick a different index.
         # [n, m, h, w]
-        # needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate * temperature
+        needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate * rateScale
         # target will set to zero (one of k) but don't break gradient
-        # mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
-        # logit[needPerm] -= mask.detach()
+        mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
+        logit[needPerm] -= mask.detach()
 
         # NOTE: STE: code usage is very low; RelaxedOneHotCat: Doesn't have STE trick
         # So reverse back to F.gumbel_softmax
-        posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
+        # posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]
-        sampled = posterior.rsample(())
+        # sampled = posterior.rsample(())
+        sampled = F.gumbel_softmax(logit, temperature, True)
         return sampled, logit
 
-    def forward(self, x: torch.Tensor, temperature: float):
-        sample, logit = self._sample(x, temperature)
+    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
+        sample, logit = self._sample(x, temperature, rateScale)
         # [n, m, h, w]
         code = logit.argmax(-1)
         #      [n, m, h, w, k]
@@ -169,26 +170,12 @@ class _multiCodebookDeQuantization(nn.Module):
         indexed = self._codebook[ix, code]
         # [n, c, h, w]
         return self._postProcess(indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2))
-        # n, m, h, w = code.shape
-        # # [n, m, h, w, k]
-        # oneHot = F.one_hot(code, self._k)
-        # # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d]
-        # return (oneHot[..., None] * self._codebook[:, None, None, ...]).sum(-2)
 
+    # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def forward(self, sample: torch.Tensor):
         n, m, h, w, k = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
         return self._postProcess(torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w))
-
-        quantizeds = list()
-        for i in range(len(self._codebook)):
-            # [n, h, w, k]
-            oneHot = sample[:, i]
-            # [n, h, w, k] @ [k, d] -> [n, h, w, d]
-            quantized = oneHot @ self._codebook[i]
-            quantizeds.append(quantized)
-        # m * [n, h, w, d] -> [n, h, w, c] -> [n, c, h, w]
-        return torch.cat(quantizeds, -1).permute(0, 3, 1, 2)
 
 
 class _quantizerEncoder(nn.Module):
@@ -230,10 +217,10 @@ class _quantizerEncoder(nn.Module):
         #      ↓ residual,                         [n, m, h, w]
         return z - self._dequantizer.decode(code), code
 
-    def forward(self, x: torch.Tensor, temperature: float):
+    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
-        q, code, logit = self._quantizer(self._quantizationHead(z), temperature)
+        q, code, logit = self._quantizer(self._quantizationHead(z), temperature, rateScale)
         if self._latentHead is None:
             return q, None, code, logit
         z = self._latentHead(z)
@@ -341,13 +328,13 @@ class UMGMQuantizer(BaseQuantizer):
         for encoder in self._encoders:
             encoder.syncCodebook()
 
-    def forward(self, x: torch.Tensor, temperature: float):
+    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         quantizeds = list()
         codes = list()
         logits = list()
         for encoder in self._encoders:
             #          ↓ residual
-            quantized, x, code, logit = encoder(x, temperature)
+            quantized, x, code, logit = encoder(x, temperature, rateScale)
             quantizeds.append(quantized)
             codes.append(code)
             logits.append(logit)

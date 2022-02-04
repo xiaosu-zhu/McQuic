@@ -9,7 +9,7 @@ import torch.optim
 from vlutils.config import summary
 
 from mcquic import Config, Consts
-from mcquic.models.compressor import BaseCompressor, Compressor
+from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.loss import CompressionLossBig
 from mcquic.utils.helper import getSaver, initializeBaseConfigs
 from mcquic.datasets import getTrainLoader, getTestLoader, getValLoader
@@ -41,7 +41,7 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, re
 
     saver.info("Here is the whole config during this run: \r\n%s", summary(config))
 
-    saver.debug("Creating the world···")
+    saver.debug("Creating the world...")
 
     initializeBaseConfigs(port, rank, worldSize, logger=saver)
     saver.debug("Base configs initialized.")

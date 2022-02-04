@@ -2,6 +2,7 @@ from re import I
 from typing import Optional, Any, Union, Sequence
 
 from torch import device, Tensor
+import torch
 from torch.nn import Module
 from torch.nn.parallel import DistributedDataParallel
 
@@ -17,8 +18,8 @@ class _composed(Module):
         self._compressor = compressor
         self._criterion = criterion
 
-    def forward(self, x: Tensor, temperature: float):
-        xHat, yHat, codes, logits = self._compressor(x, temperature)
+    def forward(self, x: Tensor, temperature: float, rateScale: float):
+        xHat, yHat, codes, logits = self._compressor(x, temperature, rateScale)
         rate, distortion = self._criterion(x, xHat, codes, logits)
         return xHat, (rate, distortion), codes, logits
 

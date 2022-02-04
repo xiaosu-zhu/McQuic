@@ -6,8 +6,8 @@ from torch import nn
 from torch.functional import Tensor
 import torch.nn.functional as F
 
-from mcquic.models.deprecated.encoder import BaseEncoder5x5, Director, Director5x5, DownSampler, DownSampler5x5, EncoderHead, EncoderHead5x5, ResidualBaseEncoder
-from mcquic.models.deprecated.decoder import BaseDecoder5x5, ResidualBaseDecoder, UpSampler, UpSampler5x5
+from mcquic.modules.deprecated.encoder import BaseEncoder5x5, Director, Director5x5, DownSampler, DownSampler5x5, EncoderHead, EncoderHead5x5, ResidualBaseEncoder
+from mcquic.modules.deprecated.decoder import BaseDecoder5x5, ResidualBaseDecoder, UpSampler, UpSampler5x5
 
 
 

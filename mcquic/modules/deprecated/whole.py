@@ -5,8 +5,8 @@ import torch
 import storch
 
 from mcquic.loss.quantization import CodebookSpreading, CompressionLoss, CompressionLossBig, CompressionLossNew, CompressionLossQ, L1L2Loss, L2Regularization, MeanAligning, QError, Regularization
-from mcquic.models.compressor import PQCompressorBig, PQCompressor5x5
-from mcquic.models.deprecated.pixelCNN import PixelCNN
+from mcquic.modules.compressor import PQCompressorBig, PQCompressor5x5
+from mcquic.modules.deprecated.pixelCNN import PixelCNN
 
 
 class WholePQBig(nn.Module):

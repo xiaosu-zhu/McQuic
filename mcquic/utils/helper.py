@@ -3,6 +3,7 @@ from typing import Any, List, Tuple, Union, Dict
 import os
 
 from rich.progress import BarColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich import filesize
 import torch
 from torch import nn
 import torch.distributed as dist
@@ -64,10 +65,10 @@ def nop(*_, **__):
 
 def checkHook(function, name, logger=logging):
     if function is None:
-        logger.debug("No \"%s\".", name)
+        logger.debug("No <%s>.", name)
         return nop
     fullName = functionFullName(function)
-    logger.debug("\"%s\" is `%s`.", name, fullName)
+    logger.debug("<%s> is `%s`.", name, fullName)
     return function
 
 
@@ -75,3 +76,9 @@ class EpochFrequencyHook(FrequecyHook):
     def __call__(self, step: int, epoch: int, *args: Any, **kwArgs: Any) -> Dict[int, Any]:
         with torch.inference_mode():
             return super().__call__(epoch, step, epoch, *args, **kwArgs)
+
+
+def totalParameters(model: nn.Module) -> str:
+    allParams = sum(p.numel() for p in model.parameters())
+    unit, suffix = filesize.pick_unit_and_suffix(allParams, ["", "k", "M", "B"], 1000)
+    return f"{(allParams / unit):.4f}{suffix}"

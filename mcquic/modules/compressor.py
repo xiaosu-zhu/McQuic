@@ -5,6 +5,8 @@ from torch import nn
 from mcquic import Consts
 from mcquic.nn import pixelShuffle3x3
 from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
+from mcquic.nn.blocks import AttentionBlock
+from mcquic.nn.convs import conv3x3
 from mcquic.utils.specification import FileHeader, ImageSize
 
 from .quantizer import BaseQuantizer, L2Quantizer, UMGMQuantizer
@@ -19,10 +21,10 @@ class BaseCompressor(nn.Module):
         self._decoder = decoder
         self._quantizer = quantizer
 
-    def forward(self, x: torch.Tensor, temperature: float):
+    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         y = self._encoder(x)
         # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-        yHat, codes, logits = self._quantizer(y, temperature)
+        yHat, codes, logits = self._quantizer(y, temperature, rateScale)
         xHat = self._decoder(yHat)
         return xHat, yHat, codes, logits
 
@@ -65,50 +67,54 @@ class Compressor(BaseCompressor):
     def __init__(self, channel: int, m: int, k: List[int]):
         encoder = nn.Sequential(
             # convs.conv3x3(3, channel),
-            ResidualBlockWithStride(3, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockWithStride(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockWithStride(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m)
+            ResidualBlockWithStride(3, channel, groups=1),
+            ResidualBlock(channel, channel, groups=1),
+            ResidualBlockWithStride(channel, channel, groups=1),
+            AttentionBlock(channel, groups=1),
+            ResidualBlockWithStride(channel, channel, groups=1),
+            ResidualBlock(channel, channel, groups=1)
         )
         decoder = nn.Sequential(
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockShuffle(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            ResidualBlockShuffle(channel, channel, groups=m),
-            ResidualBlock(channel, channel, groups=m),
-            # ResidualBlockShuffle(channel, channel, groups=m),
-            # ResidualBlock(channel, channel, groups=m),
+            ResidualBlock(channel, channel, groups=1),
+            ResidualBlockShuffle(channel, channel, groups=1),
+            AttentionBlock(channel, groups=1),
+            ResidualBlockShuffle(channel, channel, groups=1),
+            ResidualBlock(channel, channel, groups=1),
+            # ResidualBlockShuffle(channel, channel, groups=1),
+            # ResidualBlock(channel, channel, groups=1),
             # convs.conv1x1(channel, 3),
             pixelShuffle3x3(channel, 3, 2)
         )
         quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(
-                ResidualBlockWithStride(channel, channel, groups=m),
-                # GroupSwishConv2D(channel, 3, groups=m),
-                ResidualBlock(channel, channel, groups=m),
+                ResidualBlockWithStride(channel, channel, groups=1),
+                # GroupSwishConv2D(channel, 3, groups=1),
+                AttentionBlock(channel, groups=1)
             ),
             "quantizationHead": lambda: nn.Sequential(
-                ResidualBlock(channel, channel, groups=m),
-                # convs.conv1x1(channel, channel, groups=m)
-                # GroupSwishConv2D(channel, channel, groups=m)
+                ResidualBlock(channel, channel, groups=1),
+                conv3x3(channel, channel)
+                # convs.conv1x1(channel, channel, groups=1)
+                # GroupSwishConv2D(channel, channel, groups=1)
             ),
             "latentHead": lambda: nn.Sequential(
-                ResidualBlock(channel, channel, groups=m),
-                # convs.conv1x1(channel, channel, groups=m)
+                ResidualBlock(channel, channel, groups=1),
+                conv3x3(channel, channel)
+                # convs.conv1x1(channel, channel, groups=1)
             ),
             "dequantizationHead": lambda: nn.Sequential(
-                # convs.conv1x1(channel, channel, groups=m),
-                ResidualBlock(channel, channel, groups=m),
+                # convs.conv1x1(channel, channel, groups=1),
+                conv3x3(channel, channel),
+                ResidualBlock(channel, channel, groups=1),
             ),
             "sideHead": lambda: nn.Sequential(
-                # convs.conv1x1(channel, channel, groups=m),
-                ResidualBlock(channel, channel, groups=m),
+                # convs.conv1x1(channel, channel, groups=1),
+                conv3x3(channel, channel),
+                ResidualBlock(channel, channel, groups=1),
             ),
             "restoreHead": lambda: nn.Sequential(
-                ResidualBlock(channel, channel, groups=m),
-                ResidualBlockShuffle(channel, channel, groups=m)
+                AttentionBlock(channel, groups=1),
+                ResidualBlockShuffle(channel, channel, groups=1)
             ),
         })
         super().__init__(encoder, decoder, quantizer)
