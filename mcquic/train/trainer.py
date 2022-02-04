@@ -21,11 +21,11 @@ from mcquic.consts import Consts
 from mcquic.datasets import getTrainingRefLoader
 from mcquic.datasets.prefetcher import Prefetcher
 from mcquic.evaluation.metrics import Decibel
-from mcquic.models.composed import Composed
+from mcquic.modules.composed import Composed
 from mcquic import Config
-from mcquic.models.compressor import BaseCompressor
+from mcquic.modules.compressor import BaseCompressor
 from mcquic.train.valueTuners import ValueTuner
-from mcquic.utils.helper import EMATracker, EpochFrequencyHook, checkHook, getRichProgress
+from mcquic.utils.helper import EMATracker, EpochFrequencyHook, checkHook, getRichProgress, totalParameters
 from mcquic.validate import Validator
 
 
@@ -40,43 +40,45 @@ class _baseTrainer(Restorable):
         torch.cuda.set_device(self.rank)
         self.config = config
 
-        self.saver.debug("Creating model...")
+        self._epoch = 0
+        self._step = 0
+
+        self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, criterion = trackingFunctionCalls(modelFn, self.saver)()
         self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
-        self.saver.debug("Model created.")
+        self.saver.debug("[%s] Model created.", self.PrettyStep)
+        self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
-        self.saver.debug("Creating optimizer...")
+        self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
         self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
         self.optimFn = optimizer
-        self.saver.debug("Optimizer created.")
+        self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
-        self.saver.debug("Creating LR scheduler...")
+        self.saver.debug("[%s] Creating LR scheduler...", self.PrettyStep)
         scheduler = trackingFunctionCalls(scheduler, self.saver)
         self._scheduler = scheduler(self._optimizer, **self.config.Schdr.params)
         self.schdrFn = scheduler
-        self.saver.debug("LR scheduler created.")
+        self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
-        self.saver.debug("Creating value tuner...")
+        self.saver.debug("[%s] Creating value tuner...", self.PrettyStep)
         self._regularizationTuner = trackingFunctionCalls(valueTuners[0], self.saver)(**self.config.RegSchdr.params)
         self._temperatureTuner = trackingFunctionCalls(valueTuners[1], self.saver)(**self.config.TempSchdr.params)
-        self.saver.debug("Value tuner created.")
+        self.saver.debug("[%s] Value tuner created.", self.PrettyStep)
 
-        self._epoch = 0
-        self._step = 0
-        self.saver.debug("<%s> created.", self.__class__.__name__)
+        self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
     @property
     def PrettyStep(self):
-        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" steps", "k steps", "M steps"], 1000)
+        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" ", "k", "M"], 1000)
         return f"{(self._step // unit):3d}{suffix}"
 
     def restoreStates(self, path: str):
-        self.saver.debug("Restored state dict from `%s`", path)
+        self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
         self.saver.load(path, {"cuda:0": f"cuda:{self.rank}"}, logger=self.saver, **{Consts.Fingerprint: self})
 
-        self.saver.debug("Restore network parameters finished.")
+        self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
         self.resetOptimizer()
         for group in self._optimizer.param_groups:
@@ -87,32 +89,32 @@ class _baseTrainer(Restorable):
         self._regularizationTuner._epoch = self._epoch
         self._temperatureTuner._epoch = self._epoch
 
-        self.saver.debug("Value tuner reset.")
+        self.saver.debug("[%s] Value tuner reset.", self.PrettyStep)
 
     def resetOptimizer(self):
         del self._optimizer
         self._optimizer = self.optimFn(self._model.parameters(), **self.config.Optim.params)
 
-        self.saver.debug("Optimizer reset.")
+        self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
         self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Schdr.params)
 
-        self.saver.debug("LR scheduler reset.")
+        self.saver.debug("[%s] LR scheduler reset.", self.PrettyStep)
 
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
         if self._step > 0:
-            self.saver.info("Resume training at %s/%d epochs.", self.PrettyStep, self._epoch)
+            self.saver.info("[%s] Resume training at %ssteps/%d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
         else:
-            self.saver.info("Start training.")
+            self.saver.info("[%s] Start training.", self.PrettyStep)
 
-        self.saver.debug("Training loop started.")
+        self.saver.debug("[%s] Training loop started.", self.PrettyStep)
 
     def _afterRun(self, hook, *args, **kwArgs):
         hook(self._step, self._epoch, *args, **kwArgs)
-        self.saver.debug("Training loop finished.")
+        self.saver.debug("[%s] Training loop finished.", self.PrettyStep)
 
     def _stepStart(self, hook, *args, **kwArgs):
         hook(self._step, self._epoch, *args, **kwArgs)
@@ -125,36 +127,36 @@ class _baseTrainer(Restorable):
         trainSampler.set_epoch(self._epoch)
         hook(self._step, self._epoch, *args, trainSampler, **kwArgs)
 
-        self.saver.debug("Epoch %4d started.", self._epoch + 1)
+        self.saver.debug("[%s] Epoch %4d started.", self.PrettyStep, self._epoch + 1)
 
     def _epochFinish(self, hook, *args, trainSet, **kwArgs):
         self._epoch += 1
 
-        self.saver.debug("Epoch %4d finished.", self._epoch)
+        self.saver.debug("[%s] Epoch %4d finished.", self.PrettyStep, self._epoch)
 
         self._scheduler.step()
-        self.saver.debug("Lr is set to %.2e.", self._scheduler.get_last_lr()[0])
+        self.saver.debug("[%s] Lr is set to %.2e.", self.PrettyStep, self._scheduler.get_last_lr()[0])
         self._regularizationTuner.step()
-        self.saver.debug("Reg is set to %.2e.", self._regularizationTuner.Value)
+        self.saver.debug("[%s] Reg is set to %.2e.", self.PrettyStep, self._regularizationTuner.Value)
         self._temperatureTuner.step()
-        self.saver.debug("Temperature is set to %.2e.", self._temperatureTuner.Value)
+        self.saver.debug("[%s] Temperature is set to %.2e.", self.PrettyStep, self._temperatureTuner.Value)
 
         hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
 
-        if self._epoch % self.config.ValFreq == 0:
+        if self._epoch % (self.config.TestFreq * 10) == 0:
             self.refresh()
 
     @torch.inference_mode()
     def refresh(self, *_, **__):
-        self.saver.debug("Start refresh at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] Start refresh at epoch %4d.", self.PrettyStep, self._epoch)
 
         self._model.eval()
         reAssignProportion = self._model.refresh(self.rank)
         self._model.train()
 
-        self.saver.debug("%.2f%% of codebook is re-assigned.", reAssignProportion * 100)
+        self.saver.debug("[%s] %.2f%% of codebook is re-assigned.", self.PrettyStep, reAssignProportion * 100)
 
-        self.saver.debug("End refresh at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] End refresh at epoch %4d.", self.PrettyStep, self._epoch)
         return reAssignProportion
 
     # def _reduceLoss(self, losses: Tuple[torch.Tensor]) -> torch.Tensor:
@@ -176,7 +178,7 @@ class _baseTrainer(Restorable):
                 self._stepStart(stepStartHook)
 
                 self._optimizer.zero_grad()
-                xHat, (rate, distortion), codes, logits = self._model(images, self._temperatureTuner.Value)
+                xHat, (rate, distortion), codes, logits = self._model(images, self._temperatureTuner.Value, self._regularizationTuner.Value)
                 # loss = self._reduceLoss(losses)
                 (rate + distortion).backward()
                 self._optimizer.step()
@@ -220,7 +222,7 @@ class MainTrainer(_baseTrainer):
 
     def _kill(self):
         sleep(Consts.TimeOut)
-        self.saver.critical("Timeout exceeds, killed.")
+        self.saver.critical("[%s] Timeout exceeds, killed.", self.PrettyStep)
         signal.raise_signal(signal.SIGKILL)
 
     # Handle SIGTERM when main process is terminated.
@@ -228,21 +230,21 @@ class MainTrainer(_baseTrainer):
     def _terminatedHandler(self, signum, frame):
         killer = threading.Thread(target=self._kill, daemon=True)
         killer.start()
-        self.saver.critical("Main process was interrupted, try to save necessary info.")
-        self.saver.critical("This post-process will be killed after %d secs if stuck.", Consts.TimeOut)
+        self.saver.critical("[%s] Main process was interrupted, try to save necessary info.", self.PrettyStep)
+        self.saver.critical("[%s] This post-process will be killed after %d secs if stuck.", self.PrettyStep, Consts.TimeOut)
         self.progress.__exit__(None, None, None)
         self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
         self.saver.save(**{Consts.Fingerprint: self})
-        self.saver.critical("Find the last checkpoint at `%s`", relativePath(self.saver.SavePath))
+        self.saver.critical("[%s] Find the last checkpoint at `%s`", self.PrettyStep, relativePath(self.saver.SavePath))
         self.summary()
-        self.saver.critical("QUIT.")
+        self.saver.critical("[%s] QUIT.", self.PrettyStep)
         # reset to default SIGTERM handler
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
         signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
-        self.saver.info("Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self._epoch, self.PrettyStep, self.bestDistortion)
-        self.saver.info("Test this model by `python -m mcquic.validate --path %s`.", relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
+        self.saver.info("[%s] Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestDistortion)
+        self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler,
@@ -262,7 +264,7 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.epochBar)
 
         super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
-        self.saver.info("See you at `%s`", self.saver.TensorboardURL)
+        self.saver.info("[%s] See you at `%s`", self.PrettyStep, self.saver.TensorboardURL)
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
@@ -313,10 +315,8 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
-        self.saver.debug("Append visualizations at %d steps.", self._step)
-
     def validate(self, *_, valLoader: DataLoader, **__):
-        self.saver.debug("Start validation at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] Start validation at epoch %4d.", self.PrettyStep, self._epoch)
 
         self._model.eval()
         results, summary = self.validator.validate(self._epoch, self._model.Compressor, valLoader, self.progress)
@@ -334,16 +334,16 @@ class MainTrainer(_baseTrainer):
         self.saver.info("[%4d] %s", self._epoch, summary)
         self._model.train()
 
-        self.saver.debug("End validation at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] End validation at epoch %4d.", self._epoch)
 
     def test(self, *_, testLoader: DataLoader, valLoader: DataLoader, **__):
-        self.saver.debug("Start test at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] Start test at epoch %4d.", self.PrettyStep, self._epoch)
 
         self._model.eval()
 
         self._model.train()
 
-        self.saver.debug("End test at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] End test at epoch %4d.", self.PrettyStep, self._epoch)
         return
         avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, testLoader)
 

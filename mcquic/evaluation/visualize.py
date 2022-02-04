@@ -16,7 +16,7 @@ import torchvision
 from sklearn.preprocessing import StandardScaler
 import umap
 
-from mcquic.models.compressor import PQCompressorBig
+from mcquic.modules.compressor import PQCompressorBig
 from mcquic.datasets import Basic
 from mcquic.utils.vision import getTestTransform
 from mcquic.utils.vision import DeTransform

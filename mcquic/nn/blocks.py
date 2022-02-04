@@ -87,7 +87,7 @@ class ResidualBlockWithStride(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | LeakyReLU |  |
+        | SiLU |  |
         | Conv3s2   |  |
         | GSDN      |  |
         | Conv3s1   |  |
@@ -115,7 +115,7 @@ class ResidualBlockWithStride(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.LeakyReLU(True),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
             GenSubDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
@@ -130,9 +130,8 @@ class ResidualBlockUnShuffle(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | LeakyReLU |  |
-        | Conv3s1   |  |
-        | PixUnShuf |  |
+        | SiLU |  |
+        | PixUnSf3  |  |
         | GSDN      |  |
         | Conv3s1   |  |
         | + <-------╯  |
@@ -153,7 +152,7 @@ class ResidualBlockUnShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.LeakyReLU(True),
+            nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
             GenSubDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
@@ -168,9 +167,8 @@ class ResidualBlockShuffle(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | LeakyReLU |  |
-        | Conv3s1   |  |
-        | PixShuf   |  |
+        | SiLU |  |
+        | PixShuf3  |  |
         | IGSDN     |  |
         | Conv3s1   |  |
         | + <-------╯  |
@@ -191,7 +189,7 @@ class ResidualBlockShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
-            nn.LeakyReLU(True),
+            nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
             InvGenSubDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
@@ -206,9 +204,9 @@ class ResidualBlock(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | LeakyReLU |  |
+        | SiLU |  |
         | Conv3s1   |  |
-        | LeakyReLU |  |
+        | SiLU |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -231,9 +229,9 @@ class ResidualBlock(_residulBlock):
         else:
             skip = None
         super().__init__(
-            nn.LeakyReLU(True),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels),
-            nn.LeakyReLU(True),
+            nn.SiLU(),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -301,41 +299,25 @@ class AttentionBlock(nn.Module):
         +----------------------+
     ```
     """
-    def __init__(self, N, groups=1):
+    def __init__(self, channel, groups=1):
         super().__init__()
+        self._mainBranch = nn.Sequential(
+            ResidualBlock(channel, channel, groups),
+            ResidualBlock(channel, channel, groups),
+            ResidualBlock(channel, channel, groups)
+        )
 
-        class _residualUnit(nn.Module):
-            """Simplified residual unit."""
-            def __init__(self):
-                super().__init__()
-                self.conv = nn.Sequential(
-                    conv1x1(N, N // 2, groups=groups),
-                    nn.ReLU(inplace=True),
-                    conv3x3(N // 2, N // 2, groups=groups),
-                    nn.ReLU(inplace=True),
-                    conv1x1(N // 2, N, groups=groups),
-                )
-                self.relu = nn.ReLU(inplace=True)
-            def forward(self, x):
-                identity = x
-                out = self.conv(x)
-                out += identity
-                out = self.relu(out)
-                return out
-
-        self.conv_a = nn.Sequential(_residualUnit(), _residualUnit(), _residualUnit())
-
-        self.conv_b = nn.Sequential(
-            _residualUnit(),
-            _residualUnit(),
-            _residualUnit(),
-            conv1x1(N, N, groups=groups),
+        self._sideBranch = nn.Sequential(
+            ResidualBlock(channel, channel, groups),
+            ResidualBlock(channel, channel, groups),
+            ResidualBlock(channel, channel, groups),
+            conv1x1(channel, channel)
         )
 
     def forward(self, x):
         identity = x
-        a = self.conv_a(x)
-        b = self.conv_b(x)
+        a = self._mainBranch(x)
+        b = self._sideBranch(x)
         mask = torch.sigmoid(b)
         out = a * mask
         out += identity

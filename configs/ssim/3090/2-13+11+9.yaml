@@ -7,7 +7,7 @@ wantsMore: false
 dataset: compression
 repeat: 1 # duplicate images in one epoch
 valDataset: clic/valid
-batchSize: 10
+batchSize: 8
 model:
     type: Big
     target: MsSSIM
@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 2.5e-3
+        lr: 1.e-3
         weight_decay: 0.0
         use_nvlamb: true
 # schdr:
@@ -37,11 +37,9 @@ schdr:
         warmup_steps: 20
         gamma: 0.9
 regSchdr:
-    type: StepValue
+    type: CosineValueWithEnd
     params:
-        initValue: 1.e-3
-        gamma: 0.993
-        stepInterval: 1
+        totalStep: 1500
 tempSchdr:
     type: CosineValue
     params:
