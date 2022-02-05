@@ -14,7 +14,7 @@ from mcquic.config import Config
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 
-from mcquic.evaluation.metrics import MsSSIM, psnr as validatePSNR
+from mcquic.validate.metrics import MsSSIM, psnr as validatePSNR
 
 def deTrans(image):
     eps = 1e-3

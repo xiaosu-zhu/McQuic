@@ -8,7 +8,7 @@ from rich.progress import Progress
 from mcquic.config import Config
 
 from mcquic.utils.vision import DeTransform
-from mcquic.validate.meters import MsSSIM, PSNR, BPP, UniqueCodes, Visualization
+from mcquic.validate.handlers import MsSSIM, PSNR, BPP, UniqueCodes, Visualization
 from mcquic.modules.compressor import BaseCompressor
 
 

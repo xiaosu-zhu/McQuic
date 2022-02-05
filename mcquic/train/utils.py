@@ -1,18 +1,18 @@
-import logging
-from typing import Any, List, Tuple, Union, Dict
+from typing import Any, Dict
 import os
-
-from rich.progress import BarColumn, TimeElapsedColumn, TimeRemainingColumn
-from rich import filesize
-import torch
-from torch import nn
-import torch.distributed as dist
+import logging
 import random
+
+import torch
+import torch.distributed as dist
 import numpy as np
 from vlutils.custom import RichProgress
 from vlutils.saver import Saver, DummySaver, StrPath
 from vlutils.runtime import functionFullName
-from vlutils.base.freqHook import FrequecyHook
+from vlutils.base import FrequecyHook
+from rich.progress import TimeElapsedColumn, BarColumn, TimeRemainingColumn
+
+from mcquic.utils import nop
 
 
 def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging):
@@ -45,23 +45,6 @@ def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str
 
 getSaver.__doc__ = Saver.__doc__
 
-class EMATracker(nn.Module):
-    def __init__(self, size: Union[torch.Size, List[int], Tuple[int, ...]], momentum: float = 0.9):
-        super().__init__()
-        self._shadow: torch.Tensor
-        self._decay = 1 - momentum
-        self.register_buffer("_shadow", torch.empty(size) * torch.nan)
-
-    def forward(self, x: torch.Tensor):
-        if torch.all(torch.isnan(self._shadow)):
-            self._shadow.copy_(x)
-            return self._shadow
-        self._shadow -= self._decay * (self._shadow - x)
-        return self._shadow
-
-
-def nop(*_, **__):
-    pass
 
 def checkHook(function, name, logger=logging):
     if function is None:
@@ -76,9 +59,3 @@ class EpochFrequencyHook(FrequecyHook):
     def __call__(self, step: int, epoch: int, *args: Any, **kwArgs: Any) -> Dict[int, Any]:
         with torch.inference_mode():
             return super().__call__(epoch, step, epoch, *args, **kwArgs)
-
-
-def totalParameters(model: nn.Module) -> str:
-    allParams = sum(p.numel() for p in model.parameters())
-    unit, suffix = filesize.pick_unit_and_suffix(allParams, ["", "k", "M", "B"], 1000)
-    return f"{(allParams / unit):.4f}{suffix}"
