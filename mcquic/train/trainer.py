@@ -20,14 +20,15 @@ from rich import filesize
 from mcquic.consts import Consts
 from mcquic.datasets import getTrainingRefLoader
 from mcquic.datasets.prefetcher import Prefetcher
-from mcquic.evaluation.metrics import Decibel
+from mcquic.validate.utils import Decibel, EMATracker
 from mcquic.modules.composed import Composed
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
 from mcquic.train.valueTuners import ValueTuner
-from mcquic.utils.helper import EMATracker, EpochFrequencyHook, checkHook, getRichProgress, totalParameters
 from mcquic.validate import Validator
+from mcquic.utils import totalParameters
 
+from .utils import EpochFrequencyHook, checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver, **_) -> None:
@@ -331,10 +332,10 @@ class MainTrainer(_baseTrainer):
             self.bestDistortion = results[self.config.Model.target]
             self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
-        self.saver.info("[%4d] %s", self._epoch, summary)
+        self.saver.info("[%s] %s", self.PrettyStep, summary)
         self._model.train()
 
-        self.saver.debug("[%s] End validation at epoch %4d.", self._epoch)
+        self.saver.debug("[%s] End validation at epoch %4d.", self.PrettyStep, self._epoch)
 
     def test(self, *_, testLoader: DataLoader, valLoader: DataLoader, **__):
         self.saver.debug("[%s] Start test at epoch %4d.", self.PrettyStep, self._epoch)

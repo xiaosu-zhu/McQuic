@@ -11,10 +11,10 @@ from vlutils.config import summary
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.loss import CompressionLossBig
-from mcquic.utils.helper import getSaver, initializeBaseConfigs
 from mcquic.datasets import getTrainLoader, getTestLoader, getValLoader
 from mcquic.utils.registry import OptimizerRegistry, ValueTunerRegistry, LrSchedulerRegistry
 
+from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
 from .lrSchedulers import *
 from .valueTuners import *

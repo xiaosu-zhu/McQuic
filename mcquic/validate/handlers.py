@@ -1,10 +1,11 @@
-from typing import List, Tuple, Any
-import itertools
+from typing import List, Tuple, Any, Union
 
 import torch
+from torch import nn
 from vlutils.metrics.meter import Handler
 
-from mcquic.evaluation.metrics import Decibel, MsSSIM as M, PSNR as P
+from .metrics import MsSSIM as M, PSNR as P
+from .utils import Decibel
 
 
 class MsSSIM(Handler):

@@ -12,7 +12,7 @@ import cv2
 
 import torch
 import torchvision
-from mcquic.evaluation.metrics import psnr, MsSSIM
+from mcquic.validate.metrics import psnr, MsSSIM
 
 
 FLAGS = flags.FLAGS

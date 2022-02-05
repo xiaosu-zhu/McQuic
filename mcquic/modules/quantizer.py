@@ -59,7 +59,7 @@ class BaseQuantizer(nn.Module):
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.01):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
@@ -131,10 +131,10 @@ class _multiCodebookQuantization(nn.Module):
 
         # add random mask to pick a different index.
         # [n, m, h, w]
-        needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate * rateScale
+        # needPerm = torch.rand_like(logit[..., 0]) < self._permutationRate * rateScale
         # target will set to zero (one of k) but don't break gradient
-        mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
-        logit[needPerm] -= mask.detach()
+        # mask = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=logit.device), num_classes=self._k).float() * logit[needPerm]
+        # logit[needPerm] -= mask.detach()
 
         # NOTE: STE: code usage is very low; RelaxedOneHotCat: Doesn't have STE trick
         # So reverse back to F.gumbel_softmax

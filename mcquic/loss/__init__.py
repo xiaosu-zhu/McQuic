@@ -3,7 +3,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from mcquic.evaluation.metrics import Decibel, MsSSIM
+from mcquic.validate.metrics import MsSSIM
 
 
 class L1L2Loss(nn.MSELoss):

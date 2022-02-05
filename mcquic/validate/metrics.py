@@ -270,12 +270,3 @@ class PSNR(nn.Module):
         mse = ((x.float() - y.float()) ** 2).mean(dim=(1, 2, 3))
         res = 10 * (self._upperBound / mse).log10()
         return res.mean() if self._average else res
-
-
-class Decibel(nn.Module):
-    def __init__(self, upperBound: float) -> None:
-        super().__init__()
-        self._upperBound = upperBound ** 2
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return -10 * (x / self._upperBound).log10()
