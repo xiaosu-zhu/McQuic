@@ -4,12 +4,13 @@ from typing import Callable, Dict, Iterable, List, Tuple, Union
 import torch
 from torch import nn
 import torch.distributed as dist
-from torch.distributions import OneHotCategoricalStraightThrough
 import torch.nn.functional as F
 
 from mcquic.nn import conv1x1
 from mcquic.modules.entropyCoder import EntropyCoder
+from mcquic.nn.base import LowerBound, gumbelArgmaxRandomPerturb
 from mcquic.utils.specification import CodeSize
+from mcquic import Consts
 
 
 class BaseQuantizer(nn.Module):
@@ -59,13 +60,14 @@ class BaseQuantizer(nn.Module):
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.01):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
-        self._logTemperature = nn.Parameter(torch.zeros((self._m, self._k)))
+        self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1)))
+        self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
 
     def reAssignCodebook(self, freq: torch.Tensor)-> float:
@@ -127,7 +129,7 @@ class _multiCodebookQuantization(nn.Module):
 
     def _sample(self, x: torch.Tensor, temperature: float, rateScale: float):
         # [n, m, h, w, k] * [m, 1, 1, k]
-        logit = self._logit(x) * self._logTemperature.exp()[:, None, None, :]
+        logit = self._logit(x) * self._bound(self._temperature)
 
         # add random mask to pick a different index.
         # [n, m, h, w]
@@ -141,7 +143,7 @@ class _multiCodebookQuantization(nn.Module):
         # posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]
         # sampled = posterior.rsample(())
-        sampled = F.gumbel_softmax(logit, temperature, True)
+        sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
         return sampled, logit
 
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
@@ -291,7 +293,7 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizationHead = dequantizationHeadFn()
             sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
-            codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(m, ki, channel // m)))
+            codebook = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(m, ki, channel // m), a=math.sqrt(5)))
             quantizer = _multiCodebookQuantization(codebook)
             dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))

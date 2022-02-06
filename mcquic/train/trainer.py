@@ -15,10 +15,10 @@ from vlutils.saver import Saver
 from vlutils.logger import trackingFunctionCalls
 from vlutils.base import Restorable
 from vlutils.runtime import relativePath
+from vlutils.config import serialize
 from rich import filesize
 
 from mcquic.consts import Consts
-from mcquic.datasets import getTrainingRefLoader
 from mcquic.datasets.prefetcher import Prefetcher
 from mcquic.validate.utils import Decibel, EMATracker
 from mcquic.modules.composed import Composed
@@ -49,6 +49,7 @@ class _baseTrainer(Restorable):
         self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
+        # self.saver.debug("[%s] BPP upper-bound: %s", self.PrettyStep, bppUpperBound(self.config.Model.m, self.config.Model.k))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
@@ -235,7 +236,7 @@ class MainTrainer(_baseTrainer):
         self.saver.critical("[%s] This post-process will be killed after %d secs if stuck.", self.PrettyStep, Consts.TimeOut)
         self.progress.__exit__(None, None, None)
         self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
-        self.saver.save(**{Consts.Fingerprint: self})
+        self.saver.save(**{Consts.Fingerprint: self, "config": serialize(self.config)})
         self.saver.critical("[%s] Find the last checkpoint at `%s`", self.PrettyStep, relativePath(self.saver.SavePath))
         self.summary()
         self.saver.critical("[%s] QUIT.", self.PrettyStep)
@@ -327,7 +328,7 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
         self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
 
-        self.saver.save(**{Consts.Fingerprint: self})
+        self.saver.save(**{Consts.Fingerprint: self, "config": serialize(self.config)})
         if results[self.config.Model.target] > self.bestDistortion:
             self.bestDistortion = results[self.config.Model.target]
             self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")

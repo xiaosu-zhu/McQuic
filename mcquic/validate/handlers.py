@@ -83,41 +83,56 @@ class Visualization(Handler):
         return "In Tensorboard."
 
 
-
-class UniqueCodes(Handler):
-    def __init__(self, k: List[int], *_):
-        super().__init__("%2d/%2d")
+class IdealBPP(Handler):
+    def __init__(self, k: List[int], format: str = r"%.4f"):
+        super().__init__(format)
 
         self._k = k
-        self.accumulated: List[torch.Tensor] = list(torch.zeros([k]) for k in self._k)
+        self.accumulated: List[torch.Tensor] = list(torch.zeros((k)) for k in self._k)
+        self.totalPixels = torch.zeros(())
+        self.totalCodes: List[torch.Tensor] = list(torch.zeros(()) for k in self._k)
 
     def reset(self):
         self.length = 0
-        self.accumulated: List[torch.Tensor] = list(torch.zeros([k]) for k in self._k)
+        self.accumulated = list(torch.zeros((k)) for k in self._k)
+        self.totalPixels = torch.zeros(())
+        self.totalCodes = list(torch.zeros(()) for k in self._k)
 
     def __call__(self, *args: Any, **kwds: Any):
-        results = self.handle(*args, **kwds)
+        results, pixels, codes = self.handle(*args, **kwds)
 
         # Only give stats of whole dataset
         self.length += 1
 
         for lv, unqiueCounts in enumerate(results):
             self.accumulated[lv] += unqiueCounts
+        self.totalPixels += pixels
+        for lv, codeCount in enumerate(codes):
+            self.totalCodes[lv] += codeCount
 
-    def handle(self, *, codes: List[torch.Tensor], **_) -> List[List[float]]:
-        allCounts = list()
+    def handle(self, *, codes: List[torch.Tensor], images: torch.ByteTensor, **_) -> Tuple[List[torch.Tensor], int, List[int]]:
+        allCounts: List[torch.Tensor] = list()
+        codesNum: List[int] = list()
         # [n, m, h, w]
         for code, k in zip(codes, self._k):
             # [n, h, w]
             count = torch.bincount(code[:, 0].flatten(), minlength=k).cpu()
             allCounts.append(count)
+            codesNum.append(code.numel())
         # lv * [each image's unique counts, only first group]
-        return allCounts
+        return allCounts, images.numel(), codesNum
 
     @property
     def Result(self) -> float:
+        totalBits = 0
+        for codeUsage, codeCount in zip(self.accumulated, self.totalCodes):
+            prob = codeUsage / codeUsage.sum()
+            estimateEntropy = prob.log2()
+            estimateEntropy[estimateEntropy == float("-inf")] = 0
+            estimateEntropy = -(prob * estimateEntropy).sum()
+            totalBits += float(estimateEntropy) * float(codeCount)
         # percentage of usage of all codes
-        return sum((float((acc > 0).sum()) / k) for acc, k in zip(self.accumulated, self._k)) / len(self._k)
+        return totalBits / float(self.totalPixels)
 
     def __str__(self) -> str:
-        return ", ".join(self._format % (sum(acc > 0), k) for (acc, k) in zip(self.accumulated, self._k))
+        return self._format % self.Result
