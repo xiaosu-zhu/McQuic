@@ -67,10 +67,11 @@ class Compressor(BaseCompressor):
     def __init__(self, channel: int, m: int, k: List[int]):
         encoder = nn.Sequential(
             # convs.conv3x3(3, channel),
-            ResidualBlockWithStride(3, channel, groups=1),
+            conv3x3(3, channel, 2),
             ResidualBlock(channel, channel, groups=1),
             ResidualBlockWithStride(channel, channel, groups=1),
             AttentionBlock(channel, groups=1),
+            ResidualBlock(channel, channel, groups=1),
             ResidualBlockWithStride(channel, channel, groups=1),
             ResidualBlock(channel, channel, groups=1)
         )
@@ -78,18 +79,17 @@ class Compressor(BaseCompressor):
             ResidualBlock(channel, channel, groups=1),
             ResidualBlockShuffle(channel, channel, groups=1),
             AttentionBlock(channel, groups=1),
+            ResidualBlock(channel, channel, groups=1),
             ResidualBlockShuffle(channel, channel, groups=1),
             ResidualBlock(channel, channel, groups=1),
-            # ResidualBlockShuffle(channel, channel, groups=1),
-            # ResidualBlock(channel, channel, groups=1),
-            # convs.conv1x1(channel, 3),
             pixelShuffle3x3(channel, 3, 2)
         )
         quantizer = UMGMQuantizer(channel, m, k, {
             "latentStageEncoder": lambda: nn.Sequential(
                 ResidualBlockWithStride(channel, channel, groups=1),
                 # GroupSwishConv2D(channel, 3, groups=1),
-                AttentionBlock(channel, groups=1)
+                AttentionBlock(channel, groups=1),
+                ResidualBlock(channel, channel, groups=1),
             ),
             "quantizationHead": lambda: nn.Sequential(
                 ResidualBlock(channel, channel, groups=1),
@@ -102,6 +102,11 @@ class Compressor(BaseCompressor):
                 conv3x3(channel, channel)
                 # convs.conv1x1(channel, channel, groups=1)
             ),
+            "restoreHead": lambda: nn.Sequential(
+                AttentionBlock(channel, groups=1),
+                ResidualBlock(channel, channel, groups=1),
+                ResidualBlockShuffle(channel, channel, groups=1)
+            ),
             "dequantizationHead": lambda: nn.Sequential(
                 # convs.conv1x1(channel, channel, groups=1),
                 conv3x3(channel, channel),
@@ -111,10 +116,6 @@ class Compressor(BaseCompressor):
                 # convs.conv1x1(channel, channel, groups=1),
                 conv3x3(channel, channel),
                 ResidualBlock(channel, channel, groups=1),
-            ),
-            "restoreHead": lambda: nn.Sequential(
-                AttentionBlock(channel, groups=1),
-                ResidualBlockShuffle(channel, channel, groups=1)
             ),
         })
         super().__init__(encoder, decoder, quantizer)

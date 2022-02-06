@@ -1,4 +1,3 @@
-import math
 from typing import Union
 import torch
 from torch import nn
@@ -107,3 +106,60 @@ class LogExpMinusOne(nn.Module):
 def logExpMinusOne(x: torch.Tensor, eps: Union[torch.Tensor, float] = Consts.Eps) -> torch.Tensor:
     eps = torch.tensor(eps, dtype=torch.float, device=x.device)
     return _logExpMinusOne.apply(x, ((1 + eps) / eps).log())
+
+
+def gumbelArgmaxRandomPerturb(logits: torch.Tensor, perturbRate: float = 0.0, tau: float = 1, dim: int = -1) -> torch.Tensor:
+    r"""
+    Samples from the Gumbel-Argmax distribution and optionally perturb (modify sample to another result).
+
+    Args:
+      logits: `[..., num_features]` unnormalized log probabilities
+      perturbRate: how many samples needs perturbation
+      tau: non-negative scalar temperature
+      dim (int): A dimension along which softmax will be computed. Default: -1.
+
+    Returns:
+      Sampled tensor of same shape as `logits` from the Gumbel-Softmax distribution.
+      If ``hard=True``, the returned samples will be one-hot, otherwise they will
+      be probability distributions that sum to 1 across `dim`.
+
+    .. note::
+      This function is here for legacy reasons, may be removed from nn.Functional in the future.
+
+    .. note::
+      The main trick for `hard` is to do  `y_hard - y_soft.detach() + y_soft`
+
+      It achieves two things:
+      - makes the output value exactly one-hot
+      (since we add then subtract y_soft value)
+      - makes the gradient equal to y_soft gradient
+      (since we strip all other gradients)
+
+    Examples::
+        >>> logits = torch.randn(20, 32)
+        >>> # Sample soft categorical using reparametrization trick:
+        >>> F.gumbel_softmax(logits, tau=1, hard=False)
+        >>> # Sample hard categorical using "Straight-through" trick:
+        >>> F.gumbel_softmax(logits, tau=1, hard=True)
+    """
+    gumbels = (
+        -torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_().log()
+    )  # ~Gumbel(0,1)
+    gumbels = (logits + gumbels) / tau  # ~Gumbel(logits,tau)
+    y_soft = gumbels.softmax(dim)
+
+    # Straight through.
+    index = y_soft.max(dim, keepdim=True)[1]
+
+    perturbCount = round(index.numel() * perturbRate)
+    if perturbCount > 0:
+        newIdx = torch.randint(logits.shape[dim], size=(perturbCount, ), device=index.device, dtype=index.dtype)
+
+        # inplace opertaion
+        continguous = index.view(-1)
+        permIdx = torch.randperm(len(continguous))
+        continguous[permIdx[:perturbCount]] = newIdx
+
+    y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+    ret = y_hard - y_soft.detach() + y_soft
+    return ret
