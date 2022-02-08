@@ -1,4 +1,4 @@
-epoch: 2000
+epoch: 1000
 valFreq: 10
 testFreq: 100
 gpus: 4
@@ -22,7 +22,7 @@ model:
 optim:
     type: Lamb
     params:
-        lr: 1.e-3
+        lr: 2.5e-3
         weight_decay: 0.0
         use_nvlamb: true
 # schdr:
@@ -33,9 +33,9 @@ optim:
 schdr:
     type: CosineAnnealingWarmupRestarts
     params:
-        first_cycle_steps: 200 # match 10 * testFreq
-        warmup_steps: 20
-        gamma: 0.9
+        first_cycle_steps: 50 # match 10 * testFreq
+        warmup_steps: 2
+        gamma: 0.8
 regSchdr:
     type: CosineValueWithEnd
     params:

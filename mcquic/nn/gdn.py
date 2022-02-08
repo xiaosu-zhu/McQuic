@@ -20,11 +20,11 @@ import torch.nn.functional as F
 from .base import NonNegativeParametrizer
 
 __all__ = [
-    "GenSubDivNorm",
-    "InvGenSubDivNorm"
+    "GenDivNorm",
+    "InvGenDivNorm"
 ]
 
-class GenSubDivNorm(nn.Module):
+class GenDivNorm(nn.Module):
     r"""Generalized Divisive Normalization layer.
     Introduced in `"Density Modeling of Images Using a Generalized Normalization
     Transformation" <https://arxiv.org/abs/1511.06281>`_,
@@ -61,43 +61,21 @@ class GenSubDivNorm(nn.Module):
         gamma = self.gamma_reparam.init(gamma)
         self.gamma = nn.Parameter(gamma) # type: ignore
 
-        self._nuReparam = NonNegativeParametrizer(minimum=biasBound)
-        nu = torch.ones(inChannels)
-        nu = self._nuReparam.init(nu)
-        self.nu = nn.Parameter(nu) # type: ignore
-
-        self._tauReparam = NonNegativeParametrizer()
-        tau = [weightInit * torch.eye(inChannels // self._groups) for _ in range(self._groups)]
-        tau = torch.cat(tau, 0)
-        tau = self._tauReparam.init(tau)
-        self.tau = nn.Parameter(tau) # type: ignore
-
     def forward(self, x):
         # C = x.shape[-3]
-        nu = self._nuReparam(self.nu)
-        tau = self._tauReparam(self.tau)
-
-        # [C, C // groups, 1, 1]
-        tau = tau[..., None, None]
-
-        bias = F.conv2d(x, tau, nu, groups=self._groups)
-
         beta = self.beta_reparam(self.beta)
         gamma = self.gamma_reparam(self.gamma)
         # [C, C // groups, 1, 1]
         gamma = gamma[..., None, None]
         std = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
 
-        return self._normalize(x, bias, std)
+        return self._normalize(x, std)
 
-    def _norm(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.rsqrt(x)
-
-    def _normalize(self, x: torch.Tensor, bias: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
-        return (x - bias) * torch.rsqrt(std)
+    def _normalize(self, x: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(std)
 
 
-class InvGenSubDivNorm(GenSubDivNorm):
+class InvGenDivNorm(GenDivNorm):
     r"""I-GDN layer.
     Introduced in `"Density Modeling of Images Using a Generalized Normalization
     Transformation" <https://arxiv.org/abs/1511.06281>`_,
@@ -105,8 +83,8 @@ class InvGenSubDivNorm(GenSubDivNorm):
     .. math::
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
-    def _normalize(self, x: torch.Tensor, bias: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
-        return x * torch.sqrt(std) + bias
+    def _normalize(self, x: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+        return x * torch.sqrt(std)
 
 
 # class EffGenDivNorm(GenDivNorm):
