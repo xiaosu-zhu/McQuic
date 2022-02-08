@@ -18,6 +18,7 @@ class BaseQuantizer(nn.Module):
     def __init__(self, m: int, k: List[int]):
         super().__init__()
         self._entropyCoder = EntropyCoder(m, k)
+        self._m = m
         self._k = k
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
@@ -66,6 +67,7 @@ class _multiCodebookQuantization(nn.Module):
         self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
+        self._scale = math.sqrt(self._k)
         self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1)))
         self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
@@ -125,7 +127,7 @@ class _multiCodebookQuantization(nn.Module):
         # distance = self._distanceBound(self._distance(self._preProcess(x)).exp() - 1)
         # map to -∞ ~ +∞
         logit = -1 * self._distance(self._preProcess(x))
-        return logit
+        return logit / self._scale
 
     def _sample(self, x: torch.Tensor, temperature: float, rateScale: float):
         # [n, m, h, w, k] * [m, 1, 1, k]
@@ -143,7 +145,8 @@ class _multiCodebookQuantization(nn.Module):
         # posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
         # [n, m, h, w, k]
         # sampled = posterior.rsample(())
-        sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
+        sampled = F.gumbel_softmax(logit, temperature, True)
+        # sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
         return sampled, logit
 
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
@@ -293,7 +296,7 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizationHead = dequantizationHeadFn()
             sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
-            codebook = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(m, ki, channel // m), a=math.sqrt(5)))
+            codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m))))
             quantizer = _multiCodebookQuantization(codebook)
             dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))

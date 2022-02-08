@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from mcquic.nn import ResidualBlock, AttentionBlock, ResidualBlockShuffle, pixelShuffle3x3, pixelShuffle5x5, GenSubDivNorm, InvGenSubDivNorm
+from mcquic.nn import ResidualBlock, AttentionBlock, ResidualBlockShuffle, pixelShuffle3x3, pixelShuffle5x5, GenDivNorm, InvGenDivNorm
 
 
 

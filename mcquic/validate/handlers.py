@@ -84,19 +84,20 @@ class Visualization(Handler):
 
 
 class IdealBPP(Handler):
-    def __init__(self, k: List[int], format: str = r"%.4f"):
+    def __init__(self, m: int, k: List[int], format: str = r"%.4f"):
         super().__init__(format)
 
         self._k = k
-        self.accumulated: List[torch.Tensor] = list(torch.zeros((k)) for k in self._k)
+        self._m = m
+        self.accumulated: List[torch.Tensor] = list(torch.zeros((m, k)) for k in self._k)
         self.totalPixels = torch.zeros(())
-        self.totalCodes: List[torch.Tensor] = list(torch.zeros(()) for k in self._k)
+        self.totalCodes: List[torch.Tensor] = list(torch.zeros((self._m)) for _ in self._k)
 
     def reset(self):
         self.length = 0
-        self.accumulated = list(torch.zeros((k)) for k in self._k)
+        self.accumulated = list(torch.zeros((self._m, k)) for k in self._k)
         self.totalPixels = torch.zeros(())
-        self.totalCodes = list(torch.zeros(()) for k in self._k)
+        self.totalCodes = list(torch.zeros((self._m)) for _ in self._k)
 
     def __call__(self, *args: Any, **kwds: Any):
         results, pixels, codes = self.handle(*args, **kwds)
@@ -110,27 +111,54 @@ class IdealBPP(Handler):
         for lv, codeCount in enumerate(codes):
             self.totalCodes[lv] += codeCount
 
-    def handle(self, *, codes: List[torch.Tensor], images: torch.ByteTensor, **_) -> Tuple[List[torch.Tensor], int, List[int]]:
+    def handle(self, *, codes: List[torch.Tensor], images: torch.ByteTensor, **_) -> Tuple[List[torch.Tensor], int, List[torch.Tensor]]:
+        """[summary]
+
+        Args:
+            codes (List[torch.Tensor]): len = level, each code has shape [n, m, h, w]
+            images (torch.ByteTensor): [n, c, h, w]
+
+        Returns:
+            List[torch.Tensor]: Bincount of codes, len = level, each item has shape [m, k]
+            int: Total pixels (n * h * w) of images.
+            List[torch.Tensor]]: Total code amount, len = level, each item has shape [m].
+        """
         allCounts: List[torch.Tensor] = list()
-        codesNum: List[int] = list()
+        codesNum: List[torch.Tensor] = list()
         # [n, m, h, w]
         for code, k in zip(codes, self._k):
-            # [n, h, w]
-            count = torch.bincount(code[:, 0].flatten(), minlength=k).cpu()
-            allCounts.append(count)
-            codesNum.append(code.numel())
+            groupCounts = list()
+            groupCodeNum = list()
+            for m in range(self._m):
+                # [n, h, w] -> [k]
+                count = torch.bincount(code[:, m].flatten(), minlength=k).cpu()
+                groupCounts.append(count)
+                groupCodeNum.append(code[:, m].numel())
+            # [m, k]
+            groupCounts = torch.stack(groupCounts, 0)
+            allCounts.append(groupCounts)
+
+            # [m]
+            groupCodeNum = torch.tensor(groupCodeNum)
+            codesNum.append(groupCodeNum)
+
+        n, _, h, w = images.shape
+
         # lv * [each image's unique counts, only first group]
-        return allCounts, images.numel(), codesNum
+        return allCounts, n * h * w, codesNum
 
     @property
     def Result(self) -> float:
-        totalBits = 0
+        totalBits = 0.
         for codeUsage, codeCount in zip(self.accumulated, self.totalCodes):
-            prob = codeUsage / codeUsage.sum()
+            # [m, k]
+            prob = codeUsage / codeUsage.sum(-1, keepdim=True)
             estimateEntropy = prob.log2()
             estimateEntropy[estimateEntropy == float("-inf")] = 0
-            estimateEntropy = -(prob * estimateEntropy).sum()
-            totalBits += float(estimateEntropy) * float(codeCount)
+            # [m]
+            estimateEntropy = -(prob * estimateEntropy).sum(-1)
+            # [m] * [m] then sum
+            totalBits += float((estimateEntropy * codeCount).sum())
         # percentage of usage of all codes
         return totalBits / float(self.totalPixels)
 

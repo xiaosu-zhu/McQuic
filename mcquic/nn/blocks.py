@@ -45,7 +45,7 @@ import torch
 from torch import nn
 
 from mcquic.utils import ModuleRegistry
-from .gdn import GenSubDivNorm, InvGenSubDivNorm
+from .gdn import GenDivNorm, InvGenDivNorm
 from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3
 
 
@@ -117,7 +117,7 @@ class ResidualBlockWithStride(_residulBlock):
         super().__init__(
             nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
-            GenSubDivNorm(outChannels, groups=groups),
+            GenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -154,7 +154,7 @@ class ResidualBlockUnShuffle(_residulBlock):
         super().__init__(
             nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
-            GenSubDivNorm(outChannels, groups=groups),
+            GenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
 
@@ -191,7 +191,7 @@ class ResidualBlockShuffle(_residulBlock):
         super().__init__(
             nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
-            InvGenSubDivNorm(outChannels, groups=groups),
+            InvGenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
             pixelShuffle3x3(inChannels, outChannels, upsample))
 

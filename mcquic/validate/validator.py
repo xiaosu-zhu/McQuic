@@ -21,7 +21,7 @@ class Validator:
             PSNR().to(rank),
             BPP().to(rank),
             Visualization().to(rank),
-            IdealBPP(config.Model.k).to(rank)
+            IdealBPP(config.Model.m, config.Model.k).to(rank)
         ])
 
     def tensorToImage(self, x: torch.Tensor) -> torch.Tensor:

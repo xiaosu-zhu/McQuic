@@ -47,7 +47,7 @@ class BaseCompressor(nn.Module):
 
     @property
     def CodeUsage(self):
-        return sum(float((freq > 0).sum()) / k for freq, k in zip(self._quantizer.Freq, self._quantizer._k)) / len(self._quantizer._k)
+        return sum(float((freq > 0).float().mean()) for freq in self._quantizer.Freq) / len(self._quantizer._k)
 
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
         y = self._encoder(x)

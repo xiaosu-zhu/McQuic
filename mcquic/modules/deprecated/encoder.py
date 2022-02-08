@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from mcquic.nn import ResidualBlock, ResidualBlockUnShuffle, ResidualBlockWithStride, AttentionBlock, GenSubDivNorm, conv3x3, conv5x5, pixelShuffle3x3
+from mcquic.nn import ResidualBlock, ResidualBlockUnShuffle, ResidualBlockWithStride, AttentionBlock, GenDivNorm, conv3x3, conv5x5, pixelShuffle3x3
 
 
 class BaseEncoder5x5(nn.Module):
