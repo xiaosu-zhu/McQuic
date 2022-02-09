@@ -23,8 +23,8 @@ optim:
     type: Lamb
     params:
         lr: 2.5e-3
-        weight_decay: 0.0
-        use_nvlamb: true
+        # weight_decay: 0.0
+        # use_nvlamb: true
 # schdr:
 #     type: MultiStepWarmUp
 #     params:
@@ -33,9 +33,9 @@ optim:
 schdr:
     type: CosineAnnealingWarmupRestarts
     params:
-        first_cycle_steps: 50 # match 10 * testFreq
+        first_cycle_steps: 500 # match 10 * testFreq
         warmup_steps: 2
-        gamma: 0.8
+        gamma: 0.5
 regSchdr:
     type: CosineValueWithEnd
     params:

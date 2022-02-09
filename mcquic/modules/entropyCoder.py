@@ -3,6 +3,7 @@ from typing import List, Tuple, Generator
 
 import torch
 from torch import nn
+import torch.distributed as dist
 from compressai._CXX import pmf_to_quantized_cdf
 from compressai import ans
 
@@ -20,18 +21,22 @@ class EntropyCoder(nn.Module):
         self._decay = 1 - ema
 
     @torch.no_grad()
-    def updateFreq(self, codes: List[torch.Tensor], hard: bool = True):
+    def forward(self, oneHotCodes: List[torch.Tensor]):
         # Update freq by EMA
-        # [n, m, h, w]
-        for lv, code in enumerate(codes):
-            # [n, h, w]
-            for m, codeAtM in enumerate(code.permute(1, 0, 2, 3)):
-                count = torch.bincount(codeAtM.flatten(), minlength=len(self._freqEMA[lv][m]))
-                # up trigger don't perform EMA
-                rmsMask = count > self._freqEMA[lv][m]
-                ema = self._decay * count + (1 - self._decay) * self._freqEMA[lv][m]
-                combined = count * rmsMask + ema * ~rmsMask
-                self._freqEMA[lv][m].copy_(combined)
+        # [n, m, h, w, k]
+        for lv, code in enumerate(oneHotCodes):
+            # [m, k]
+            totalCount = code.sum((0, 2, 3))
+            # sum over all gpus
+            dist.all_reduce(totalCount)
+
+            # up trigger don't perform EMA
+            rmsMask = totalCount > self._freqEMA[lv]
+            # otherwise
+            ema = self._decay * totalCount + (1 - self._decay) * self._freqEMA[lv]
+
+            # update
+            self._freqEMA[lv].copy_(totalCount * rmsMask + ema * ~rmsMask)
 
     @contextmanager
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:

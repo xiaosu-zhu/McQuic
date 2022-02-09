@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from mcquic.nn import conv1x1
 from mcquic.modules.entropyCoder import EntropyCoder
-from mcquic.nn.base import LowerBound, gumbelArgmaxRandomPerturb
+from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize
 from mcquic import Consts
 
@@ -24,8 +24,6 @@ class BaseQuantizer(nn.Module):
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         raise NotImplementedError
 
-    def updateFreq(self, code: List[torch.Tensor]):
-        self._entropyCoder.updateFreq(code, hard=False)
 
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
@@ -87,7 +85,7 @@ class _multiCodebookQuantization(nn.Module):
             argIdx = torch.argsort(freqGroup, descending=True)[:(self._k - len(neverAssigned))]
             fullAssigned = codebookGroup[argIdx]
             selectedIdx = torch.randperm(len(fullAssigned))[:len(neverAssigned)]
-            self._codebook.data[m, freqGroup < 1] = fullAssigned[selectedIdx]
+            codebook.data[m, freqGroup < 1] = fullAssigned[selectedIdx]
         diff = codebook != self._codebook
         proportion = diff.float().mean().item()
         self._codebook.data.copy_(codebook)
@@ -152,9 +150,11 @@ class _multiCodebookQuantization(nn.Module):
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         sample, logit = self._sample(x, temperature, rateScale)
         # [n, m, h, w]
-        code = logit.argmax(-1)
+        code = logit.argmax(-1, keepdim=True)
+        # [n, m, h, w, k]
+        oneHot = torch.zeros_like(logit).scatter_(-1, code, 1)
         #      [n, m, h, w, k]
-        return sample, code, logit
+        return sample, code, oneHot, logit
 
 
 class _multiCodebookDeQuantization(nn.Module):
@@ -225,12 +225,12 @@ class _quantizerEncoder(nn.Module):
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
-        q, code, logit = self._quantizer(self._quantizationHead(z), temperature, rateScale)
+        q, code, oneHot, logit = self._quantizer(self._quantizationHead(z), temperature, rateScale)
         if self._latentHead is None:
-            return q, None, code, logit
+            return q, None, code, oneHot, logit
         z = self._latentHead(z)
         #         ↓ residual
-        return q, z - self._dequantizer(q), code, logit
+        return q, z - self._dequantizer(q), code, oneHot, logit
 
 class _quantizerDecoder(nn.Module):
     """
@@ -336,19 +336,26 @@ class UMGMQuantizer(BaseQuantizer):
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         quantizeds = list()
         codes = list()
+        oneHots = list()
         logits = list()
         for encoder in self._encoders:
             #          ↓ residual
-            quantized, x, code, logit = encoder(x, temperature, rateScale)
+            quantized, x, code, oneHot, logit = encoder(x, temperature, rateScale)
+            # [n, c, h, w]
             quantizeds.append(quantized)
-            codes.append(code)
+            # [n, m, h, w]
+            codes.append(code.argmax(-1))
+            # [n, m, h, w, k]
+            oneHots.append(oneHot)
+            # [n, m, h, w, k]
             logits.append(logit)
         formerLevel = None
         for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
 
-        self.updateFreq(codes)
+        # update freq in entropy coder
+        self._entropyCoder(oneHots)
 
         return formerLevel, codes, logits
 

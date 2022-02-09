@@ -145,16 +145,14 @@ class _baseTrainer(Restorable):
 
         hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
 
-        if self._epoch % (self.config.TestFreq * 10) == 0:
+        if self._epoch % (self.config.ValFreq) == 0:
             self.refresh()
 
     @torch.inference_mode()
     def refresh(self, *_, **__):
         self.saver.debug("[%s] Start refresh at epoch %4d.", self.PrettyStep, self._epoch)
 
-        self._model.eval()
         reAssignProportion = self._model.refresh(self.rank)
-        self._model.train()
 
         self.saver.debug("[%s] %.2f%% of codebook is re-assigned.", self.PrettyStep, reAssignProportion * 100)
 
@@ -284,7 +282,7 @@ class MainTrainer(_baseTrainer):
 
         if self._step % 100 != 0:
             return
-        self.saver.add_scalar("Stat/DLoss", distortionDB, global_step=self._step)
+        self.saver.add_scalar("Stat/DLoss", moment, global_step=self._step)
         # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
         # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
         # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
