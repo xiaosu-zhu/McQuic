@@ -6,7 +6,7 @@ from torch import nn
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from mcquic.nn import conv1x1
+from mcquic.nn import conv1x1, conv3x3
 from mcquic.modules.entropyCoder import EntropyCoder
 from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize
@@ -31,7 +31,7 @@ class BaseQuantizer(nn.Module):
     def readyForCoding(self):
         return self._entropyCoder.readyForCoding()
 
-    def reAssignCodebook(self) -> float:
+    def reAssignCodebook(self) -> torch.Tensor:
         raise NotImplementedError
 
     def syncCodebook(self):
@@ -62,7 +62,6 @@ class _multiCodebookQuantization(nn.Module):
     def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
-        self._preProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
         self._scale = math.sqrt(self._k)
@@ -70,7 +69,7 @@ class _multiCodebookQuantization(nn.Module):
         self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
 
-    def reAssignCodebook(self, freq: torch.Tensor)-> float:
+    def reAssignCodebook(self, freq: torch.Tensor)-> torch.Tensor:
         codebook = self._codebook.clone().detach()
         freq = freq.to(self._codebook.device).clone().detach()
         #       [k, d],        [k]
@@ -86,8 +85,9 @@ class _multiCodebookQuantization(nn.Module):
             fullAssigned = codebookGroup[argIdx]
             selectedIdx = torch.randperm(len(fullAssigned))[:len(neverAssigned)]
             codebook.data[m, freqGroup < 1] = fullAssigned[selectedIdx]
-        diff = codebook != self._codebook
-        proportion = diff.float().mean().item()
+        # [m, k] bool
+        diff = ((codebook - self._codebook) ** 2).sum(-1) > 1e-6
+        proportion = diff.flatten()
         self._codebook.data.copy_(codebook)
         return proportion
 
@@ -97,7 +97,7 @@ class _multiCodebookQuantization(nn.Module):
 
     def encode(self, x: torch.Tensor):
         # [n, m, h, w, k]
-        distance = self._distance(self._preProcess(x))
+        distance = self._distance(x)
         # [n, m, h, w, k] -> [n, m, h, w]
         code = distance.argmin(-1)
         #      [n, m, h, w]
@@ -111,6 +111,7 @@ class _multiCodebookQuantization(nn.Module):
 
         # [n, m, 1, h, w]
         x2 = (x ** 2).sum(2, keepdim=True)
+
         # [m, k, 1, 1]
         c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
         # [n, m, d, h, w] * [m, k, d] -sum-> [n, m, k, h, w]
@@ -124,7 +125,7 @@ class _multiCodebookQuantization(nn.Module):
         # ensure > 0
         # distance = self._distanceBound(self._distance(self._preProcess(x)).exp() - 1)
         # map to -∞ ~ +∞
-        logit = -1 * self._distance(self._preProcess(x))
+        logit = -1 * self._distance(x)
         return logit / self._scale
 
     def _sample(self, x: torch.Tensor, temperature: float, rateScale: float):
@@ -149,12 +150,12 @@ class _multiCodebookQuantization(nn.Module):
 
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         sample, logit = self._sample(x, temperature, rateScale)
-        # [n, m, h, w]
+        # [n, m, h, w, 1]
         code = logit.argmax(-1, keepdim=True)
         # [n, m, h, w, k]
         oneHot = torch.zeros_like(logit).scatter_(-1, code, 1)
-        #      [n, m, h, w, k]
-        return sample, code, oneHot, logit
+        # [n, m, h, w, k]
+        return sample, code[..., 0], oneHot, logit
 
 
 class _multiCodebookDeQuantization(nn.Module):
@@ -162,7 +163,6 @@ class _multiCodebookDeQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
-        self._postProcess = conv1x1(self._m * self._d, self._m * self._d, groups=self._m)
 
     def decode(self, code: torch.Tensor):
         # codes: [n, m, h, w]
@@ -174,13 +174,13 @@ class _multiCodebookDeQuantization(nn.Module):
         # [n, h, w, m, d]
         indexed = self._codebook[ix, code]
         # [n, c, h, w]
-        return self._postProcess(indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2))
+        return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def forward(self, sample: torch.Tensor):
         n, m, h, w, k = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
-        return self._postProcess(torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w))
+        return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
 
 
 class _quantizerEncoder(nn.Module):
@@ -209,7 +209,7 @@ class _quantizerEncoder(nn.Module):
     def syncCodebook(self):
         self._quantizer.syncCodebook()
 
-    def reAssignCodebook(self, freq: torch.Tensor) -> float:
+    def reAssignCodebook(self, freq: torch.Tensor) -> torch.Tensor:
         return self._quantizer.reAssignCodebook(freq)
 
     def encode(self, x: torch.Tensor):
@@ -320,13 +320,13 @@ class UMGMQuantizer(BaseQuantizer):
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
-    def reAssignCodebook(self) -> float:
+    def reAssignCodebook(self) -> torch.Tensor:
         freqs = self.Freq
-        proportions: List[float] = list()
+        reassigned: List[torch.Tensor] = list()
         for encoder, freq in zip(self._encoders, freqs):
             # freq: [m, ki]
-            proportions.append(encoder.reAssignCodebook(freq))
-        return sum(proportions) / len(proportions)
+            reassigned.append(encoder.reAssignCodebook(freq))
+        return torch.cat(reassigned).float().mean()
 
     def syncCodebook(self):
         dist.barrier()
@@ -344,7 +344,7 @@ class UMGMQuantizer(BaseQuantizer):
             # [n, c, h, w]
             quantizeds.append(quantized)
             # [n, m, h, w]
-            codes.append(code.argmax(-1))
+            codes.append(code)
             # [n, m, h, w, k]
             oneHots.append(oneHot)
             # [n, m, h, w, k]
@@ -358,141 +358,3 @@ class UMGMQuantizer(BaseQuantizer):
         self._entropyCoder(oneHots)
 
         return formerLevel, codes, logits
-
-class L2Quantizer(nn.Module):
-    def __init__(self, k: int, dIn: int, dHidden: int):
-        super().__init__()
-        self._k = k
-        # dHidden = int(math.sqrt(k * d))
-        # self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(dHidden, dHidden)))
-        self._codebook = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(k, dHidden)))
-        self._wv = nn.Linear(dIn, dHidden)
-        self._wq = nn.Linear(dHidden, dIn)
-        # self._wk = Mapper(dHidden, k, d)
-        # self._wv = Mapper(dHidden, k, d)
-        # self._wv = _resLinear(d, d)
-        # self._wk = _resLinear(d, d)
-        # self._wv = nn.Linear(d, d, False)
-        # self._wk = nn.Linear(d, d, False)
-        # if doubling:
-        #     # self._wvShadow = Mapper(dHidden, k, d)
-        #     self._wvShadow = nn.Linear(d, d, False)
-        # else:
-        #     self._wvShadow = None
-        self._temperature1 = nn.Parameter(torch.ones(()))
-        # self._temperature2 = nn.Parameter(torch.ones(()))
-        self._scale = math.sqrt(k)
-        self._eps = 1e-7
-
-    @torch.no_grad()
-    def EMAUpdate(self):
-        pass
-
-    def getLogit(self, x, c):
-        # [n, h, w, 1]
-        x2 = (x ** 2).sum(-1, keepdim=True)
-        # [k]
-        c2 = (c ** 2).sum(-1)
-        # [n, h, w, k]
-        inter = x @ c.permute(1, 0)
-
-        distance = -(x2 + c2 - 2 * inter) #.sqrt()
-
-        return distance
-
-    def encode(self, latent):
-        # [n, h, w, c]
-        q = latent.permute(0, 2, 3, 1)
-        q = self._wv(q)
-
-
-        # [k, c]
-        k = self._codebook
-
-        # [k, c]
-        # k = self._wk(k)
-
-        # [n, h, w, k]
-        logit = self.getLogit(q, k)
-
-        # sample = F.gumbel_softmax(logit, 1.0, True)
-        return logit.argmax(-1)
-
-    def rawAndQuantized(self, latent):
-        # [n, h, w, c]
-        q = latent.permute(0, 2, 3, 1)
-        q = self._wv(q)
-
-        # [k, c]
-        k = self._codebook
-
-        # [k, c]
-        # k = self._wk(k)
-
-        # [n, h, w, k]
-        logit = self.getLogit(q, k)
-
-        sample = F.one_hot(logit.argmax(-1), self._k).float()
-
-        # sample = F.gumbel_softmax(logit, 1.0, True)
-        return logit.argmax(-1), latent, (sample @ self._codebook).permute(0, 3, 1, 2)
-
-    def softEncode(self, latent):
-        # [n, h, w, c]
-        q = latent.permute(0, 2, 3, 1)
-        q = self._wv(q)
-
-        # [k, c]
-        k = self._codebook
-
-        # [n, h, w, k]
-        logit = self.getLogit(q, k)
-
-        # sample = F.gumbel_softmax(logit, 1.0, True)
-        return logit.argmax(-1), logit.softmax(-1)
-
-    def decode(self, code):
-        # [n, h, w, k]
-        sample = F.one_hot(code, self._k).float()
-        quantized = (sample @ self._codebook)
-        # codebook = self._wv(self._codebook)
-        # [n, h, w, c] -> [n, c, h, w]
-        result = self._wq(quantized).permute(0, 3, 1, 2)
-        return result, quantized.permute(0, 3, 1, 2)
-
-    def softDecode(self, code, soft):
-        # [n, h, w, k]
-        sample = F.one_hot(code, self._k).float()
-        # codebook = self._wv(self._codebook)
-        # codebookShadow = self._wv(self._codebook)
-        # [n, h, w, c] -> [n, c, h, w]
-        quantized = self._wq((sample @ self._codebook)).permute(0, 3, 1, 2)
-        soft = self._wq((soft @ self._codebook)).permute(0, 3, 1, 2)
-        return quantized, soft
-
-    def forward(self, latent, temperature):
-        q = latent.permute(0, 2, 3, 1)
-        raw = self._wv(q)
-        k = self._codebook
-
-        # [n, h, w, k]
-        logitRaw = self.getLogit(raw, k)
-        logit = logitRaw / (self._temperature1 * temperature)
-        trueCode = logit.argmax(-1)
-        sample = F.gumbel_softmax(logit, math.sqrt(temperature), True)
-        code = sample.argmax(-1)
-        target = self._codebook
-        quantized = sample @ target
-
-        hard = self._wq(quantized)
-        hard = hard.permute(0, 3, 1, 2)
-
-        # if self._wvShadow is not None:
-        #     softSample = (logit / temperature).softmax(-1)
-        #     soft = softSample @ self._wvShadow(self._codebook)
-        #     soft = soft.permute(0, 3, 1, 2)
-        # else:
-        #     soft = hard
-
-        # [n, c, h, w], [n, h, w], [n, h, w, k], [n, h, w, c], [k, c]
-        return hard, code, trueCode, logitRaw, (raw, quantized), self._codebook

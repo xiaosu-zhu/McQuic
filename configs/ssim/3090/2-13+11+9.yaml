@@ -33,9 +33,9 @@ optim:
 schdr:
     type: CosineAnnealingWarmupRestarts
     params:
-        first_cycle_steps: 500 # match 10 * testFreq
+        first_cycle_steps: 100 # match 10 * testFreq
         warmup_steps: 2
-        gamma: 0.5
+        gamma: 0.9
 regSchdr:
     type: CosineValueWithEnd
     params:
@@ -45,7 +45,7 @@ tempSchdr:
     params:
         maxValue: 1.
         minValue: 0.1
-        totalStep: 2000
+        totalStep: 1000
 # regSchdr:
 #     type: Cosine
 #     params:

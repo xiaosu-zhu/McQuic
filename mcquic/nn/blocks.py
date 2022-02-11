@@ -46,12 +46,11 @@ from torch import nn
 
 from mcquic.utils import ModuleRegistry
 from .gdn import GenDivNorm, InvGenDivNorm
-from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3
+from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3, pixelShuffle1x1
 
 
 __all__ = [
     "ResidualBlockWithStride",
-    "ResidualBlockUnShuffle",
     "ResidualBlockShuffle",
     "ResidualBlock",
     "ResidualBlockMasked",
@@ -87,9 +86,9 @@ class ResidualBlockWithStride(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | SiLU |  |
+        | SiLU      |  |
         | Conv3s2   |  |
-        | GSDN      |  |
+        | GDN       |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -108,9 +107,7 @@ class ResidualBlockWithStride(_residulBlock):
             stride (int): stride value (default: 2).
             groups (int): Group convolution (default: 1).
         """
-        if stride != 1:
-            skip = conv3x3(inChannels, outChannels, stride=stride)
-        elif inChannels != outChannels:
+        if stride != 1 or inChannels != outChannels:
             skip = conv1x1(inChannels, outChannels, stride=stride)
         else:
             skip = None
@@ -121,44 +118,6 @@ class ResidualBlockWithStride(_residulBlock):
             conv3x3(outChannels, outChannels),
             skip)
 
-
-@ModuleRegistry.register
-class ResidualBlockUnShuffle(_residulBlock):
-    """Residual block with PixelUnShuffle for down-sampling.
-
-    Default structure:
-    ```plain
-        +--------------+
-        | Input ----╮  |
-        | SiLU |  |
-        | PixUnSf3  |  |
-        | GSDN      |  |
-        | Conv3s1   |  |
-        | + <-------╯  |
-        | Output       |
-        +--------------+
-    ```
-    """
-    def __init__(self, inChannels: int, outChannels: int, downsample: int = 2, groups: int = 1):
-        """Usage:
-        ```python
-            # A block performs 2x down-sampling
-            block = ResidualBlockUnShuffle(128, 128)
-        ```
-        Args:
-            inChannels (int): Channels of input.
-            outChannels (int): Channels of output.
-            downsample (int): Down-sampling rate (default: 2).
-            groups (int): Group convolution (default: 1).
-        """
-        super().__init__(
-            nn.SiLU(),
-            pixelShuffle3x3(inChannels, outChannels, 1 / downsample),
-            GenDivNorm(outChannels, groups=groups),
-            conv3x3(outChannels, outChannels),
-            pixelShuffle3x3(inChannels, outChannels, 1 / downsample))
-
-
 @ModuleRegistry.register
 class ResidualBlockShuffle(_residulBlock):
     """Residual block with PixelShuffle for up-sampling.
@@ -167,9 +126,9 @@ class ResidualBlockShuffle(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | SiLU |  |
+        | SiLU      |  |
         | PixShuf3  |  |
-        | IGSDN     |  |
+        | IGDN      |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
@@ -193,7 +152,7 @@ class ResidualBlockShuffle(_residulBlock):
             pixelShuffle3x3(inChannels, outChannels, upsample),
             InvGenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
-            pixelShuffle3x3(inChannels, outChannels, upsample))
+            pixelShuffle1x1(inChannels, outChannels, upsample))
 
 
 @ModuleRegistry.register
@@ -204,9 +163,9 @@ class ResidualBlock(_residulBlock):
     ```plain
         +--------------+
         | Input ----╮  |
-        | SiLU |  |
+        | SiLU      |  |
         | Conv3s1   |  |
-        | SiLU |  |
+        | SiLU      |  |
         | Conv3s1   |  |
         | + <-------╯  |
         | Output       |
