@@ -180,6 +180,42 @@ def pixelShuffle5x5(inChannels: int, outChannels: int, r: float = 1) -> nn.Conv2
             nn.PixelShuffle(r)
         ) # type: ignore
 
+
+def pixelShuffle1x1(inChannels: int, outChannels: int, r: float = 1, groups: int = 1) -> nn.Conv2d:
+    """A wrapper of 3x3 convolution and a 2x down-sampling by `PixelShuffle`.
+
+    Usage:
+    ```python
+        # A 2x down-sampling with a 5x5 conv:
+        conv = pixelShuffleConv3x3(128, 128, 0.5)
+        # A 2x up-sampling with a 5x5 conv:
+        conv = pixelShuffleConv3x3(128, 128, 2)
+    ```
+
+    Args:
+        inChannels (int): Channels of input.
+        outChannels (int): Channels of output.
+        stride (int, optional): Stride. Defaults to 1.
+        bias (bool, optional): Bias. Defaults to True.
+        groups (int, optional): Group convolution. Defaults to 1.
+
+    Returns:
+        nn.Module: A Conv layer.
+    """
+    if r < 1:
+        r = int(1 / r)
+        return nn.Sequential(
+            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=1, groups=groups),
+            nn.PixelUnshuffle(r)
+        ) # type: ignore
+    else:
+        r = int(r)
+        return nn.Sequential(
+            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=1, groups=groups),
+            nn.PixelShuffle(r)
+        ) # type: ignore
+
+
 def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1, groups: int = 1) -> nn.Conv2d:
     """A wrapper of 3x3 convolution and a 2x down-sampling by `PixelShuffle`.
 

@@ -39,10 +39,10 @@ class Composed(DistributedDataParallel):
     def Compressor(self):
         return self.module._compressor
 
-    def refresh(self, rank: int) -> float:
+    def refresh(self, rank: int) -> torch.Tensor:
         if rank == 0:
             proportion = self.Compressor.reAssignCodebook()
         else:
-            proportion = 0.0
+            proportion = torch.zeros(())
         self.Compressor.syncCodebook()
         return proportion
