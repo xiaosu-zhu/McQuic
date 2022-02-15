@@ -108,7 +108,7 @@ class _baseTrainer(Restorable):
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
         if self._step > 0:
-            self.saver.info("[%s] Resume training at %ssteps/%d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
+            self.saver.info("[%s] Resume training at %s steps/%d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
         else:
             self.saver.info("[%s] Start training.", self.PrettyStep)
 

@@ -107,7 +107,9 @@ class ResidualBlockWithStride(_residulBlock):
             stride (int): stride value (default: 2).
             groups (int): Group convolution (default: 1).
         """
-        if stride != 1 or inChannels != outChannels:
+        if stride != 1:
+            skip = conv3x3(inChannels, outChannels, stride=stride)
+        elif inChannels != outChannels:
             skip = conv1x1(inChannels, outChannels, stride=stride)
         else:
             skip = None
@@ -152,7 +154,7 @@ class ResidualBlockShuffle(_residulBlock):
             pixelShuffle3x3(inChannels, outChannels, upsample),
             InvGenDivNorm(outChannels, groups=groups),
             conv3x3(outChannels, outChannels),
-            pixelShuffle1x1(inChannels, outChannels, upsample))
+            pixelShuffle3x3(inChannels, outChannels, upsample))
 
 
 @ModuleRegistry.register
