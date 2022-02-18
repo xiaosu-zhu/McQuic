@@ -5,6 +5,7 @@ from time import sleep
 from typing import Callable, List, Optional, Tuple, Type
 import signal
 import threading
+import gc
 
 import torch
 from torch import nn
@@ -147,6 +148,9 @@ class _baseTrainer(Restorable):
 
         if self._epoch % (self.config.ValFreq) == 0:
             self.refresh()
+
+        gc.collect()
+        gc.collect()
 
     @torch.inference_mode()
     def refresh(self, *_, **__):
