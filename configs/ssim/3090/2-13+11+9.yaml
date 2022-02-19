@@ -44,7 +44,7 @@ tempSchdr:
     type: CosineValueWithEnd
     params:
         maxValue: 1.
-        minValue: 0.01
+        minValue: 0.9998
         totalStep: 900
 # regSchdr:
 #     type: Cosine

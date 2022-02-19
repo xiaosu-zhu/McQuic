@@ -1,11 +1,9 @@
 from shutil import copy2
 from typing import Tuple, Union
 import os
-from numpy import save
 
-import torch
 from torch import nn
-import torch.optim
+import torch.distributed as dist
 from vlutils.config import summary
 
 from mcquic import Config, Consts
@@ -32,10 +30,13 @@ def modelFn(channel, m, k, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
 def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: Union[str, None], debug: bool):
     # load ckpt before create trainer, in case it moved to other place.
     if resume is not None and os.path.exists(resume) and resume.endswith("ckpt"):
-        tmpFile = copy2(resume, os.path.join(Consts.TempDir, "resume.ckpt"), follow_symlinks=False)
-        # stateDict = torch.load(resume, {"cuda:0": f"cuda:{rank}"})[Consts.Fingerprint]
+        if rank == 0:
+            tmpFile = copy2(resume, os.path.join(Consts.TempDir, "resume.ckpt"), follow_symlinks=False)
+        else:
+            tmpFile = os.path.join(Consts.TempDir, "resume.ckpt")
     else:
         tmpFile = None
+
 
     saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel="DEBUG" if debug else "INFO", config=config, reserve=False, disable=rank != 0, dumpFile=Consts.RootDir)
 
@@ -45,6 +46,8 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, re
 
     initializeBaseConfigs(port, rank, worldSize, logger=saver)
     saver.debug("Base configs initialized.")
+
+    dist.barrier()
 
     optimizerFn = OptimizerRegistry.get("Lamb", logger=saver)
     schdrFn = LrSchedulerRegistry.get(config.Schdr.type, logger=saver)

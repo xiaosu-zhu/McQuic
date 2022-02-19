@@ -67,6 +67,7 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] Creating value tuner...", self.PrettyStep)
         self._regularizationTuner = trackingFunctionCalls(valueTuners[0], self.saver)(**self.config.RegSchdr.params)
         self._temperatureTuner = trackingFunctionCalls(valueTuners[1], self.saver)(**self.config.TempSchdr.params)
+        self.tunerFns = [trackingFunctionCalls(valueTuners[0], self.saver), trackingFunctionCalls(valueTuners[1], self.saver)]
         self.saver.debug("[%s] Value tuner created.", self.PrettyStep)
 
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
@@ -89,10 +90,7 @@ class _baseTrainer(Restorable):
 
         self.resetScheduler(self._scheduler.last_epoch) # type: ignore
 
-        self._regularizationTuner._epoch = self._epoch
-        self._temperatureTuner._epoch = self._epoch
-
-        self.saver.debug("[%s] Value tuner reset.", self.PrettyStep)
+        self.resetTuners()
 
     def resetOptimizer(self):
         del self._optimizer
@@ -106,10 +104,21 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] LR scheduler reset.", self.PrettyStep)
 
+    def resetTuners(self):
+        del self._regularizationTuner, self._temperatureTuner
+
+        self._regularizationTuner = self.tunerFns[0](**self.config.RegSchdr.params)
+        self._temperatureTuner = self.tunerFns[0](**self.config.TempSchdr.params)
+
+        self._regularizationTuner._epoch = self._epoch
+        self._temperatureTuner._epoch = self._epoch
+
+        self.saver.debug("[%s] Value tuners reset.", self.PrettyStep)
+
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
         if self._step > 0:
-            self.saver.info("[%s] Resume training at %s steps/%d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
+            self.saver.info("[%s] Resume training at %s steps / %d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
         else:
             self.saver.info("[%s] Start training.", self.PrettyStep)
 
