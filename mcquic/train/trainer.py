@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.saver import Saver
-from vlutils.logger import trackingFunctionCalls
+from vlutils.logger import trackingFunctionCalls, fixedWidthFloat
 from vlutils.base import Restorable
 from vlutils.runtime import relativePath
 from vlutils.config import serialize
@@ -45,6 +45,10 @@ class _baseTrainer(Restorable):
         self._epoch = 0
         self._step = 0
 
+        # Used for self.PrettyStep
+        self.lastFormatted = -1
+        self.prettyStep = "     "
+
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, criterion = trackingFunctionCalls(modelFn, self.saver)()
         self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
@@ -74,8 +78,26 @@ class _baseTrainer(Restorable):
 
     @property
     def PrettyStep(self):
-        unit, suffix = filesize.pick_unit_and_suffix(self._step, [" ", "k", "M"], 1000)
-        return f"{(self._step // unit):3d}{suffix}"
+        if self._step == self.lastFormatted:
+            return self.prettyStep
+        else:
+            self.prettyStep = self._formatStep(self._step)
+            self.lastFormatted = self._step
+            return self.prettyStep
+
+    @staticmethod
+    def _formatStep(step):
+        unit, suffix = filesize.pick_unit_and_suffix(step, ["", "k", "M"], 1000)
+        if unit < 10:
+            return f"{(step // unit):5d}"
+        else:
+            truncated = step / unit
+            if truncated < 10:
+                return f"{truncated:4.6f}"[:4] + suffix
+            elif truncated < 100:
+                return f"{truncated:4.6f}"[:4] + suffix
+            else:
+                return f"{truncated:11.6f}"[:4] + suffix
 
     def restoreStates(self, path: str):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
@@ -227,7 +249,8 @@ class MainTrainer(_baseTrainer):
 
         self.epochFinishCalls = hooks
 
-        self.bestDistortion = float("-inf")
+        self.bestRate = 1e10
+        self.bestDistortion = -1
 
         super().__init__(config, modelFn, optimizer, scheduler, valueTuners, saver)
 
@@ -256,7 +279,7 @@ class MainTrainer(_baseTrainer):
         signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
-        self.saver.info("[%s] Total epoches: %d, total steps: %s, best distortion: %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestDistortion)
+        self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
@@ -296,13 +319,7 @@ class MainTrainer(_baseTrainer):
         if self._step % 100 != 0:
             return
         self.saver.add_scalar("Stat/DLoss", moment, global_step=self._step)
-        # self._saver.add_scalar("Loss/WeakCodebook", kwArgs["auxiliary"][0], global_step=step)
-        # self._saver.add_scalar("Loss/WeakFeature", kwArgs["auxiliary"][1], global_step=step)
-        # self._saver.add_scalar("Loss/WeakDiversity", kwArgs["auxiliary"][2], global_step=step)
-        # self._saver.add_scalar(_logMapping["predict"], kwArgs["predict"], global_step=step)
-        # self._saver.add_scalar(_logMapping["bpp"], kwArgs["bpp"], global_step=step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
-        # self.saver.add_scalar(_logMapping["regCoeff"], self._regularizationTuner.Value, global_step=self._step)
         self.saver.add_scalar("Stat/T", self._temperatureTuner.Value, global_step=self._step)
 
     def _epochStart(self, hook, *args, **kwArgs):
@@ -340,8 +357,12 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
 
         self.saver.save(**{Consts.Fingerprint: self, "config": serialize(self.config)})
-        if results[self.config.Model.target] > self.bestDistortion:
-            self.bestDistortion = results[self.config.Model.target]
+
+        rate, distortion = results["BPP"], results[self.config.Model.target]
+
+        if (distortion / rate) > (self.bestDistortion / self.bestRate):
+            self.bestDistortion = distortion
+            self.bestRate = rate
             self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
         self.saver.info("[%s] %s", self.PrettyStep, summary)
@@ -349,7 +370,7 @@ class MainTrainer(_baseTrainer):
 
         self.saver.debug("[%s] End validation at epoch %4d.", self.PrettyStep, self._epoch)
 
-    def test(self, *_, testLoader: DataLoader, valLoader: DataLoader, **__):
+    def test(self, *_, testLoader: DataLoader, **__):
         self.saver.debug("[%s] Start test at epoch %4d.", self.PrettyStep, self._epoch)
 
         self._model.eval()
