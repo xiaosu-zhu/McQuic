@@ -31,6 +31,23 @@
 **ABSTRACT HERE**
 
 <!--ts-->
+* [Introduction](#introduction)
+* [Explore](#explore)
+   * [Requirements](#requirements)
+      * [Docker (Recommended)](#docker-recommended)
+      * [Install Manually](#install-manually)
+   * [Usage](#usage)
+      * [Compress Images](#compress-images)
+      * [Decompress Images](#decompress-images)
+* [Train a New Model](#train-a-new-model)
+   * [Requirements](#requirements-1)
+   * [Configs](#configs)
+   * [Train and Test](#train-and-test)
+* [To-do List](#to-do-list)
+* [Reference and License](#reference-and-license)
+
+<!-- Added by: runner, at: Thu Feb 24 12:44:51 UTC 2022 -->
+
 <!--te-->
 
 # Introduction
