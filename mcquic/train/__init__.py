@@ -9,7 +9,7 @@ from vlutils.config import summary
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.loss import CompressionLossBig
-from mcquic.datasets import getTrainLoader, getTestLoader, getValLoader
+from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.utils.registry import OptimizerRegistry, ValueTunerRegistry, LrSchedulerRegistry
 
 from .utils import getSaver, initializeBaseConfigs
@@ -61,10 +61,9 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, re
 
     trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Dataset, config.BatchSize, logger=saver)
     valLoader = getValLoader(config.ValDataset, config.BatchSize, disable=rank != 0, logger=saver)
-    testLoader = getTestLoader(config.ValDataset, disable=rank != 0, logger=saver)
-    saver.debug("Train, validation and test datasets mounted.")
+    saver.debug("Train and validation datasets mounted.")
 
-    trainer.train(trainLoader, trainSampler, valLoader, testLoader)
+    trainer.train(trainLoader, trainSampler, valLoader)
 
     saver.debug(summary(config))
     saver.info("Bye.")

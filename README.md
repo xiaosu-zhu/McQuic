@@ -1,6 +1,7 @@
-`python -O -m mcquic.train -c CONFIG_PATH`
-
-# McQuic
+<p align="center">
+    <img src="./assets/McQuic.svg" width="33%">
+    <br/>
+</p>
 
 Here is ***McQuic***, *aka* ***M***ulti-***c***odebook ***Qu***antizers for neural ***i***mage ***c***ompression.
 

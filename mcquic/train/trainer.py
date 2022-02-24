@@ -194,9 +194,6 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] End refresh at epoch %4d.", self.PrettyStep, self._epoch)
         return reAssignProportion
 
-    # def _reduceLoss(self, losses: Tuple[torch.Tensor]) -> torch.Tensor:
-    #     return sum(losses)
-
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
@@ -213,14 +210,16 @@ class _baseTrainer(Restorable):
                 self._stepStart(stepStartHook)
 
                 self._optimizer.zero_grad()
+
                 xHat, (rate, distortion), codes, logits = self._model(images, self._temperatureTuner.Value, self._regularizationTuner.Value)
-                # loss = self._reduceLoss(losses)
                 (rate + distortion).backward()
+
                 self._optimizer.step()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
             self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader._loader.dataset) # type: ignore
         self._afterRun(afterRunHook)
+
 
 class MainTrainer(_baseTrainer):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
@@ -240,10 +239,10 @@ class MainTrainer(_baseTrainer):
         self.formatter = Decibel(1.0).to(self.rank)
         self.diffTracker = EMATracker(()).to(self.rank)
 
+        # Call function at every X epoches.
         hooks = EpochFrequencyHook(
             (1, self.log),
             (self.config.ValFreq, self.validate),
-            (self.config.TestFreq, self.test),
             logger=self.saver
         )
 
@@ -282,13 +281,13 @@ class MainTrainer(_baseTrainer):
         self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
-    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, testLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler,
             beforeRunHook=beforeRunHook,
             afterRunHook=afterRunHook,
             epochStartHook=epochStartHook,
             epochFinishHook=ChainHook(
-                functools.partial(self.epochFinishCalls, valLoader=valLoader, testLoader=testLoader),
+                functools.partial(self.epochFinishCalls, valLoader=valLoader),
                 epochFinishHook),
             stepStartHook=stepStartHook,
             stepFinishHook=ChainHook(self._stepFinishHook, stepFinishHook))
@@ -308,7 +307,6 @@ class MainTrainer(_baseTrainer):
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
-
         distortionDB = self.formatter(distortion)
         moment = self.diffTracker(distortionDB)
 
@@ -370,16 +368,6 @@ class MainTrainer(_baseTrainer):
 
         self.saver.debug("[%s] End validation at epoch %4d.", self.PrettyStep, self._epoch)
 
-    def test(self, *_, testLoader: DataLoader, **__):
-        self.saver.debug("[%s] Start test at epoch %4d.", self.PrettyStep, self._epoch)
-
-        self._model.eval()
-
-        self._model.train()
-
-        self.saver.debug("[%s] End test at epoch %4d.", self.PrettyStep, self._epoch)
-        return
-        avgRate, avgDistortion = self.validator.validate(self._model.module._compressor, testLoader)
 
 class PalTrainer(_baseTrainer):
     def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], valueTuners: List[Type[ValueTuner]], saver: Saver) -> None:
