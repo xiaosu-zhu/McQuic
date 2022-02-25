@@ -36,6 +36,13 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
     <p align="center"><b>Figure 1. Operational diagrams of different methods.</b></figcaption>
 </p>
 
+
+<p align="center">
+    <img src="./assets/paper/kodim24-light.png#gh-light-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
+    <img src="./assets/paper/kodim24-dark.png#gh-dark-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
+    <p align="center"><b>Figure 2. Comparisons with traditional codecs on an image from Kodak dataset.</b></figcaption>
+</p>
+
 <!--ts-->
 * [Introduction](#introduction)
 * [Try Me!](#try-me)
