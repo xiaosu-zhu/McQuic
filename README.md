@@ -38,7 +38,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 
 <!--ts-->
 * [Introduction](#introduction)
-* [Explore](#explore)
+* [Try Me!](#try-me)
    * [Requirements](#requirements)
       * [Docker (Recommended)](#docker-recommended)
       * [Install Manually](#install-manually)
@@ -52,7 +52,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 * [To-do List](#to-do-list)
 * [Reference and License](#reference-and-license)
 
-<!-- Added by: runner, at: Thu Feb 24 12:53:15 UTC 2022 -->
+<!-- Added by: runner, at: Fri Feb 25 12:22:33 UTC 2022 -->
 
 <!--te-->
 
