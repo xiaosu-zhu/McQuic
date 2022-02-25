@@ -28,7 +28,13 @@
 </p>
 
 
-**ABSTRACT HERE**
+Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas represent in SHA [[1](#reference-and-license)], VQ-VAE [[2](#reference-and-license)], VQ-GAN [[3](#reference-and-license)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a unified multivariate Gaussian mixture, to perform high-quality, low-latency image compression. Take a more look at [**our paper**](localhost).
+
+<p align="center">
+    <img src="./assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="75%">
+    <img src="./assets/paper/priors-dark.svg#gh-dark-mode-only" alt="Vectorized prior" title="Vectorized prior" width="75%">
+    <figcaption align="center"><b>Figure 1. Operational diagrams of different methods.</b></figcaption>
+</p>
 
 <!--ts-->
 * [Introduction](#introduction)
@@ -52,7 +58,7 @@
 
 # Introduction
 
-# Explore
+# Try Me!
 
 ## Requirements
 
