@@ -34,7 +34,7 @@ schdr:
     type: CosineAnnealingWarmupRestarts
     params:
         first_cycle_steps: 1000 # match 10 * testFreq
-        warmup_steps: 2
+        warmup_steps: 5
         gamma: 0.9
 regSchdr:
     type: CosineValueWithEnd

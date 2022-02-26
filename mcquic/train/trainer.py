@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.saver import Saver
-from vlutils.logger import trackingFunctionCalls, fixedWidthFloat
+from vlutils.logger import trackingFunctionCalls
 from vlutils.base import Restorable
 from vlutils.runtime import relativePath
 from vlutils.config import serialize

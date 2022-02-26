@@ -5,12 +5,14 @@ channels:
   - defaults
   - conda-forge
 dependencies:
+  - python
   - conda
   - pip
   - tensorboard=2.6
   - rich=4.62
   - scipy=1.7
   - matplotlib=3.5
+  - rich
   - pip:
     - pyyaml
     - vlutils>=0.1.6

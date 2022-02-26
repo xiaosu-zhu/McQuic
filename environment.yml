@@ -3,20 +3,20 @@ channels:
   - pytorch
   - defaults
   - conda-forge
-  - nvidia
 dependencies:
-  - python
+  - python=3.9.7
+  - conda
   - pip
-  - pytorch
-  - torchvision
-  - cudatoolkit
-  - tensorboard
-  - rich
-  - scipy
-  - matplotlib
+  - pytorch=1.10.1
+  - torchvision=0.11.2
+  - cudatoolkit=11.3.1
+  - tensorboard=2.6.0
+  - rich=10.16.2
+  - scipy=1.5.4
+  - matplotlib=3.5.0
   - pip:
     - pyyaml
     - vlutils
     - lmdb
     # need gcc > 8, nvcc
-    - compressai
+    - compressai==1.1.9
