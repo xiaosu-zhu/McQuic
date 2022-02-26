@@ -61,11 +61,8 @@ Take a more look at ***our paper***:
 * [Introduction](#introduction)
 * [Try Me!](#try-me)
    * [Requirements](#requirements)
-      * [Docker (Recommended)](#docker-recommended)
-      * [Install Manually](#install-manually)
-   * [Usage](#usage)
-      * [Compress Images](#compress-images)
-      * [Decompress Images](#decompress-images)
+   * [Docker (Recommended)](#docker-recommended)
+   * [Install Manually](#install-manually)
 * [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
    * [Configs](#configs)
@@ -73,7 +70,7 @@ Take a more look at ***our paper***:
 * [To-do List](#to-do-list)
 * [Reference and License](#reference-and-license)
 
-<!-- Added by: runner, at: Fri Feb 25 12:51:08 UTC 2022 -->
+<!-- Added by: runner, at: Sat Feb 26 15:31:25 UTC 2022 -->
 
 <!--te-->
 
