@@ -96,10 +96,10 @@ class _multiCodebookQuantization(nn.Module):
         dist.broadcast(self._codebook, 0)
 
     def encode(self, x: torch.Tensor):
-        # [n, m, h, w, k]
+        # [n, m, k, h, w]
         distance = self._distance(x)
-        # [n, m, h, w, k] -> [n, m, h, w]
-        code = distance.argmin(-1)
+        # [n, m, k, h, w] -> [n, m, h, w]
+        code = distance.argmin(2)
         #      [n, m, h, w]
         return code
 
@@ -118,18 +118,14 @@ class _multiCodebookQuantization(nn.Module):
         inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebook)
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
-        # [n, m, h, w, k]
-        return distance.permute(0, 1, 3, 4, 2)
+        return distance
 
     def _logit(self, x: torch.Tensor) -> torch.Tensor:
-        # ensure > 0
-        # distance = self._distanceBound(self._distance(self._preProcess(x)).exp() - 1)
-        # map to -∞ ~ +∞
         logit = -1 * self._distance(x)
         return logit / self._scale
 
     def _sample(self, x: torch.Tensor, temperature: float, rateScale: float):
-        # [n, m, h, w, k] * [m, 1, 1, k]
+        # [n, m, k, h, w] * [m, 1, 1, 1]
         logit = self._logit(x) * self._bound(self._temperature)
 
         # add random mask to pick a different index.
@@ -142,20 +138,20 @@ class _multiCodebookQuantization(nn.Module):
         # NOTE: STE: code usage is very low; RelaxedOneHotCat: Doesn't have STE trick
         # So reverse back to F.gumbel_softmax
         # posterior = OneHotCategoricalStraightThrough(logits=logit / temperature)
-        # [n, m, h, w, k]
+        # [n, m, k, h, w]
         # sampled = posterior.rsample(())
-        sampled = F.gumbel_softmax(logit, temperature, True)
+        sampled = F.gumbel_softmax(logit, temperature, True, dim=2)
         # sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
         return sampled, logit
 
     def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
         sample, logit = self._sample(x, temperature, rateScale)
-        # [n, m, h, w, 1]
-        code = logit.argmax(-1, keepdim=True)
-        # [n, m, h, w, k]
-        oneHot = torch.zeros_like(logit).scatter_(-1, code, 1)
-        # [n, m, h, w, k]
-        return sample, code[..., 0], oneHot, logit
+        # [n, m, 1, h, w]
+        code = logit.argmax(2, keepdim=True)
+        # [n, m, k, h, w]
+        oneHot = torch.zeros_like(logit).scatter_(2, code, 1)
+        # [n, m, k, h, w]
+        return sample, code[:, :, 0], oneHot, logit
 
 
 class _multiCodebookDeQuantization(nn.Module):
@@ -178,9 +174,8 @@ class _multiCodebookDeQuantization(nn.Module):
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def forward(self, sample: torch.Tensor):
-        n, m, h, w, k = sample.shape
-        # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
-        return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
+        n, m, k, h, w = sample.shape
+        return torch.einsum("nmkhw,mkd->nmdhw", sample, self._codebook).reshape(n, -1, h, w)
 
 
 class _quantizerEncoder(nn.Module):
@@ -345,9 +340,9 @@ class UMGMQuantizer(BaseQuantizer):
             quantizeds.append(quantized)
             # [n, m, h, w]
             codes.append(code)
-            # [n, m, h, w, k]
+            # [n, m, k, h, w]
             oneHots.append(oneHot)
-            # [n, m, h, w, k]
+            # [n, m, k, h, w]
             logits.append(logit)
         formerLevel = None
         for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):

@@ -23,10 +23,10 @@ class EntropyCoder(nn.Module):
     @torch.no_grad()
     def forward(self, oneHotCodes: List[torch.Tensor]):
         # Update freq by EMA
-        # [n, m, h, w, k]
+        # [n, m, k, h, w]
         for lv, code in enumerate(oneHotCodes):
             # [m, k]
-            totalCount = code.sum((0, 2, 3))
+            totalCount = code.sum((0, -2, -1))
             # sum over all gpus
             dist.all_reduce(totalCount)
 
