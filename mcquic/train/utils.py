@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Union, Optional
 import os
 import logging
 import random
@@ -7,6 +7,7 @@ import torch
 import torch.distributed as dist
 import numpy as np
 from vlutils.custom import RichProgress
+from vlutils.logger import LoggerBase
 from vlutils.saver import Saver, DummySaver, StrPath
 from vlutils.runtime import functionFullName
 from vlutils.base import FrequecyHook
@@ -15,7 +16,7 @@ from rich.progress import TimeElapsedColumn, BarColumn, TimeRemainingColumn
 from mcquic.utils import nop
 
 
-def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger = logging):
+def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = port
     logger.debug("DDP master addr: `%s`", "127.0.0.1")
@@ -37,7 +38,7 @@ def getRichProgress(disable: bool = False) -> RichProgress:
     return RichProgress("[i blue]{task.description}[/][b magenta]{task.fields[progress]}", TimeElapsedColumn(), BarColumn(None), TimeRemainingColumn(), "{task.fields[suffix]}", refresh_per_second=6, transient=True, disable=disable, expand=True)
 
 
-def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: str = None, activateTensorboard: bool = True, disable: bool = False):
+def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str = "root", loggingLevel: str = "INFO", config: Any = None, autoManage: bool = True, maxItems: int = 25, reserve: bool = False, dumpFile: Optional[str] = None, activateTensorboard: bool = True, disable: bool = False):
     if disable:
         return DummySaver(saveDir, saveName, loggerName, loggingLevel, config, autoManage, maxItems, reserve, dumpFile, activateTensorboard)
     else:
@@ -46,7 +47,7 @@ def getSaver(saveDir: StrPath, saveName: StrPath = "saved.ckpt", loggerName: str
 getSaver.__doc__ = Saver.__doc__
 
 
-def checkHook(function, name, logger=logging):
+def checkHook(function, name, logger: Union[logging.Logger, LoggerBase]=logging.root):
     if function is None:
         logger.debug("No <%s>.", name)
         return nop

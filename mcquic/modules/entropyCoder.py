@@ -16,7 +16,7 @@ class EntropyCoder(nn.Module):
         self.encooder = ans.RansEncoder()
         self.decoder = ans.RansDecoder()
         # initial value is uniform
-        self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
+        self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k) # type: ignore
         self._k = k
         self._decay = 1 - ema
 

@@ -59,13 +59,13 @@ class BaseQuantizer(nn.Module):
 
 
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15): # type: ignore
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._scale = math.sqrt(self._k)
         self._codebook = codebook
         self._scale = math.sqrt(self._k)
-        self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1)))
+        self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1))) # type: ignore
         self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
 
@@ -155,7 +155,7 @@ class _multiCodebookQuantization(nn.Module):
 
 
 class _multiCodebookDeQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter):
+    def __init__(self, codebook: nn.Parameter): # type: ignore
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
@@ -291,7 +291,7 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizationHead = dequantizationHeadFn()
             sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
-            codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m))))
+            codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m)))) # type: ignore
             quantizer = _multiCodebookQuantization(codebook)
             dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
@@ -303,15 +303,15 @@ class UMGMQuantizer(BaseQuantizer):
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
         for encoder in self._encoders:
-            x, code = encoder.encode(x)
+            x, code = encoder.encode(x) # type: ignore
             #            [n, m, h, w]
             codes.append(code)
         # lv * [n, m, h, w]
         return codes
 
-    def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
+    def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
         formerLevel = None
-        for decoder, code in zip(self._decoders[::-1], codes[::-1]):
+        for decoder, code in zip(self._decoders[::-1], codes[::-1]): # type: ignore
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
@@ -345,7 +345,7 @@ class UMGMQuantizer(BaseQuantizer):
             # [n, m, k, h, w]
             logits.append(logit)
         formerLevel = None
-        for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
+        for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]): # type: ignore
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
 
