@@ -74,8 +74,9 @@ Take a more look at ***our paper***:
 
 <!--te-->
 
-# Introduction
 
+
+# Introduction
 Following previous works, we build the compression model as an AutoEncoder. Bottleneck of encoder (analysis transform) outputs a small feature map and is quantized by *multi-codebook vector-quantization* other than scalar-quantization. Quantizers are cascaded to effectively estimate latent distribution.
 
 <p align="center">
@@ -134,67 +135,168 @@ class Quantizer(nn.Module):
         return quantized, sample.argmax(2)
 ```
 
-# Try Me!
 
+
+
+# Try Me!
 It is easy (with a GPU) to try our model. We will give a quick guide to compress an image and restore it.
 
-## Requirements
 
+
+## Requirements
 To run the model, your device should meet following requirements.
 
 * Hardware
-  * `a CUDA-enabled GPU (Driver version ≥ 450.80.02)`
+  * a CUDA-enabled GPU (Driver version `≥ 450.80.02`)
   * `≥ 8GiB RAM`
   * `≥ 8GiB VRAM`
 * OS
   * Tested on `Linux`
 
 ## Docker (Recommended)
-
 We recommend you to use our pre-built [`docker` images](localhost) to get away from environment issues.
 
 Test with the latest docker image:
-```console
-./docker/demo
+```bash
+sh -c "curl -fsSL https://raw.github.com/xiaosu-zhu/main/docker/demo.sh"
 ```
-And check outputs: [`assets/compressed.bin`](./assets/compressed.bin) and [`assets/restored.png`](./assets/restored.png).
+The demo will let you choose an image to compress.
 
-## Install Manually
+## Install via PyPI
+Please ensure you've installed any `conda` environments, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+* Install all required packages with `conda` and `pip`
+```bash
+sh -c "curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh"
+```
+* Compress images
+```bash
+mcquic --help
+mcquic -q 1 -i assets/example.png -o assets/compressed.bin
+```
+* Decompress images
+```bash
+mcquic -q 1 -i assets/compressed.bin -o assets/example.png
+```
+
+## Install Manually (for dev)
 Please ensure you've installed any `conda` environments, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 * Clone this repository
-```console
+```bash
 git clone https://github.com/xiaosu-zhu/McQuic.git && cd McQuic
 ```
 * Install all required packages with `conda`
-```console
+```bash
 conda env create -f environment.yml
 ```
 * Activate the new environment
-```console
+```bash
 conda activate mcquic
 ```
 * Install this package via `pip`
-```console
-pip install -e .
+```bash
+pip install -e ./
 ```
 * Compress images
-```console
+```bash
 python -m mcquic --help
 python -m mcquic -q 1 -i assets/example.png -o assets/compressed.bin
 ```
 * Decompress images
-```console
+```bash
 python -m mcquic -q 1 -i assets/compressed.bin -o assets/example.png
 ```
 And check outputs: [`assets/compressed.bin`](./assets/compressed.bin) and [`assets/restored.png`](./assets/restored.png).
-# Train a New Model
+
+* (***Optional***) Install `NVIDIA/Apex`
+
+[`NVIDIA/Apex`](https://github.com/NVIDIA/apex) is an additional package **required** for training. If you want to [**Develop, contribute, or train a new model**](#develop-contribute-or-train-a-new-model), please ensure you've installed `NVIDIA/Apex`.
+```bash
+git clone https://github.com/NVIDIA/apex && cd apex
+pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+```
+More information such as system requirements, please refer to [their repository](https://github.com/NVIDIA/apex).
+
+
+
+# Develop, Contribute, or Train a New Model
+If you want to test your new ideas, add new functions, or train new models, you must install mcquic by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). To train models, here are minimal and recommended system requirements.
 
 ## Requirements
+* Minimal
+  * `RAM ≥ 32GiB`
+  * `VRAM ≥ 12GiB`
+* Recommended
+  * `VRAM ≥ 24GiB`
+  * Better if you have `≥4-way` NVIDIA RTX 3090s or faster GPUs.
 
 ## Configs
+Files in [configs](configs) give some example config to train models. Please check specifications in [configs/README](configs/README.md).
 
 ## Train and Test
+Before train models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
+
+* To build a training dataset, put all images in a folder (allow for sub-folders), then
+```bash
+# python -m mcquic.dataset [PATH_OF_YOUR_IMAGE_FOLDER] [PATH_OF_OUTPUT_DATASET]
+python -m mcquic.dataset train_images mcquic_dataset
+```
+* Prepare a training config, don't forget to speify dataset path.
+```yaml
+# `configs/train.yaml`
+...
+dataset: mcquic_dataset # path to the training dataset
+valDataset: val_images # path to folder of validation images
+...
+```
+`dataset` and `valDataset` can be any relative or absolute paths.
+
+In this example, the final folder structure is shown below:
+
+```bash
+.
+... # other files
+├─ 📂configs
+│   ...
+│   └── 📄train.yaml
+├── 📂mcquic
+├── 📄README.md # this readme
+├── 📂train_images # a lot of training images
+│   ├── 📂ImageNet
+│   |   ├── 📂folder1 # a lot of images
+│   |   ├── 🖼️image1.png
+│   |   ...
+│   ├── 📂COCO
+│   |   ├── 🖼️image1.png
+│   |   ├── 🖼️image2.png
+│   |   ...
+|   ...
+├── 📂mcquic_dataset # generated training dataset
+|   ├── 📀data.mdb
+|   ├── 📀lock.mdb
+|   └── 📄metadata.json
+└── 📂val_images # a lot of validation images
+    ├── 🖼️image1.png
+    ├── 🖼️image2.png
+    ...
+```
+* To train a new model, run
+```bash
+python -m mcquic.train --help
+# python -O -m mcquic.train -c [PATH_TO_CONFIG]
+python -O -m mcquic.train -c configs/train.config
+```
+Saved model is located in `saved/mcquic_dataset/latest`.
+* To resume an interuptted training, run
+```bash
+python -O -m mcquic.train -r
+```
+or
+```bash
+python -O -m mcquic.train -c configs/train.config -r
+```
+if you want to use a new config (e.g. tuned learning rate, modified hyper-parameters) to resume training.
+
 
 # To-do List
 
