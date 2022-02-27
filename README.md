@@ -159,15 +159,17 @@ We recommend you to use our pre-built [`docker` images](localhost) to get away f
 
 Test with the latest docker image:
 ```bash
-sh -c "curl -fsSL https://raw.github.com/xiaosu-zhu/main/docker/demo.sh"
+sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/docker/demo.sh)"
 ```
 The demo will let you choose an image to compress.
+
+The latest docker image can be accessed by tag: `mcquic/main:latest`.
 
 ## Install via PyPI
 Please ensure you've installed any `conda` environments, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 * Install all required packages with `conda` and `pip`
 ```bash
-sh -c "curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh"
+sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh)"
 ```
 * Compress images
 ```bash
