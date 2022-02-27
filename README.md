@@ -167,7 +167,7 @@ The latest docker image can be accessed by tag: `mcquic/main:latest`.
 
 ## Install via PyPI
 Please ensure you've installed any `conda` environments, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
-* Install all required packages with `conda` and `pip`
+* Create a virtual env `mcquic` and install all packages
 ```bash
 sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh)"
 ```
@@ -188,7 +188,7 @@ Please ensure you've installed any `conda` environments, *e.g.* [Miniconda](http
 ```bash
 git clone https://github.com/xiaosu-zhu/McQuic.git && cd McQuic
 ```
-* Install all required packages with `conda`
+* Create a virtual env `mcquic` and install all required packages
 ```bash
 conda env create -f environment.yml
 ```
