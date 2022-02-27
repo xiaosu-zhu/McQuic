@@ -47,14 +47,14 @@ Take a more look at ***our paper***:
 <p align="center">
     <img src="./assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
     <img src="./assets/paper/priors-dark.svg#gh-dark-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
-    <p align="center"><b>Figure 1. Operational diagrams of different methods.</b></figcaption>
+    <span><b>Figure 1. Operational diagrams of different methods.</b></span>
 </p>
 
 
 <p align="center">
     <img src="./assets/paper/kodim24-light.png#gh-light-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
     <img src="./assets/paper/kodim24-dark.png#gh-dark-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
-    <p align="center"><b>Figure 2. Comparisons with traditional codecs on an image from Kodak dataset.</b></figcaption>
+    <span><b>Figure 2. Comparisons with traditional codecs on an image from Kodak dataset.</b></span>
 </p>
 
 <!--ts-->
@@ -83,7 +83,7 @@ Following previous works, we build the compression model as an AutoEncoder. Bott
 <p align="center">
     <img src="./assets/paper/framework-light.svg#gh-light-mode-only" alt="Framework" title="Framework" width="100%">
     <img src="./assets/paper/framework-dark.svg#gh-dark-mode-only" alt="Framework" title="Framework" width="100%">
-    <p align="center"><b>Figure 3. Left: Overall framework. Right: Structure of a quantizer.</b></figcaption>
+    <span><b>Figure 3. Left: Overall framework. Right: Structure of a quantizer.</b></span>
 </p>
 
 Right part of above figure shows detailed structure of our proposed quantizer. A minimal implementation comes up with:
