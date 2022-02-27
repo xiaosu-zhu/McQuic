@@ -62,15 +62,16 @@ Take a more look at ***our paper***:
 * [Try Me!](#try-me)
    * [Requirements](#requirements)
    * [Docker (Recommended)](#docker-recommended)
-   * [Install Manually](#install-manually)
-* [Train a New Model](#train-a-new-model)
+   * [Install via PyPI](#install-via-pypi)
+   * [Install Manually (for dev)](#install-manually-for-dev)
+* [Develop, Contribute, or Train a New Model](#develop-contribute-or-train-a-new-model)
    * [Requirements](#requirements-1)
    * [Configs](#configs)
    * [Train and Test](#train-and-test)
 * [To-do List](#to-do-list)
 * [Reference and License](#reference-and-license)
 
-<!-- Added by: runner, at: Sat Feb 26 15:31:25 UTC 2022 -->
+<!-- Added by: runner, at: Sun Feb 27 09:36:00 UTC 2022 -->
 
 <!--te-->
 
