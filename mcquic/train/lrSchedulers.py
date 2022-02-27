@@ -1,3 +1,4 @@
+# type: ignore
 from collections import Counter
 from functools import wraps
 import math

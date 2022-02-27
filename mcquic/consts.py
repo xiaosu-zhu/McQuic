@@ -37,4 +37,4 @@ OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, 
 LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
 LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
 LrSchedulerRegistry.register("MultiStep")(torch.optim.lr_scheduler.MultiStepLR)
-LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR)
+LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR) # type: ignore
