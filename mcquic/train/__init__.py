@@ -1,7 +1,9 @@
 from shutil import copy2
 from typing import Tuple, Union
 import os
+import functools
 
+import apex
 from torch import nn
 import torch.distributed as dist
 from vlutils.config import summary
@@ -16,6 +18,15 @@ from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
 from .lrSchedulers import *
 from .valueTuners import *
+
+
+OptimizerRegistry.register("Adam")(torch.optim.Adam)
+OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
+
+LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
+LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
+LrSchedulerRegistry.register("MultiStep")(torch.optim.lr_scheduler.MultiStepLR)
+LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR) # type: ignore
 
 
 def modelFn(channel, m, k, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
