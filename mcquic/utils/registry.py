@@ -1,27 +1,29 @@
-from typing import Type
+from typing import Callable, Tuple, Type
 
-from torch import nn
-from torch.optim.lr_scheduler import _LRScheduler
-from torch.optim.optimizer import Optimizer
+import torch
 from vlutils.base import Registry
 
-from mcquic.base import ValueTuner
+from mcquic.baseClass import ValueTuner
 
 __all__ = [
     "ModuleRegistry",
     "ValueTunerRegistry",
     "LrSchedulerRegistry",
-    "OptimizerRegistry"
+    "OptimizerRegistry",
+    "EntrypointRegistry"
 ]
 
-class ModuleRegistry(Registry[Type[nn.Module]]):
+class ModuleRegistry(Registry[Type["torch.nn.Module"]]):
     pass
 
 class ValueTunerRegistry(Registry[Type[ValueTuner]]):
     pass
 
-class LrSchedulerRegistry(Registry[Type[_LRScheduler]]):
+class LrSchedulerRegistry(Registry[Type["torch.optim.lr_scheduler._LRScheduler"]]):
     pass
 
-class OptimizerRegistry(Registry[Type[Optimizer]]):
+class OptimizerRegistry(Registry[Type["torch.optim.optimizer.Optimizer"]]):
+    pass
+
+class EntrypointRegistry(Registry[Callable[[Tuple[str], ], int]]):
     pass

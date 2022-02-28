@@ -1,7 +1,7 @@
 import math
 
 from mcquic.utils import ValueTunerRegistry
-from mcquic.base import ValueTuner
+from mcquic.baseClass import ValueTuner
 
 @ValueTunerRegistry.register
 class CyclicValue(ValueTuner):
