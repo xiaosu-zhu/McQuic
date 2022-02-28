@@ -263,7 +263,7 @@ where `dataset` and `valDataset` can be any relative or absolute paths.
 
 In this example, the final folder structure is shown below:
 
-```bash
+```yaml
 .
 ... # other files
 ├─ 📂configs
