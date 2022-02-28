@@ -174,6 +174,8 @@ And instructions are still yet simple.
 ```bash
 sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh)"
 ```
+Now you should in the conda env `mcquic`, if not, please activate in by `conda activate mcquic`.
+
 * Compress images
 ```bash
 mcquic --help
