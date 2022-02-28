@@ -228,7 +228,7 @@ More information such as building toolchains, please refer to [their repository]
 
 
 # Develop, Contribute, or Train a New Model
-It will be very nice 😊 if you want to check your new ideas, add new functions, or train new models, you need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). To train models, here are minimal and recommended system requirements.
+It will be very nice if you want to check your new ideas, add new functions, or train new models 😊. You need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). To train models, here are minimal and recommend system requirements.
 
 ## Requirements
 * Minimal
