@@ -35,3 +35,7 @@ def main(_) -> int:
     # Give up handling SIGINT by yourself... PyTorch hacks it.
     mp.spawn(train, (worldSize, masterPort, config, saveDir, FLAGS.resume, FLAGS.debug), worldSize, daemon=True) # type: ignore
     return 0
+
+def entryPoint():
+    from absl import app
+    app.run(main)

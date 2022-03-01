@@ -40,3 +40,7 @@ def _main(_) -> int:
 
 def main(args: Tuple[str, ...]) -> int:
     return dispatch(args)
+
+def entryPoint():
+    from absl import app
+    app.run(main)
