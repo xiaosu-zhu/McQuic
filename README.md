@@ -316,7 +316,7 @@ if you want to use an updated config (e.g. tuned learning rate, modified hyper-p
 
 
 # Contribute to this Repository
-It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at the [issue template](./issues/new/choose).
+It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at the [issue template](https://github.com/xiaosu-zhu/McQuic/issues/new/choose).
 
 
 # To-do List
