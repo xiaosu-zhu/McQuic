@@ -64,15 +64,16 @@ Take a more look at ***our paper***:
    * [Docker (Recommended)](#docker-recommended)
    * [Install via PyPI](#install-via-pypi)
    * [Install Manually (for dev)](#install-manually-for-dev)
+* [Reference Models](#reference-models)
 * [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
    * [Configs](#configs)
    * [Train and Test](#train-and-test)
-* [Contribute to thie Repository](#contribute-to-thie-repository)
+* [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
 * [References and License](#references-and-license)
 
-<!-- Added by: runner, at: Wed Mar  2 15:37:22 UTC 2022 -->
+<!-- Added by: runner, at: Wed Mar  2 16:09:48 UTC 2022 -->
 
 <!--te-->
 
