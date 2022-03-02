@@ -1,9 +1,9 @@
 <p align="center">
   <a href="https://github.com/xiaosu-zhu/McQuic#gh-light-mode-only">
-    <img src="./assets/McQuic-light.svg#gh-light-mode-only" alt="McQuic" title="McQuic" width="33%">
+    <img src="./assets/McQuic-light.svg#gh-light-mode-only" alt="McQuic" title="McQuic" width="45%"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic#gh-dark-mode-only">
-    <img src="./assets/McQuic-dark.svg#gh-dark-mode-only" alt="McQuic" title="McQuic" width="33%">
+    <img src="./assets/McQuic-dark.svg#gh-dark-mode-only" alt="McQuic" title="McQuic" width="45%"/>
   </a>
   <br/>
   <span>
@@ -34,7 +34,7 @@
 </p>
 
 
-Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas represent in SHA [[1](#reference-and-license)], VQ-VAE [[2](#reference-and-license)], VQ-GAN [[3](#reference-and-license)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
+Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas represent in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
 
 Take a more look at ***our paper***:
 
@@ -140,9 +140,8 @@ class Quantizer(nn.Module):
 
 
 
-# Try Me!
+# Quick Start
 It is easy (with a GPU) to try our model. We would give a quick guide to help you compress an image and restore it.
-
 
 ## Requirements
 To run the model, your device needs to meet following requirements.
@@ -179,11 +178,12 @@ Now you should in the conda env `mcquic`, if not, please activate in by `conda a
 * Compress images
 ```bash
 mcquic --help
-mcquic -q 1 -i assets/example.png -o assets/compressed.bin
+# mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
+mcquic -q 1 -o assets/compressed.bin assets/example.png
 ```
 * Decompress images
 ```bash
-mcquic -q 1 -i assets/compressed.bin -o assets/example.png
+mcquic -q 1 -o assets/example.png assets/compressed.bin
 ```
 
 ## Install Manually (for dev)
@@ -207,12 +207,13 @@ pip install -e ./
 ```
 * Compress images
 ```bash
-python -m mcquic --help
-python -m mcquic -q 1 -i assets/example.png -o assets/compressed.bin
+mcquic --help
+# mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
+mcquic -q 1 -o assets/compressed.bin assets/example.png
 ```
 * Decompress images
 ```bash
-python -m mcquic -q 1 -i assets/compressed.bin -o assets/example.png
+mcquic -q 1 -o assets/example.png assets/compressed.bin
 ```
 And check outputs: [`assets/compressed.bin`](./assets/compressed.bin) and [`assets/restored.png`](./assets/restored.png).
 
@@ -223,12 +224,12 @@ And check outputs: [`assets/compressed.bin`](./assets/compressed.bin) and [`asse
 git clone https://github.com/NVIDIA/apex && cd apex
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 ```
-More information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
+For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
 
 
 
-# Develop, Contribute, or Train a New Model
-It will be very nice if you want to check your new ideas, add new functions, or train new models 😊. You need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). To train models, here are minimal and recommend system requirements.
+# Train a New Model
+To train models, here are minimal and recommend system requirements.
 
 ## Requirements
 * Minimal
@@ -244,12 +245,13 @@ Files in [configs](configs) give some example configs to train models. Please ch
 ## Train and Test
 Before training models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
 
-* To build a training dataset, please put all images in a folder (allow for sub-folders), then
+* To build a training dataset, please put all images in a folder (allow for sub-folders), then run
 ```bash
-# python -m mcquic.dataset [PATH_OF_YOUR_IMAGE_FOLDER] [PATH_OF_OUTPUT_DATASET]
-python -m mcquic.dataset train_images mcquic_dataset
+mcquic dataset --help
+# mcquic dataset [PATH_OF_YOUR_IMAGE_FOLDER] [PATH_OF_OUTPUT_DATASET]
+mcquic dataset train_images mcquic_dataset
 ```
-to build a `lmdb` for `mcquic` to read.
+to build a `lmdb` dataset for `mcquic` to read.
 
 * Then, you could prepare a training config, and don't forget to speify dataset path.
 ```yaml
@@ -264,12 +266,10 @@ where `dataset` and `valDataset` can be any relative or absolute paths.
 In this example, the final folder structure is shown below:
 
 ```yaml
-.
-... # other files
+. # A nice folder
 ├─ 📂configs
 │   ...
 │   └── 📄train.yaml
-├── 📂mcquic
 ├── 📄README.md # this readme
 ├── 📂train_images # a lot of training images
 │   ├── 📂ImageNet
@@ -292,22 +292,72 @@ In this example, the final folder structure is shown below:
 ```
 * To train a new model, run
 ```bash
-python -m mcquic.train --help
-# python -O -m mcquic.train -c [PATH_TO_CONFIG]
-python -O -m mcquic.train -c configs/train.config
+mcquic train --help
+# mcquic train [PATH_TO_CONFIG]
+mcquic train configs/train.yaml
 ```
 Saved model is located in `saved/mcquic_dataset/latest`.
 * To resume an interuptted training, run
 ```bash
-python -O -m mcquic.train -r
+mcquic train -r
 ```
 or
 ```bash
-python -O -m mcquic.train -c configs/train.config -r
+mcquic train -r configs/train.yaml
 ```
 if you want to use a new config (e.g. tuned learning rate, modified hyper-parameters) to resume training.
 
 
+# Contribute to thie Repository
+It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at [CONTRIB.md](localhost).
+
+
 # To-do List
 
-# Reference and License
+* PyPI auto-packaging (with github actions: major, minor, revision)
+* execute pattern: mcquic, train, validate, service, publish, dataset
+* reference model: 1,2,4~4+
+* argparse
+* binary specification
+* LogDir,DataDir,TempDir in PyPI package
+* save config in ckpt
+* ref model download and save
+
+# References and License
+[<a id="SHA">1</a>] Soft-to-Hard End-to-End
+
+[<a id="VQ-VAE">2</a>] Deep discrete
+
+[<a id="VQ-GAN">3</a>] Taming transformer
+
+
+To cite our paper, please use following BibTex:
+
+```plain
+{
+}
+```
+<p align="center">
+<b>
+This repo is licensed under
+</b>
+<br/>
+<a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only">
+  <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundati" width="45%"/>
+</a>
+<a href="https://www.apache.org/licenses/LICENSE-2.0#gh-dark-mode-only">
+<img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundati" title="The Apache Software Foundati" width="45%"/>
+</a>
+<br/>
+<b>
+Apache License<br/>Version 2.0
+</b>
+<br/>
+<br/>
+<br/>
+<a href="#gh-dark-mode-only">
+<b>
+I'd like to say thank you to ...
+</b>
+</a>
+</p>
