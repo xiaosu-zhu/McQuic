@@ -13,10 +13,10 @@
 
 
 <p align="center">
-  <a href="https://www.python.org/">
+  <a href="https://www.python.org/" target="_blank">
     <image src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"/>
   </a>
-  <a href="https://pytorch.org/">
+  <a href="https://pytorch.org/" target="_blank">
     <image src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/commits/main">
@@ -78,7 +78,7 @@ Take a more look at ***our paper***:
 
 
 # Introduction
-Thanks for your attention!❤️ Next we would like to tell some details...
+Thanks for your attention!❤️ Next we would like to say some details...
 
 Following previous works, we build the compression model as an AutoEncoder. Bottleneck of encoder (analysis transform) outputs a small feature map and is quantized by *multi-codebook vector-quantization* other than scalar-quantization. Quantizers are cascaded to effectively estimate latent distribution.
 
@@ -165,7 +165,7 @@ The demo would let you choose an image to compress.
 The latest docker image could be accessed by tag: `mcquic/main:latest`.
 
 ## Install via PyPI
-Another way needs any `conda` environments installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+Another way needs a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 And instructions are still yet simple.
 
@@ -173,27 +173,27 @@ And instructions are still yet simple.
 ```bash
 sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh)"
 ```
-Now you should in the conda env `mcquic`, if not, please activate in by `conda activate mcquic`.
+Now you should in the conda env `mcquic`, if not, please activate it by `conda activate mcquic`.
 
 * Compress images
 ```bash
 mcquic --help
 # mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
-mcquic -q 1 -o assets/compressed.bin assets/example.png
+mcquic -q 1 -o path/to/output.bin path/to/an/image
 ```
 * Decompress images
 ```bash
-mcquic -q 1 -o assets/example.png assets/compressed.bin
+mcquic -q 1 -o path/to/restored.png path/to/output.bin
 ```
 
 ## Install Manually (for dev)
-This way enables your fully access to codes. Also, `conda` environments are needed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+This way enables your full access to this repo. Also, if you want to go on, a `conda` environment is needed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 * Clone this repository
 ```bash
 git clone https://github.com/xiaosu-zhu/McQuic.git && cd McQuic
 ```
-* Create a virtual env `mcquic` and install all required packages
+* Create a virtual env `mcquic` and install all required packages by
 ```bash
 conda env create -f environment.yml
 ```
@@ -201,7 +201,7 @@ conda env create -f environment.yml
 ```bash
 conda activate mcquic
 ```
-* Install this package via `PyPI`
+* Install this repo locally via `PyPI`
 ```bash
 pip install -e ./
 ```
@@ -219,7 +219,7 @@ And check outputs: [`assets/compressed.bin`](./assets/compressed.bin) and [`asse
 
 * (***Optional***) Install `NVIDIA/Apex`
 
-[`NVIDIA/Apex`](https://github.com/NVIDIA/apex) is an additional package **required** for training. If you want to [**Develop, contribute, or train a new model**](#develop-contribute-or-train-a-new-model), please ensure you've installed `NVIDIA/Apex`.
+[`NVIDIA/Apex`](https://github.com/NVIDIA/apex) is an additional package **required** for training. If you want to [**develop, contribute**](#contribute-to-this-repository), or [**train a new model**](#train-a-new-model), please ensure you've installed `NVIDIA/Apex` by following snippets.
 ```bash
 git clone https://github.com/NVIDIA/apex && cd apex
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
@@ -227,9 +227,14 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
 
 
+# Reference Models
+We've released a bunch of pretrained models targeting various BPPs (bits per pixel). You could fetch them by specifying `-q [1~12]`. Following is the pretrained model list:
+
+***TBA***
+
 
 # Train a New Model
-To train models, here are minimal and recommend system requirements.
+To train models, here are minimal and recommended system requirements.
 
 ## Requirements
 * Minimal
@@ -240,7 +245,7 @@ To train models, here are minimal and recommend system requirements.
   * Better if you have `≥4-way` NVIDIA RTX 3090s or faster GPUs.
 
 ## Configs
-Files in [configs](configs) give some example configs to train models. Please check specifications in [configs/README.md](configs/README.md).
+The folder [configs](configs) provides some example configs to train models. Please check specifications in [configs/README.md](configs/README.md).
 
 ## Train and Test
 Before training models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
@@ -296,20 +301,20 @@ mcquic train --help
 # mcquic train [PATH_TO_CONFIG]
 mcquic train configs/train.yaml
 ```
-Saved model is located in `saved/mcquic_dataset/latest`.
+and saved model is located in `saved/mcquic_dataset/latest`.
 * To resume an interuptted training, run
 ```bash
 mcquic train -r
 ```
-or
+, or
 ```bash
 mcquic train -r configs/train.yaml
 ```
-if you want to use a new config (e.g. tuned learning rate, modified hyper-parameters) to resume training.
+if you want to use an updated config (e.g. tuned learning rate, modified hyper-parameters) to resume training.
 
 
-# Contribute to thie Repository
-It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at [CONTRIB.md](localhost).
+# Contribute to this Repository
+It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at the [issue template](./issues/new/choose).
 
 
 # To-do List
@@ -332,21 +337,22 @@ It will be very nice if you want to check your new ideas or add new functions �
 
 
 To cite our paper, please use following BibTex:
-
 ```plain
 {
 }
 ```
+
+
 <p align="center">
 <b>
 This repo is licensed under
 </b>
 <br/>
-<a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only">
-  <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundati" width="45%"/>
+<a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only" target="_blank">
+  <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
-<a href="https://www.apache.org/licenses/LICENSE-2.0#gh-dark-mode-only">
-<img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundati" title="The Apache Software Foundati" width="45%"/>
+<a href="https://www.apache.org/licenses/LICENSE-2.0#gh-dark-mode-only" target="_blank">
+<img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
 <br/>
 <b>
