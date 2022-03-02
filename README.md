@@ -59,19 +59,20 @@ Take a more look at ***our paper***:
 
 <!--ts-->
 * [Introduction](#introduction)
-* [Try Me!](#try-me)
+* [Quick Start](#quick-start)
    * [Requirements](#requirements)
    * [Docker (Recommended)](#docker-recommended)
    * [Install via PyPI](#install-via-pypi)
    * [Install Manually (for dev)](#install-manually-for-dev)
-* [Develop, Contribute, or Train a New Model](#develop-contribute-or-train-a-new-model)
+* [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
    * [Configs](#configs)
    * [Train and Test](#train-and-test)
+* [Contribute to thie Repository](#contribute-to-thie-repository)
 * [To-do List](#to-do-list)
-* [Reference and License](#reference-and-license)
+* [References and License](#references-and-license)
 
-<!-- Added by: runner, at: Mon Feb 28 11:21:41 UTC 2022 -->
+<!-- Added by: runner, at: Wed Mar  2 15:37:22 UTC 2022 -->
 
 <!--te-->
 
