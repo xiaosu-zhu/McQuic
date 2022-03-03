@@ -33,16 +33,26 @@
   </a>
 </p>
 
+<p align="center">
+  <b>🥳Our paper has been accepted to be presented at CVPR 2022!🥳</b>
+
+  <br/>
+  <a href="localhost#gh-light-mode-only">
+    <img src="./assets/papertitle-light.svg#gh-light-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
+  </a>
+  <a href="localhost#gh-dark-mode-only">
+    <img src="./assets/papertitle-dark.svg#gh-dark-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
+  </a>
+
+  <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost>arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
+</p>
+
+
+<br/>
+<br/>
+<br/>
 
 Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas represent in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
-
-Take a more look at ***our paper***:
-
-**Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression**
-
-
-
-**[CVPR Open Access](localhost) | [arXiv](localhost) | [BibTex](localhost) | Demo will be online soon**
 
 <p align="center">
     <img src="./assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
@@ -331,20 +341,28 @@ It will be very nice if you want to check your new ideas or add new functions �
 * ref model download and save
 
 # References and License
-[<a id="SHA">1</a>] Soft-to-Hard End-to-End
+### References
+[<a id="SHA">1</a>] Agustsson, Eirikur, et al. "Soft-to-hard vector quantization for end-to-end learning compressible representations." NeurIPS 2017.
 
-[<a id="VQ-VAE">2</a>] Deep discrete
+[<a id="VQ-VAE">2</a>] Van Den Oord, Aaron, and Oriol Vinyals. "Neural discrete representation learning." NeurIPS 2017.
 
-[<a id="VQ-GAN">3</a>] Taming transformer
+[<a id="VQ-GAN">3</a>] Esser, Patrick, Robin Rombach, and Bjorn Ommer. "Taming transformers for high-resolution image synthesis." CVPR 2021.
 
-
+### Citation
 To cite our paper, please use following BibTex:
 ```plain
 {
 }
 ```
 
+### License
 
+**Fonts used in the hero logo**:
+* `Source Sans Pro Black`, Copyright 2010, 2012 Adobe Systems Incorporated, under SIL Open Font License.
+* `Flash Rogers 3D`, Copyright 2007 Iconian Fonts, donationware.
+
+<br/>
+<br/>
 <p align="center">
 <b>
 This repo is licensed under
@@ -363,9 +381,7 @@ Apache License<br/>Version 2.0
 <br/>
 <br/>
 <br/>
-<a href="#gh-dark-mode-only">
-<b>
-I'd like to say thank you to ...
-</b>
+<a href="./#gh-dark-mode-only">
+<img src="./localhost#gh-dark-mode-only" width="200px"/>
 </a>
 </p>
