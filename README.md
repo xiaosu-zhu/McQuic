@@ -81,7 +81,9 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 * [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
    * [Configs](#configs)
-   * [Train and Test](#train-and-test)
+   * [Prepare a Dataset](#prepare-a-dataset)
+   * [Training](#training)
+   * [Test](#test)
 * [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
 * [References and License](#references-and-license)
@@ -89,7 +91,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
    * [Citation](#citation)
    * [License](#license)
 
-<!-- Added by: runner, at: Thu Mar  3 14:52:24 UTC 2022 -->
+<!-- Added by: runner, at: Thu Mar  3 14:57:30 UTC 2022 -->
 
 <!--te-->
 
