@@ -252,7 +252,7 @@ We've released a bunch of pretrained models targeting various BPPs (bits per pix
 
 
 # Train a New Model
-To train models, here are minimal and recommended system requirements.
+Please ensure you've installed [`NVIDIA/Apex`](https://github.com/NVIDIA/apex). To train models, here are minimal and recommended system requirements.
 
 ## Requirements
 * Minimal
@@ -265,7 +265,7 @@ To train models, here are minimal and recommended system requirements.
 ## Configs
 The folder [configs](configs) provides some example configs to train models. Please check specifications in [configs/README.md](configs/README.md).
 
-## Train and Test
+## Prepare a Dataset
 Before training models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
 
 * To build a training dataset, please put all images in a folder (allow for sub-folders), then run
@@ -313,6 +313,8 @@ In this example, the final folder structure is shown below:
     ├── 🖼️image2.png
     ...
 ```
+  
+## Training
 * To train a new model, run
 ```bash
 mcquic train --help
@@ -330,6 +332,9 @@ mcquic train -r configs/train.yaml
 ```
 if you want to use an updated config (e.g. tuned learning rate, modified hyper-parameters) to resume training.
 
+  
+## Test
+**TBA**
 
 # Contribute to this Repository
 It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at [issue templates](https://github.com/xiaosu-zhu/McQuic/issues/new/choose).
