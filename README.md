@@ -33,19 +33,22 @@
   </a>
 </p>
 
+<br/>
+
 <p align="center">
   <b>🥳Our paper has been accepted to be presented at CVPR 2022!🥳</b>
-
-  <br/>
+</p>
+<br/>
+<p align="center">
   <a href="localhost#gh-light-mode-only">
     <img src="./assets/papertitle-light.svg#gh-light-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
   <a href="localhost#gh-dark-mode-only">
     <img src="./assets/papertitle-dark.svg#gh-dark-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
-
-  <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost>arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
 </p>
+  <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost>arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
+
 
 
 <br/>
@@ -354,7 +357,16 @@ It will be very nice if you want to check your new ideas or add new functions �
 ### Citation
 To cite our paper, please use following BibTex:
 ```plain
-{
+@inproceedings{McQuic,
+  author    = {Xiaosu Zhu and
+               Jingkuan Song and
+               Lianli Gao and
+               Feng Zheng and
+               Heng Tao Shen},
+  title     = {Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression},
+  booktitle = {CVPR},
+  % pages     = {????--????}
+  year      = {2022}
 }
 ```
 
