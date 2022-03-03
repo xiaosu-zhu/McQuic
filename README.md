@@ -347,14 +347,14 @@ It will be very nice if you want to check your new ideas or add new functions ðŸ
 * ref model download and save
 
 # References and License
-### References
+## References
 [<a id="SHA">1</a>] Agustsson, Eirikur, et al. "Soft-to-hard vector quantization for end-to-end learning compressible representations." NeurIPS 2017.
 
 [<a id="VQ-VAE">2</a>] Van Den Oord, Aaron, and Oriol Vinyals. "Neural discrete representation learning." NeurIPS 2017.
 
 [<a id="VQ-GAN">3</a>] Esser, Patrick, Robin Rombach, and Bjorn Ommer. "Taming transformers for high-resolution image synthesis." CVPR 2021.
 
-### Citation
+## Citation
 To cite our paper, please use following BibTex:
 ```plain
 @inproceedings{McQuic,
@@ -370,7 +370,7 @@ To cite our paper, please use following BibTex:
 }
 ```
 
-### License
+## License
 
 **Fonts used in the hero logo**:
 * `Source Sans Pro Black`, Copyright 2010, 2012 Adobe Systems Incorporated, under SIL Open Font License.
