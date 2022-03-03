@@ -372,9 +372,9 @@ To cite our paper, please use following BibTex:
 
 ## License
 
-**Fonts used in the hero logo**:
-* `Source Sans Pro Black`, Copyright 2010, 2012 Adobe Systems Incorporated, under SIL Open Font License.
-* `Flash Rogers 3D`, Copyright 2007 Iconian Fonts, donationware.
+**Fonts used in this readme**:
+* **Source Sans Pro Black**, Copyright 2010, 2012 Adobe Systems Incorporated, SIL Open Font License.
+* **Flash Rogers 3D**, Copyright 2007 Iconian Fonts, donationware.
 
 <br/>
 <br/>
@@ -383,6 +383,7 @@ To cite our paper, please use following BibTex:
 This repo is licensed under
 </b>
 <br/>
+  
 <a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only" target="_blank">
   <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
@@ -390,12 +391,15 @@ This repo is licensed under
 <img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
 <br/>
-<b>
-Apache License<br/>Version 2.0
-</b>
+  
+<a href="./LICENSE">
+  <b>Apache License<br/>Version 2.0</b>
+</a>
+  
 <br/>
 <br/>
 <br/>
+  
 <a href="./#gh-dark-mode-only">
 <img src="./localhost#gh-dark-mode-only" width="200px"/>
 </a>
