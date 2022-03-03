@@ -85,11 +85,11 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 * [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
 * [References and License](#references-and-license)
-      * [References](#references)
-      * [Citation](#citation)
-      * [License](#license)
+   * [References](#references)
+   * [Citation](#citation)
+   * [License](#license)
 
-<!-- Added by: runner, at: Thu Mar  3 02:40:26 UTC 2022 -->
+<!-- Added by: runner, at: Thu Mar  3 02:41:45 UTC 2022 -->
 
 <!--te-->
 
