@@ -382,9 +382,15 @@ To cite our paper, please use following BibTex:
 
 ## Copyright
 
-**Fonts used in this readme**:
-* **Source Sans Pro Black**, Copyright 2010, 2012 Adobe Systems Incorporated, SIL Open Font License.
-* **Flash Rogers 3D**, Copyright 2007 Iconian Fonts, donationware.
+**Fonts**:
+* [**Source Sans Pro**](https://fonts.adobe.com/fonts/source-sans). © 2010, 2012 Adobe Systems Incorporated, SIL Open Font License.
+* [**Flash Rogers 3D**](https://www.iconian.com/index.html). © 2007 Iconian Fonts, donationware.
+* [**Cambria Math**](https://docs.microsoft.com/en-us/typography/font-list/cambria-math). © 2017 Microsoft Corporation. All rights reserved.
+* [**Times New Roman**](https://docs.microsoft.com/en-us/typography/font-list/times-new-roman). © 2017 The Monotype Corporation. All Rights Reserved.
+
+**Pictures**:
+* [**kodim24.png**](http://r0k.us/graphics/kodak/kodim24.html) by Alfons Rudolph, Kodak Image Dataset.
+* [**ales-krivec-15949.png**](https://unsplash.com/photos/hLxqYJspAkE) by Ales Krivec, CLIC Professional valid set.
 
 <br/>
 <br/>
@@ -392,25 +398,27 @@ To cite our paper, please use following BibTex:
 <b>
 This repo is licensed under
 </b>
-<br/>
-
+</p>
+<p align="center">
 <a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only" target="_blank">
   <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
 <a href="https://www.apache.org/licenses/LICENSE-2.0#gh-dark-mode-only" target="_blank">
 <img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
-<br/>
-
+</p>
+<p align="center">
 <a href="./LICENSE">
   <b>Apache License<br/>Version 2.0</b>
 </a>
+</p>
 
 <br/>
 <br/>
 <br/>
 
-<a href="./#gh-dark-mode-only">
-<img src="./localhost#gh-dark-mode-only" width="200px"/>
+<p align="center">
+<a href="https://github.com/yaya-cheng#gh-dark-mode-only">
+<img src="./assets/thanks.svg#gh-dark-mode-only" width="250px"/>
 </a>
 </p>
