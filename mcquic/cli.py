@@ -42,5 +42,5 @@ def main(args: Tuple[str, ...]) -> int:
     return dispatch(args)
 
 def entryPoint():
-    from absl import app
-    app.run(main)
+    import argparse
+    parser = argparse.ArgumentParser(prog='mcquic', description="", )

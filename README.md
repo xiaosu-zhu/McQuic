@@ -52,7 +52,7 @@
 <br/>
 <br/>
 
-Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas represent in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
+Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas are presented in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
 
 <p align="center">
     <img src="./assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
@@ -330,15 +330,18 @@ It will be very nice if you want to check your new ideas or add new functions ðŸ
 
 
 # To-do List
-
+* use marshmallow to parse config
 * PyPI auto-packaging (with github actions: major, minor, revision)
 * execute pattern: mcquic, train, validate, service, publish, dataset
 * reference model: 1,2,4~4+
-* argparse
+* remove absl, go to argparse
 * binary specification
 * LogDir,DataDir,TempDir in PyPI package
 * save config in ckpt
 * ref model download and save
+* change compressor args
+* fonts in framework
+* images put in license
 
 # References and License
 ### References
@@ -355,7 +358,7 @@ To cite our paper, please use following BibTex:
 }
 ```
 
-### License
+### Copyright
 
 **Fonts used in the hero logo**:
 * `Source Sans Pro Black`, Copyright 2010, 2012 Adobe Systems Incorporated, under SIL Open Font License.

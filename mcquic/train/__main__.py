@@ -1,7 +1,5 @@
-from absl import app
-
-from .cli import main
+from .cli import entryPoint
 
 
 if __name__ == "__main__":
-    app.run(main)
+    entryPoint()
