@@ -33,19 +33,22 @@
   </a>
 </p>
 
+<br/>
+
 <p align="center">
   <b>🥳Our paper has been accepted to be presented at CVPR 2022!🥳</b>
-
-  <br/>
+</p>
+<br/>
+<p align="center">
   <a href="localhost#gh-light-mode-only">
     <img src="./assets/papertitle-light.svg#gh-light-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
   <a href="localhost#gh-dark-mode-only">
     <img src="./assets/papertitle-dark.svg#gh-dark-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
-
-  <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost>arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
 </p>
+  <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost>arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
+
 
 
 <br/>
@@ -78,12 +81,17 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 * [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
    * [Configs](#configs)
-   * [Train and Test](#train-and-test)
+   * [Prepare a Dataset](#prepare-a-dataset)
+   * [Training](#training)
+   * [Test](#test)
 * [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
 * [References and License](#references-and-license)
+   * [References](#references)
+   * [Citation](#citation)
+   * [License](#license)
 
-<!-- Added by: runner, at: Wed Mar  2 16:12:31 UTC 2022 -->
+<!-- Added by: runner, at: Thu Mar  3 14:57:30 UTC 2022 -->
 
 <!--te-->
 
@@ -246,7 +254,7 @@ We've released a bunch of pretrained models targeting various BPPs (bits per pix
 
 
 # Train a New Model
-To train models, here are minimal and recommended system requirements.
+Please ensure you've installed [`NVIDIA/Apex`](https://github.com/NVIDIA/apex). To train models, here are minimal and recommended system requirements.
 
 ## Requirements
 * Minimal
@@ -259,7 +267,7 @@ To train models, here are minimal and recommended system requirements.
 ## Configs
 The folder [configs](configs) provides some example configs to train models. Please check specifications in [configs/README.md](configs/README.md).
 
-## Train and Test
+## Prepare a Dataset
 Before training models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
 
 * To build a training dataset, please put all images in a folder (allow for sub-folders), then run
@@ -307,6 +315,8 @@ In this example, the final folder structure is shown below:
     ├── 🖼️image2.png
     ...
 ```
+
+## Training
 * To train a new model, run
 ```bash
 mcquic train --help
@@ -324,6 +334,9 @@ mcquic train -r configs/train.yaml
 ```
 if you want to use an updated config (e.g. tuned learning rate, modified hyper-parameters) to resume training.
 
+
+## Test
+**TBA**
 
 # Contribute to this Repository
 It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at [issue templates](https://github.com/xiaosu-zhu/McQuic/issues/new/choose).
@@ -344,25 +357,34 @@ It will be very nice if you want to check your new ideas or add new functions �
 * images put in license
 
 # References and License
-### References
+## References
 [<a id="SHA">1</a>] Agustsson, Eirikur, et al. "Soft-to-hard vector quantization for end-to-end learning compressible representations." NeurIPS 2017.
 
 [<a id="VQ-VAE">2</a>] Van Den Oord, Aaron, and Oriol Vinyals. "Neural discrete representation learning." NeurIPS 2017.
 
 [<a id="VQ-GAN">3</a>] Esser, Patrick, Robin Rombach, and Bjorn Ommer. "Taming transformers for high-resolution image synthesis." CVPR 2021.
 
-### Citation
+## Citation
 To cite our paper, please use following BibTex:
 ```plain
-{
+@inproceedings{McQuic,
+  author    = {Xiaosu Zhu and
+               Jingkuan Song and
+               Lianli Gao and
+               Feng Zheng and
+               Heng Tao Shen},
+  title     = {Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression},
+  booktitle = {CVPR},
+  % pages     = {????--????}
+  year      = {2022}
 }
 ```
 
-### Copyright
+## Copyright
 
-**Fonts used in the hero logo**:
-* `Source Sans Pro Black`, Copyright 2010, 2012 Adobe Systems Incorporated, under SIL Open Font License.
-* `Flash Rogers 3D`, Copyright 2007 Iconian Fonts, donationware.
+**Fonts used in this readme**:
+* **Source Sans Pro Black**, Copyright 2010, 2012 Adobe Systems Incorporated, SIL Open Font License.
+* **Flash Rogers 3D**, Copyright 2007 Iconian Fonts, donationware.
 
 <br/>
 <br/>
@@ -371,6 +393,7 @@ To cite our paper, please use following BibTex:
 This repo is licensed under
 </b>
 <br/>
+
 <a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only" target="_blank">
   <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
@@ -378,12 +401,15 @@ This repo is licensed under
 <img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
 <br/>
-<b>
-Apache License<br/>Version 2.0
-</b>
+
+<a href="./LICENSE">
+  <b>Apache License<br/>Version 2.0</b>
+</a>
+
 <br/>
 <br/>
 <br/>
+
 <a href="./#gh-dark-mode-only">
 <img src="./localhost#gh-dark-mode-only" width="200px"/>
 </a>
