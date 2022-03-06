@@ -1,46 +1,52 @@
-from typing import Tuple
-from absl import flags
-
-from mcquic.utils import EntrypointRegistry
-
-FLAGS = flags.FLAGS
+import pathlib
+import click
+from vlutils.utils import DefaultGroup
 
 
-""" For `mcquic`
-flags.DEFINE_string("input", "", "Input file, should be any images can be read by `torchvision.io.image.decode_image`, or `.bin` file created by mcquic.", short_name="i")
-flags.DEFINE_string("output", "", "(Optional) Output file, should be `.png` to restore image, or `.bin` to compress image, or `None` to just print compressor outputs.")
-flags.DEFINE_integer("quality", 1, "Target compressor, 1~12, bigger means higher BPP. Now we only release model 1.", short_name="q")
-"""
+def version(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    click.echo('McQuic 0.0.9')
+    ctx.exit()
 
 
-lazyLoads = {
-    "train": "mcquic.train.cli"
-}
-
-
-def dispatch(args: Tuple[str, ...]) -> int:
-    if len(args) == 1:
-        return _main(args)
-
-    if args[1] in lazyLoads:
-        import importlib
-        importlib.import_module(lazyLoads[args[1]])
-
-    entrypoint = EntrypointRegistry.get(args[1])
-
-    if entrypoint is None:
-        availableEntrypoints = ", ".join(f"`mcquic {x}`" for x in EntrypointRegistry._map.keys())
-        raise ValueError(f"No entrypoint for `mcquic {args[1]}`. Avaliable entrypoints: `mcquic`, {availableEntrypoints}")
-
-    return entrypoint(args)
-
-
-def _main(_) -> int:
-    return 0
-
-def main(args: Tuple[str, ...]) -> int:
-    return dispatch(args)
-
+@click.group(cls=DefaultGroup)
 def entryPoint():
-    import argparse
-    parser = argparse.ArgumentParser(prog='mcquic', description="", )
+    pass
+
+
+@entryPoint.command(default=True)
+@click.option("-v", "--version", is_flag=True, callback=version, expose_value=False, is_eager=True, help="Print version info.")
+@click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
+@click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-qp", type=click.IntRange(1, 13), default=3, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
+@click.argument('input', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), nargs=1)
+@click.argument('output', type=click.Path(exists=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
+def _(debug, quiet, qp, input, output):
+    """Compress/restore a file.
+
+Args:
+
+    input (str): Input file path. If input is an image, compress it. If input is a `.mcq` file, restore it.
+
+    output (optional, str): Output file path or dir. If not provided, this program will only print compressor information of input file.
+    """
+    print(qp, input, output)
+
+
+@entryPoint.command()
+@click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
+@click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-r", "--resume", is_flag=True)
+@click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
+@click.argument('checkpoint', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
+def train(resume, config, checkpoint):
+    """Train a model.
+
+Args:
+
+    config (str): Config file (yaml) path. If `-r/--resume` and config is given, then this config will be used instead of config stored in ckpt.
+
+    checkpoint (optional, str): `.ckpt` file path when `-r/--resume` to restore training from this checkpoint.
+    """
+    print(resume, config, checkpoint)

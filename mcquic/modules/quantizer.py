@@ -124,7 +124,7 @@ class _multiCodebookQuantization(nn.Module):
         logit = -1 * self._distance(x)
         return logit / self._scale
 
-    def _sample(self, x: torch.Tensor, temperature: float, rateScale: float):
+    def _sample(self, x: torch.Tensor, temperature: float):
         # [n, m, k, h, w] * [m, 1, 1, 1]
         logit = self._logit(x) * self._bound(self._temperature)
 
@@ -144,8 +144,8 @@ class _multiCodebookQuantization(nn.Module):
         # sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
         return sampled, logit
 
-    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
-        sample, logit = self._sample(x, temperature, rateScale)
+    def forward(self, x: torch.Tensor):
+        sample, logit = self._sample(x, 1.0)
         # [n, m, 1, h, w]
         code = logit.argmax(2, keepdim=True)
         # [n, m, k, h, w]
@@ -217,10 +217,10 @@ class _quantizerEncoder(nn.Module):
         #      ↓ residual,                         [n, m, h, w]
         return z - self._dequantizer.decode(code), code
 
-    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
+    def forward(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
-        q, code, oneHot, logit = self._quantizer(self._quantizationHead(z), temperature, rateScale)
+        q, code, oneHot, logit = self._quantizer(self._quantizationHead(z))
         if self._latentHead is None:
             return q, None, code, oneHot, logit
         z = self._latentHead(z)
@@ -328,14 +328,14 @@ class UMGMQuantizer(BaseQuantizer):
         for encoder in self._encoders:
             encoder.syncCodebook()
 
-    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
+    def forward(self, x: torch.Tensor):
         quantizeds = list()
         codes = list()
         oneHots = list()
         logits = list()
         for encoder in self._encoders:
             #          ↓ residual
-            quantized, x, code, oneHot, logit = encoder(x, temperature, rateScale)
+            quantized, x, code, oneHot, logit = encoder(x)
             # [n, c, h, w]
             quantizeds.append(quantized)
             # [n, m, h, w]
