@@ -1,6 +1,5 @@
 from typing import Callable, Tuple, Type
 
-import torch
 from vlutils.base import Registry
 
 from mcquic.baseClass import ValueTuner

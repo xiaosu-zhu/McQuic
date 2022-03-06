@@ -3,7 +3,6 @@ from typing import Tuple, Union
 import os
 import functools
 
-import apex
 from torch import nn
 import torch.distributed as dist
 from vlutils.config import summary
@@ -12,21 +11,22 @@ from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.loss import CompressionLossBig
 from mcquic.datasets import getTrainLoader, getValLoader
-from mcquic.utils.registry import OptimizerRegistry, ValueTunerRegistry, LrSchedulerRegistry
+from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry
 
 from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
 from .lrSchedulers import *
-from .valueTuners import *
 
 
-OptimizerRegistry.register("Adam")(torch.optim.Adam)
-OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
+def registerForTrain():
+    import apex
+    OptimizerRegistry.register("Adam")(torch.optim.Adam)
+    OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
 
-LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
-LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
-LrSchedulerRegistry.register("MultiStep")(torch.optim.lr_scheduler.MultiStepLR)
-LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR) # type: ignore
+    LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
+    LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
+    LrSchedulerRegistry.register("MultiStep")(torch.optim.lr_scheduler.MultiStepLR)
+    LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR) # type: ignore
 
 
 def modelFn(channel, m, k, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
@@ -62,9 +62,8 @@ def train(rank: int, worldSize: int, port: str, config: Config, saveDir: str, re
 
     optimizerFn = OptimizerRegistry.get("Lamb", logger=saver)
     schdrFn = LrSchedulerRegistry.get(config.Schdr.type, logger=saver)
-    valueTunerFns = [ValueTunerRegistry.get(config.RegSchdr.type, saver), ValueTunerRegistry.get(config.TempSchdr.type, logger=saver)]
 
-    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, valueTunerFns, saver)
+    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.channel, config.Model.m, config.Model.k, config.Model.target), optimizerFn, schdrFn, saver)
 
     if tmpFile is not None:
         saver.info("Found ckpt to resume at %s", resume)

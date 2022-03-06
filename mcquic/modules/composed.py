@@ -18,8 +18,8 @@ class _composed(Module):
         self._compressor = compressor
         self._criterion = criterion
 
-    def forward(self, x: Tensor, temperature: float, rateScale: float):
-        xHat, yHat, codes, logits = self._compressor(x, temperature, rateScale)
+    def forward(self, x: Tensor):
+        xHat, yHat, codes, logits = self._compressor(x)
         rate, distortion = self._criterion(x, xHat, codes, logits)
         return xHat, (rate, distortion), codes, logits
 

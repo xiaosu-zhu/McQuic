@@ -19,10 +19,10 @@ class BaseCompressor(nn.Module):
         self._decoder = decoder
         self._quantizer = quantizer
 
-    def forward(self, x: torch.Tensor, temperature: float, rateScale: float):
+    def forward(self, x: torch.Tensor):
         y = self._encoder(x)
         # [n, c, h, w], [n, m, h, w], [n, m, k, h, w]
-        yHat, codes, logits = self._quantizer(y, temperature, rateScale)
+        yHat, codes, logits = self._quantizer(y)
         xHat = self._decoder(yHat)
         return xHat, yHat, codes, logits
 
