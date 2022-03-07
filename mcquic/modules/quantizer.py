@@ -6,7 +6,6 @@ from torch import nn
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from mcquic.nn import conv1x1, conv3x3
 from mcquic.modules.entropyCoder import EntropyCoder
 from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize

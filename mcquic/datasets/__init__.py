@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from vlutils.logger import LoggerBase
 from vlutils.saver import StrPath
 
-from .transforms import getTrainingFullTransform, getTrainingTransform, getTrainingPreprocess, getEvalTransform, getTestTransform
+from .transforms import getTrainingFullTransform, getTrainingTransform, getTrainingPreprocess, getEvalTransform
 from .dataset import Basic, BasicLMDB
 from .prefetcher import Prefetcher
 
@@ -28,8 +28,8 @@ class DummyLoader(DataLoader):
     def __init__(self, **_):
         return
 
-def getTrainLoader(rank: int, worldSize: int, datasetName: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    trainDataset = BasicLMDB(os.path.join("data", datasetName), maxTxns=(batchSize + 4) * worldSize, transform=getTrainingPreprocess())
+def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
+    trainDataset = BasicLMDB(datasetPath, maxTxns=(batchSize + 4) * worldSize, transform=getTrainingPreprocess())
     logger.debug("Create training set: %s", trainDataset)
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
     trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True, persistent_workers=True)
@@ -37,22 +37,9 @@ def getTrainLoader(rank: int, worldSize: int, datasetName: StrPath, batchSize: i
     logger.debug("Create training prefetcher: %s", prefetcher)
     return prefetcher, trainSampler
 
-def getTrainingRefLoader(datasetName: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    trainDataset = BasicLMDB(os.path.join("data", datasetName), maxTxns=(batchSize + 4), transform=getTrainingFullTransform())
-    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True)
-    logger.debug("Create training ref set: %s", trainDataset)
-    return trainLoader
-
-def getValLoader(datasetName: StrPath, batchSize: int, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
+def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
     if disable:
         return DummyLoader()
-    valDataset = Basic(os.path.join("data", datasetName), transform=getEvalTransform())
+    valDataset = Basic(datasetPath, transform=getEvalTransform())
     logger.debug("Create validation set: %s", valDataset)
-    return DataLoader(valDataset, batch_size=min(batchSize, len(valDataset)), shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
-
-def getTestLoader(datasetName: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    if disable:
-        return DummyLoader()
-    testDataset = Basic(os.path.join("data", datasetName), transform=getTestTransform())
-    logger.debug("Create test set: %s", testDataset)
-    return DataLoader(testDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    return DataLoader(valDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)

@@ -2,7 +2,7 @@ import functools
 import os
 import shutil
 from time import sleep
-from typing import Callable, List, Optional, Tuple, Type
+from typing import Callable, Optional, Tuple, Type
 import signal
 import threading
 import gc
@@ -53,7 +53,6 @@ class _baseTrainer(Restorable):
         self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
-        # self.saver.debug("[%s] BPP upper-bound: %s", self.PrettyStep, bppUpperBound(self.config.Model.m, self.config.Model.k))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
@@ -68,6 +67,9 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
+
+    def save(self, path = None):
+        self.saver.save(path, trainer=self, config=self.config.serialize())
 
     @property
     def PrettyStep(self):
@@ -95,7 +97,7 @@ class _baseTrainer(Restorable):
     def restoreStates(self, path: str):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
-        self.saver.load(path, {"cuda:0": f"cuda:{self.rank}"}, logger=self.saver, **{Consts.Fingerprint: self})
+        self.saver.load(path, {"cuda:0": f"cuda:{self.rank}"}, logger=self.saver, trainer=self)
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
@@ -153,7 +155,7 @@ class _baseTrainer(Restorable):
 
         hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
 
-        if self._epoch % (self.config.ValFreq) == 0:
+        if self._epoch % (self.config.Training.ValFreq) == 0:
             self.refresh()
 
         gc.collect()
@@ -180,7 +182,7 @@ class _baseTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, totalBatches=len(trainLoader._loader))
 
-        for _ in range(self._epoch, self.config.Epoch):
+        for _ in range(self._epoch, self.config.Training.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
             for images in trainLoader:
                 self._stepStart(stepStartHook)
@@ -218,7 +220,7 @@ class MainTrainer(_baseTrainer):
         # Call function at every X epoches.
         hooks = EpochFrequencyHook(
             (1, self.log),
-            (self.config.ValFreq, self.validate),
+            (self.config.Training.ValFreq, self.validate),
             logger=self.saver
         )
 
@@ -244,9 +246,8 @@ class MainTrainer(_baseTrainer):
         self.saver.critical("[%s] Main process was interrupted, try to save necessary info.", self.PrettyStep)
         self.saver.critical("[%s] This post-process will be killed after %d secs if stuck.", self.PrettyStep, Consts.TimeOut)
         self.progress.__exit__(None, None, None)
-        self.saver._savePath = os.path.join(self.saver.SaveDir, "last.ckpt")
-        self.saver.save(**{Consts.Fingerprint: self, "config": serialize(self.config)})
-        self.saver.critical("[%s] Find the last checkpoint at `%s`", self.PrettyStep, relativePath(self.saver.SavePath))
+        self.save(os.path.join(self.saver.SaveDir, "last.ckpt"))
+        self.saver.critical("[%s] Find the last checkpoint at `%s`", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "last.ckpt")))
         self.summary()
         self.saver.critical("[%s] QUIT.", self.PrettyStep)
         # reset to default SIGTERM handler
@@ -270,7 +271,7 @@ class MainTrainer(_baseTrainer):
 
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         self.progress.update(self.trainingBar, total=totalBatches)
-        self.progress.update(self.epochBar, total=self.config.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Epoch:4d}]")
+        self.progress.update(self.epochBar, total=self.config.Training.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Training.Epoch:4d}]")
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
@@ -292,12 +293,12 @@ class MainTrainer(_baseTrainer):
 
         if self._step % 100 != 0:
             return
-        self.saver.add_scalar("Stat/DLoss", moment, global_step=self._step)
+        self.saver.add_scalar(f"Stat/{self.config.Training.Target}", moment, global_step=self._step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
     def _epochStart(self, hook, *args, **kwArgs):
         self.progress.reset(self.trainingBar)
-        self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Epoch:4d}]")
+        self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Training.Epoch:4d}]")
         super()._epochStart(hook, *args, **kwArgs)
 
     def refresh(self, *_, **__):
@@ -329,9 +330,9 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
         self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
 
-        self.saver.save(**{Consts.Fingerprint: self, "config": serialize(self.config)})
+        self.save()
 
-        rate, distortion = results["BPP"], results[self.config.Model.target]
+        rate, distortion = results["BPP"], results[self.config.Training.Target]
 
         if (distortion / rate) > (self.bestDistortion / self.bestRate):
             self.bestDistortion = distortion
