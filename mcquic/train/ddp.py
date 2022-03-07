@@ -37,7 +37,7 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
     return compressor, criterion
 
 
-def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: Union[str, None], debug: bool):
+def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: Union[str, None], loggingLevel: int):
     registerForTrain()
 
 
@@ -51,7 +51,7 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
         tmpFile = None
 
 
-    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel="DEBUG" if debug else "INFO", config=config.serialize(), reserve=False, disable=rank != 0)
+    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel=loggingLevel, config=config.serialize(), reserve=False, disable=rank != 0)
 
     saver.info("Here is the whole config during this run: \r\n%s", summary(config.serialize()))
 

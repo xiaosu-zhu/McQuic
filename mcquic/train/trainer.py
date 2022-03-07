@@ -313,7 +313,6 @@ class MainTrainer(_baseTrainer):
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
             self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
-            # self.saver.add_histogram(f"Stat/FreqLv{lv}", fr[0], global_step=self._step)
             self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)

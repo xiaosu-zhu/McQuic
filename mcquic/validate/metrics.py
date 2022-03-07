@@ -240,14 +240,14 @@ class MsSSIM(nn.Module):
         else:
             raise ValueError(f"Input shape should be 4-d or 5-d tensors, but got {shape}")
 
-        self.register_buffer("win", _fspecial_gauss_1d(win_size, win_sigma).repeat([channel, 1] + [1] * spatial_dims))
+        self.register_buffer("win", _fspecial_gauss_1d(win_size, win_sigma).repeat([channel, 1] + [1] * spatial_dims), persistent=False)
         self.sizeAverage = sizeAverage
         self.data_range = data_range
         if weights is None:
             weights = torch.tensor(_WEIGHTS)
         else:
             weights = torch.tensor(weights)
-        self.register_buffer("weights", weights)
+        self.register_buffer("weights", weights, persistent=False)
         self.K = K
 
     def forward(self, X, Y):
