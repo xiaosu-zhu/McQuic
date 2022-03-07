@@ -1,5 +1,3 @@
-import threading
-
 import torch
 import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
@@ -53,4 +51,41 @@ class Validator:
         progress.remove_task(task)
         return self._meter.results(), self._meter.summary()
 
-    def test(self, testLoader: DataLoader): raise NotImplementedError
+    @torch.inference_mode()
+    def speed(self, epoch: int, model: BaseCompressor, progress: Progress):
+        now = 0
+        task = progress.add_task(f"[ Spd@{epoch:4d}]", total=100, progress=f"{now:4d}/{100:4d}", suffix="")
+
+        with model._quantizer.readyForCoding() as cdfs:
+            tensor = torch.rand(10, 3, 768, 512).to(self._rank)
+
+            startEvent = torch.cuda.Event(enable_timing=True)
+            endEvent = torch.cuda.Event(enable_timing=True)
+
+            startEvent.record()
+            for _ in range(50):
+                codes, binaries, headers = model.compress(tensor, cdfs)
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
+            endEvent.record()
+            torch.cuda.synchronize()
+            encoderMs = startEvent.elapsed_time(endEvent)
+
+            startEvent.record()
+            for _ in range(50):
+                restored = model.decompress(binaries, cdfs, headers)
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
+            endEvent.record()
+            torch.cuda.synchronize()
+            decoderMs = startEvent.elapsed_time(endEvent)
+
+        result = ((50 * 10 * 768 * 512 / 1000) / encoderMs, (50 * 10 * 768 * 512 / 1000) / decoderMs)
+        return result, f"Coding rate: encoder: {result[0]:.2f} MPps, decoder: {result[1]:.2f} MPps"
+
+    @torch.inference_mode()
+    def test(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
+        # warmup
+        results, summary = self.validate(epoch, model, valLoader, progress)
+
+        speedResult, speedSummary = self.speed(epoch, model, progress)
+
+        return results, speedResult, summary, speedSummary

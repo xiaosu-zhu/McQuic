@@ -48,3 +48,42 @@ Args:
     """
     from mcquic.train.cli import main
     main(debug, quiet, resume, config)
+
+
+@entryPoint.command()
+@click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
+@click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
+@click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
+@click.argument("output", type=click.Path(exists=False, dir_okay=True, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
+def validate(debug, quiet, path, images, output):
+    """Validate a trained model from `path` by images from `images` dir, and publish a final state_dict to `output` path.
+
+Args:
+
+    path (str): Saved checkpoint path.
+
+    images (str): Validation images folder.
+
+    output (str): File path or dir to publish this model.
+    """
+    from mcquic.validate.cli import main
+    main(debug, quiet, path, images, output)
+
+
+@entryPoint.command()
+@click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
+@click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
+@click.argument("output", type=click.Path(exists=False, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
+def dataset(debug, quiet, images, output):
+    """Create training set from `images` dir to `output` dir.
+
+Args:
+
+    images (str): All training images folder, allow sub-folders.
+
+    output (str): Output dir to create training set.
+    """
+    from mcquic.datasets.cli import main
+    main(images, output)

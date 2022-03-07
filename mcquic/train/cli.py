@@ -1,17 +1,28 @@
 import logging
 import pathlib
 import random
+import click
 
+
+def checkArgs(debug, quiet, resume: pathlib.Path, configPath: pathlib.Path):
+    if resume is None and configPath is None:
+        raise ValueError("Both `resume` and `config` are not given.")
+    if quiet:
+        return logging.CRITICAL
+    if debug:
+        return logging.DEBUG
+    return logging.INFO
 
 def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Path) -> int:
+    loggingLevel = checkArgs(debug, quiet, resume, configPath)
+
     from .ddp import ddpSpawnTraining, registerForTrain
     import torch.multiprocessing as mp
     from vlutils.runtime import queryGPU
     from mcquic.config import Config
     import yaml
 
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(loggingLevel)
 
     config = Config.deserialize(yaml.full_load(configPath.read_text()))
 
@@ -25,9 +36,14 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
 
     # `daemon` is True --- Way to handle SIGINT globally.
     # Give up handling SIGINT by yourself... PyTorch hacks it.
-    mp.spawn(ddpSpawnTraining, (worldSize, masterPort, config, config.Training.SaveDir, resume, debug), worldSize, daemon=True) # type: ignore
+    mp.spawn(ddpSpawnTraining, (worldSize, masterPort, config, config.Training.SaveDir, resume, loggingLevel), worldSize, daemon=True) # type: ignore
     return 0
 
-def entryPoint():
-    from absl import app
-    app.run(main)
+
+@click.command()
+@click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
+@click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-r", "--resume", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1, help="`.ckpt` file path to resume training.")
+@click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
+def entryPoint(debug, quiet: bool, resume: pathlib.Path, config: pathlib.Path):
+    main(debug, quiet, resume, config)
