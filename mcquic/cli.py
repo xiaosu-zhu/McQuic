@@ -37,16 +37,14 @@ Args:
 @entryPoint.command()
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
-@click.option("-r", "--resume", is_flag=True)
+@click.option("-r", "--resume", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1, help="`.ckpt` file path to resume training.")
 @click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-@click.argument('checkpoint', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def train(resume, config, checkpoint):
+def train(debug, quiet, resume, config):
     """Train a model.
 
 Args:
 
-    config (str): Config file (yaml) path. If `-r/--resume` and config is given, then this config will be used instead of config stored in ckpt.
-
-    checkpoint (optional, str): `.ckpt` file path when `-r/--resume` to restore training from this checkpoint.
+    config (str): Config file (yaml) path. If `-r/--resume` is present but config is still given, then this config will be used to update the resumed training.
     """
-    print(resume, config, checkpoint)
+    from mcquic.train.cli import main
+    main(debug, quiet, resume, config)

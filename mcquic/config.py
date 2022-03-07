@@ -1,107 +1,74 @@
 import math
-from typing import List
-from dataclasses import dataclass
+from typing import Any, Dict
+
+from marshmallow import Schema, fields, post_load
 
 
-@dataclass
-class Coef:
-    ssim: float = 2.0
-    l1l2: float = 2.0
+class GeneralSchema(Schema):
+    type = fields.Str()
+    params = fields.Dict(keys=fields.Str())
+
+    @post_load
+    def _(self, data, **kwargs):
+        return General(**data)
+
+class TrainingSchema(Schema):
+    batchSize = fields.Int()
+    epoch = fields.Int()
+    valFreq = fields.Int()
+    trainSet = fields.Str()
+    valSet = fields.Str()
+    saveDir = fields.Str()
+    target = fields.Str()
+
+    @post_load
+    def _(self, data, **kwargs):
+        return Training(**data)
+
+class GPUSchema(Schema):
+    gpus = fields.Int()
+    vRam = fields.Int()
+    wantsMore = fields.Bool()
+
+    @post_load
+    def _(self, data, **kwargs):
+        return GPU(**data)
+
+class ConfigSchema(Schema):
+    model = fields.Nested(GeneralSchema())
+    optim = fields.Nested(GeneralSchema())
+    schdr = fields.Nested(GeneralSchema())
+    training = fields.Nested(TrainingSchema())
+    gpu = fields.Nested(GPUSchema())
+
+    @post_load
+    def _(self, data, **kwargs):
+        return Config(**data)
 
 
-@dataclass
-class ModelSpec:
-    type: str
-    k: List[int]
-    target: str
-    m: int = 4
-    withGroup: bool = True
-    channel: int = 256
-    withAtt: bool = True
-    alias: bool = True
-    ema: float = 0.8
-
-
-@dataclass
-class OptimSpec:
-    type: str
-    params: dict
-
-
-@dataclass
-class SchdrSpec:
-    type: str
-    params: dict
-
-
-@dataclass
-class RegSchdrSpec:
-    type: str
-    params: dict
-
-
-@dataclass
-class Config:
-    model: ModelSpec = ModelSpec(type="Base", target="ssim", m=8, k=[2048, 512, 128])
-    optim: OptimSpec = OptimSpec(type="Adam", params={})
-    schdr: SchdrSpec = SchdrSpec(type="ReduceLROnPlateau", params={})
-    regSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
-    tempSchdr: RegSchdrSpec = RegSchdrSpec(type="Step", params={})
-    batchSize: int = 4
-    epoch: int = 10000
-    gpus: int = 1
-    vRam: int = -1
-    wantsMore: bool = False
-    dataset: str = "clic/train"
-    valDataset: str = "clic/valid"
-    method: str = "Plain"
-    valFreq: int = 10
-    testFreq: int = 100
-    warmStart: str = "ckpt/global.ckpt"
-    repeat: int = 1
-
-    def scaleByWorldSize(self, worldSize: int):
-        batchSize = self.BatchSize * worldSize
-        exponent = math.log2(batchSize)
-        scale = 3 - exponent / 2
-        if "lr" in self.Optim.params:
-            self.Optim.params["lr"] /= (2 ** scale)
+class General:
+    def __init__(self, type: str, params: Dict[str, Any]):
+        self.type = type
+        self.params = params
 
     @property
-    def Repeat(self) -> int:
-        return self.repeat
+    def Type(self) -> str:
+        return self.type
 
     @property
-    def Optim(self) -> OptimSpec:
-        return self.optim
+    def Params(self) -> Dict[str, Any]:
+        return self.params
 
-    @property
-    def Schdr(self) -> SchdrSpec:
-        return self.schdr
 
-    @property
-    def RegSchdr(self) -> RegSchdrSpec:
-        return self.regSchdr
-
-    @property
-    def TempSchdr(self) -> RegSchdrSpec:
-        return self.tempSchdr
-
-    @property
-    def WarmStart(self) -> str:
-        return self.warmStart
-
-    @property
-    def ValFreq(self) -> int:
-        return self.valFreq
-
-    @property
-    def TestFreq(self) -> int:
-        return self.testFreq
-
-    @property
-    def Model(self) -> ModelSpec:
-        return self.model
+class Training:
+    def __init__(self, batchSize: int, epoch: int, valFreq: int, trainSet: str, valSet: str, saveDir: str, target: str):
+        self.batchSize = batchSize
+        self.epoch = epoch
+        self.valFreq = valFreq
+        self.trainSet = trainSet
+        self.valSet = valSet
+        self.saveDir = saveDir
+        self.target = target
 
     @property
     def BatchSize(self) -> int:
@@ -110,6 +77,33 @@ class Config:
     @property
     def Epoch(self) -> int:
         return self.epoch
+
+    @property
+    def ValFreq(self) -> int:
+        return self.valFreq
+
+    @property
+    def TrainSet(self) -> str:
+        return self.trainSet
+
+    @property
+    def ValSet(self) -> str:
+        return self.valSet
+
+    @property
+    def SaveDir(self) -> str:
+        return self.saveDir
+
+    @property
+    def Target(self) -> str:
+        return self.target
+
+
+class GPU:
+    def __init__(self, gpus: int, vRam: int, wantsMore: bool) -> None:
+        self.gpus = gpus
+        self.vRam = vRam
+        self.wantsMore = wantsMore
 
     @property
     def GPUs(self) -> int:
@@ -123,32 +117,45 @@ class Config:
     def WantsMore(self) -> bool:
         return self.wantsMore
 
-    @property
-    def Dataset(self) -> str:
-        return self.dataset
+
+class Config:
+    def __init__(self, model: General, optim: General, schdr: General, training: Training, gpu: GPU):
+        self.model = model
+        self.optim = optim
+        self.schdr = schdr
+        self.training = training
+        self.gpu = gpu
 
     @property
-    def ValDataset(self) -> str:
-        return self.valDataset
+    def Model(self) -> General:
+        return self.model
 
     @property
-    def Method(self) -> str:
-        return self.method
+    def Optim(self) -> General:
+        return self.optim
 
+    @property
+    def Schdr(self) -> General:
+        return self.schdr
 
-@dataclass
-class Architecture:
-    version: str
-    encoder: List[str]
-    decoder: List[str]
-    quantizer: List[str]
+    @property
+    def Training(self) -> Training:
+        return self.training
 
+    @property
+    def GPU(self) -> GPU:
+        return self.gpu
 
-def _replace(source: str, variables: dict):
-    pass
+    def scaleByWorldSize(self, worldSize: int):
+        batchSize = self.training.BatchSize * worldSize
+        exponent = math.log2(batchSize)
+        scale = 3 - exponent / 2
+        if "lr" in self.Optim.params:
+            self.Optim.params["lr"] /= (2 ** scale)
 
-def _parse(source: str):
-    pass
+    def serialize(self) -> dict:
+        return ConfigSchema().dump(self) # type: ignore
 
-def _split(source: str):
-    pass
+    @staticmethod
+    def deserialize(data: dict) -> "Config":
+        return ConfigSchema().load(data) # type: ignore

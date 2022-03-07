@@ -33,14 +33,6 @@ def getTrainingFullTransform():
 
 def getEvalTransform():
     return T.Compose([
-        T.CenterCrop(512),
-        # T.ToTensor(),
-        T.ConvertImageDtype(torch.float32),
-        T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-    ])
-
-def getTestTransform():
-    return T.Compose([
         # T.ToTensor(),
         T.ConvertImageDtype(torch.float32),
         T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),

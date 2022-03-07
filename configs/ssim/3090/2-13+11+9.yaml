@@ -1,74 +1,30 @@
-epoch: 1000
-valFreq: 10
-testFreq: 100
-gpus: 4
-vRam: 20000
-wantsMore: false
-dataset: compression
-repeat: 1 # duplicate images in one epoch
-valDataset: clic/valid
-batchSize: 8
 model:
-    type: Big
-    target: MsSSIM
-    channel: 128
-    k: [8192, 2048, 512]
-    m: 2
-    withGroup: false
-    withAtt: true
-    withDropout: false
-    alias: false
-    ema: -1.0
+    type: Compressor
+    params:
+        channel: 128
+        k: [8192, 2048, 512]
+        m: 2
 optim:
     type: Lamb
     params:
         lr: 1.e-3
         # weight_decay: 0.0
         # use_nvlamb: true
-# schdr:
-#     type: MultiStepWarmUp
-#     params:
-#         milestones: [100, 800, 900] # manually divided by repeat
-#         gamma: 0.1
 schdr:
     type: CosineAnnealingWarmupRestarts
     params:
         first_cycle_steps: 1000 # match 10 * testFreq
         warmup_steps: 5
         gamma: 0.9
-regSchdr:
-    type: CosineValueWithEnd
-    params:
-        totalStep: 1500
-tempSchdr:
-    type: CosineValueWithEnd
-    params:
-        maxValue: 1.
-        minValue: 0.9998
-        totalStep: 900
-# regSchdr:
-#     type: Cosine
-#     params:
-#         initValue: 1.e-3
-#         totalStep: 1000
-#         clip: 0.25
-#         revert: true
-#         stepInterval: 1 # manually divided by repeat
-# regSchdr:
-#     type: Jump
-#     params:
-#         initValue: 0.5
-#         minValue: 1.e-20
-#         gamma: 0.99 # 10.0 * (gamma ^ 500) = 0.01
-#         stepInterval: 1
-# regSchdr:
-#     type: JumpAlter
-#     params:
-#         initValue: 1.0
-#         minValue: 0.00000001
-#         gamma: 0.6683439175686146 # 1.0 * (gamma ^ 30) = 1.e-7
-#         stepInterval: 1
-#         milestone: 600
-#         valueAfterMilestone: 1.e-6
-warmStart: "" # ckpt/3-14+12+10.ckpt
-method: New
+training:
+    batchSize: 8
+    epoch: 1000
+    valFreq: 10
+    trainSet: data/compression
+    valSet: data/clic/valid
+    saveDir: saved
+    target: MsSSIM
+gpu:
+    gpus: 4
+    vRam: 20000
+    wantsMore: false

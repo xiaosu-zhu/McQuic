@@ -11,6 +11,7 @@ from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
 from vlutils.runtime import relativePath
+from vlutils.types import StrPath
 
 
 __all__ = [
@@ -31,7 +32,7 @@ def _hasFileAllowedExtension(filename: str, extensions: Tuple[str, ...]) -> bool
     """
     return filename.lower().endswith(extensions)
 
-def _makeDataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, is_valid_file: Optional[Callable[[str], bool]] = None,) -> List[str]:
+def _makeDataset(directory: StrPath, extensions: Optional[Tuple[str, ...]] = None, is_valid_file: Optional[Callable[[str], bool]] = None,) -> List[str]:
     instances = []
     directory = os.path.expanduser(directory)
     both_none = extensions is None and is_valid_file is None
@@ -55,7 +56,7 @@ def _makeDataset(directory: str, extensions: Optional[Tuple[str, ...]] = None, i
 class Basic(VisionDataset):
     """A Basic dataset that reads all images from a directory.
     """
-    def __init__(self, root: str, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    def __init__(self, root: StrPath, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
         """A Basic dataset that reads all images from a directory.
 
         Usage:
@@ -111,7 +112,7 @@ class Basic(VisionDataset):
 class BasicLMDB(VisionDataset):
     """A Basic dataset that reads from a LMDB.
     """
-    def __init__(self, root: str, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None) -> None:
+    def __init__(self, root: StrPath, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None) -> None:
         """A Basic dataset that reads from a LMDB.
 
         Usage:
