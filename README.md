@@ -199,11 +199,11 @@ Now you should in the conda env `mcquic`, if not, please activate it by `conda a
 ```bash
 mcquic --help
 # mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
-mcquic -q 1 -o path/to/output.bin path/to/an/image
+mcquic -q 1 -o path/to/output.mcq path/to/an/image
 ```
 * Decompress images
 ```bash
-mcquic -q 1 -o path/to/restored.png path/to/output.bin
+mcquic -q 1 -o path/to/restored.png path/to/output.mcq
 ```
 
 ## Install Manually (for dev)
@@ -229,13 +229,13 @@ pip install -e ./
 ```bash
 mcquic --help
 # mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
-mcquic -q 1 -o assets/compressed.bin assets/example.png
+mcquic -q 1 -o assets/compressed.mcq assets/sample.png
 ```
 * Decompress images
 ```bash
-mcquic -q 1 -o assets/example.png assets/compressed.bin
+mcquic -q 1 -o assets/restored.png assets/compressed.mcq
 ```
-And check outputs: [`assets/compressed.bin`](./assets/compressed.bin) and [`assets/restored.png`](./assets/restored.png).
+And check outputs: [`assets/compressed.mcq`](./assets/compressed.mcq) and [`assets/restored.png`](./assets/restored.png).
 
 * (***Optional***) Install `NVIDIA/Apex`
 
@@ -390,7 +390,7 @@ To cite our paper, please use following BibTex:
 
 **Pictures**:
 * [**kodim24.png**](http://r0k.us/graphics/kodak/kodim24.html) by Alfons Rudolph, Kodak Image Dataset.
-* [**ales-krivec-15949.png**](https://unsplash.com/photos/hLxqYJspAkE) by Ales Krivec, CLIC Professional valid set.
+* [**assets/sample.png**](https://unsplash.com/photos/hLxqYJspAkE) by Ales Krivec, CLIC Professional valid set.
 
 <br/>
 <br/>

@@ -3,6 +3,7 @@ import torch
 from torch import nn
 
 from mcquic import Consts
+import mcquic
 from mcquic.nn import pixelShuffle3x3
 from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 from mcquic.nn.blocks import AttentionBlock
@@ -53,7 +54,7 @@ class BaseCompressor(nn.Module):
         # codes: lv * [n, m, h, w]
         # binaries: List of binary, len = n, len(binaries[0]) = level
         codes, binaries, codeSizes = self._quantizer.compress(y, cdfs)
-        header = [FileHeader(Consts.Fingerprint, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
+        header = [FileHeader(mcquic.__version__, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
         return codes, binaries, header
 
     def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> torch.Tensor:

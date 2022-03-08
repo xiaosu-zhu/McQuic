@@ -79,7 +79,7 @@ class Validator:
             decoderMs = startEvent.elapsed_time(endEvent)
 
         result = ((50 * 10 * 768 * 512 / 1000) / encoderMs, (50 * 10 * 768 * 512 / 1000) / decoderMs)
-        return result, f"Coding rate: encoder: {result[0]:.2f} MPps, decoder: {result[1]:.2f} MPps"
+        return result, f"Coding rate: encoder: {result[0]:.2f} Mpps, decoder: {result[1]:.2f} Mpps"
 
     @torch.inference_mode()
     def test(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):

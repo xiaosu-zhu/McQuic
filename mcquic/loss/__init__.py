@@ -1,3 +1,4 @@
+from difflib import restore
 import math
 import torch
 from torch import nn
@@ -23,7 +24,7 @@ class CompressionLossBig(nn.Module):
             self._distortion = self._dPsnr
 
     def _dPsnr(self, restored, image):
-        return F.mse_loss(restored, image)
+        return (F.mse_loss(restored, image) + F.l1_loss(restored, image)) / 2
 
     def _dSsim(self, restored, image):
         return self._ssim(restored + 1, image + 1)
