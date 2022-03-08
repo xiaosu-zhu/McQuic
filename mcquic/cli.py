@@ -1,6 +1,10 @@
+import logging
 import pathlib
 import click
 from vlutils.utils import DefaultGroup
+
+
+MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/r0.0.9/"
 
 
 def version(ctx, param, value):
@@ -8,6 +12,120 @@ def version(ctx, param, value):
         return
     click.echo('McQuic 0.0.9')
     ctx.exit()
+
+
+def checkArgs(debug, quiet):
+    if quiet:
+        return logging.CRITICAL
+    if debug:
+        return logging.DEBUG
+    return logging.INFO
+
+
+def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bool, mse: bool, crop: bool, input: pathlib.Path, output: pathlib.Path):
+    loggingLevel = checkArgs(debug, quiet)
+
+
+    from vlutils.logger import configLogging
+    import torch
+    import torch.hub
+    from torchvision.io.image import read_image, ImageReadMode, write_png
+
+    from mcquic.utils.specification import File
+
+    if disable_gpu or not torch.cuda.is_available():
+        device = torch.device("cpu")
+    else:
+        device = torch.device("cuda")
+
+    logger = configLogging(None, "root", loggingLevel)
+
+    if input.suffix.lower() in [".png", ".jpg", ".jpeg"]:
+        model = loadModel(qp, local, device, mse, logger)
+
+        image = read_image(str(input), ImageReadMode.RGB).to(device)
+
+        binaries, header = compressImage(image, model, crop)
+
+        target = File(header, qp, binaries)
+
+        logger.info(target)
+        if output is not None:
+            if output.is_dir():
+                output = output.joinpath(input.stem + ".mcq")
+            with open(output, "wb") as fp:
+                fp.write(target.serialize())
+            logger.info("Saved at %s", output)
+
+    elif input.suffix.lower() == "mcq":
+        with open(input, "rb") as fp:
+            binary = fp.read()
+            source = File.deserialize(binary)
+
+            model = loadModel(source.QuantizationParameter, local, device, mse, logger)
+
+            restored = decompressImage(source, model)
+
+            logger.info(source)
+
+            if output is not None:
+                if output.is_dir():
+                    output = output.joinpath(input.stem + ".png")
+                write_png(restored, str(output), 9)
+
+
+
+def compressImage(image, model, crop):
+    from torchvision.transforms.functional import convert_image_dtype
+
+    image = convert_image_dtype(image)
+
+    if crop:
+        from mcquic.datasets.transforms import AlignedCrop
+        image = AlignedCrop()(image)
+
+    # [c, h, w]
+    image = (image - 0.5) * 2
+
+    with model._quantizer.readyForCoding() as cdfs:
+        codes, binaries, headers = model.compress(image[None, ...], cdfs)
+
+    # List of each level binary, FileHeader
+    return binaries[0], headers[0]
+
+
+def decompressImage(sourceFile, model):
+    binaries = sourceFile.Content
+
+    with model._quantizer.readyForCoding() as cdfs:
+        # [1, c, h, w]
+        restored = model.decompress([binaries], cdfs, [sourceFile.Header])
+
+    # [c, h, w]
+    restored = (restored[0] + 1) / 2
+
+    # [c, h, w]
+    return restored
+
+
+def loadModel(qp, local, device, mse, logger):
+    import torch
+    from mcquic import Config
+    from mcquic.modules.compressor import Compressor
+
+    if local is not None:
+        logger.warning("By passing `--local`, `-qp` arg will be ignored and model from %s will be loaded. Please ensure you obtain this local model from a trusted source.", local)
+        ckpt = torch.load(local, device)
+
+    else:
+        suffix = "mse" if mse else "msssim"
+        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}.mcquic", map_location=device)
+
+    config = Config.deserialize(ckpt["config"])
+    model = Compressor(**config.Model.Params).to(device)
+    model.load_state_dict(ckpt["model"])
+    logger.info(f"Model loaded, params: {config.Model.Params}.")
+    return model
 
 
 @click.group(cls=DefaultGroup)
@@ -20,9 +138,13 @@ def entryPoint():
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
 @click.option("-qp", type=click.IntRange(1, 13), default=3, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
+@click.option("--local", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), help="Use a local model path instead of download by `qp`.")
+@click.option("--disable-gpu", is_flag=True, help="Use pure CPU to perform compression. This will be slow.")
+@click.option("--mse", is_flag=True, help="Use model optimized for PSNR other than MsSSIM.")
+@click.option("--crop", is_flag=True, help="Crop the image to align feature patches. Edges of image are cutted though, compressed binary will be smaller.")
 @click.argument('input', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), nargs=1)
 @click.argument('output', type=click.Path(exists=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def _(debug, quiet, qp, input, output):
+def _(debug, quiet, qp, local, disable_gpu, mse, crop, input, output):
     """Compress/restore a file.
 
 Args:
@@ -31,7 +153,7 @@ Args:
 
     output (optional, str): Output file path or dir. If not provided, this program will only print compressor information of input file.
     """
-    print(qp, input, output)
+    main(debug, quiet, qp, local, disable_gpu, mse, crop, input, output)
 
 
 @entryPoint.command()

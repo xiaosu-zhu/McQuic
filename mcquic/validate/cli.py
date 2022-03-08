@@ -19,7 +19,7 @@ def checkArgs(debug: bool, quiet: bool, path: pathlib.Path, output: pathlib.Path
 def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path) -> int:
     loggingLevel = checkArgs(debug, quiet, path, output)
 
-    from collections import OrderedDict
+    import shutil, gzip
 
     import torch
     from vlutils.logger import configLogging
@@ -33,33 +33,32 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
 
     logger = configLogging(os.path.dirname(path), "root", loggingLevel, logName="validate")
 
-    checkpoint = torch.load(path, map_location={"cuda:0": "cpu"})
+    checkpoint = torch.load(path, "cuda")
 
     config = Config.deserialize(checkpoint["config"])
 
-    model = Compressor(**config.Model.Params)
+    model = Compressor(**config.Model.Params).cuda()
 
     modelStateDict = {key[len("module._compressor."):]: value for key, value in checkpoint["trainer"]["_model"].items()}
 
     model.load_state_dict(modelStateDict) # type: ignore
 
-    model.to(0)
-
-    validator = Validator(config, 0)
+    validator = Validator(config, "cuda")
 
     valLoader = getValLoader(images, False, logger)
 
     progress = getRichProgress()
 
     with progress:
-        results, speedResult, summary, speedSummary = validator.test(checkpoint["trainer"]["_epoch"], model, valLoader, progress)
-
-    logger.info(summary)
-    logger.info(speedSummary)
+        _, summary = validator.validate(checkpoint["trainer"]["_epoch"], model, valLoader, progress)
+        logger.info(summary)
+        _, speedSummary = validator.speed(checkpoint["trainer"]["_epoch"], model, progress)
+        logger.info(speedSummary)
 
     if output.is_dir():
         modelName = "_".join([f"{key}_{value}" for key, value in config.Model.params.items()])
-        output = output.joinpath(f"{modelName}.ckpt")
+        modelName = modelName.replace(", ", "_").replace("[", "").replace("]", "")
+        output = output.joinpath(f"{modelName}_{config.Training.Target.lower()}.mcquic")
 
     torch.save({
         "model": model.state_dict(),

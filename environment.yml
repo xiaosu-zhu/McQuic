@@ -20,3 +20,6 @@ dependencies:
     - lmdb
     # need gcc > 8, nvcc
     - compressai==1.1.9
+    - gzip
+    - marshmallow
+    - click
