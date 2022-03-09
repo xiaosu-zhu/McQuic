@@ -21,7 +21,6 @@ def checkArgs(debug, quiet):
         return logging.DEBUG
     return logging.INFO
 
-
 def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bool, mse: bool, crop: bool, input: pathlib.Path, output: pathlib.Path):
     loggingLevel = checkArgs(debug, quiet)
 
@@ -47,7 +46,7 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
 
         binaries, header = compressImage(image, model, crop)
 
-        target = File(header, qp, binaries)
+        target = File(header, binaries)
 
         logger.info(target)
         if output is not None:
@@ -57,12 +56,30 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
                 fp.write(target.serialize())
             logger.info("Saved at %s", output)
 
-    elif input.suffix.lower() == "mcq":
+    elif input.suffix.lower() == ".mcq":
         with open(input, "rb") as fp:
             binary = fp.read()
             source = File.deserialize(binary)
 
-            model = loadModel(source.QuantizationParameter, local, device, mse, logger)
+            newLocal = None
+            newQP = -1
+
+            try:
+                newQP = int(source.Header.QuantizationParameter)
+                newLocal = None
+            except ValueError:
+                newLocal = pathlib.Path(source.Header.QuantizationParameter)
+                newQP = -1
+            finally:
+                if newLocal is None and newQP < 0:
+                    logger.warning("The compressed binary is using a pre-release model since `qp` in file is -1, fallback to use current args.")
+                elif isinstance(newLocal, pathlib.Path) and not(newLocal.exists() and newLocal.is_file()):
+                    logger.warning("The compressed binary is compressed by a local model located in `%s`. Unfortunately, we can't find it. Fallback to use current args or you could try again later.", newLocal)
+                else:
+                    qp = newQP
+                    local = newLocal
+
+            model = loadModel(qp, local, device, mse, logger)
 
             restored = decompressImage(source, model)
 
@@ -71,9 +88,9 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
             if output is not None:
                 if output.is_dir():
                     output = output.joinpath(input.stem + ".png")
-                write_png(restored, str(output), 9)
-
-
+                write_png(restored.cpu(), str(output), 9)
+    else:
+        raise ValueError("Invalid input file.")
 
 def compressImage(image, model, crop):
     from torchvision.transforms.functional import convert_image_dtype
@@ -101,14 +118,13 @@ def decompressImage(sourceFile, model):
         # [1, c, h, w]
         restored = model.decompress([binaries], cdfs, [sourceFile.Header])
 
-    # [c, h, w]
-    restored = (restored[0] + 1) / 2
+    from mcquic.utils.vision import DeTransform
 
     # [c, h, w]
-    return restored
+    return DeTransform()(restored[0])
 
 
-def loadModel(qp, local, device, mse, logger):
+def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger):
     import torch
     from mcquic import Config
     from mcquic.modules.compressor import Compressor
@@ -117,12 +133,16 @@ def loadModel(qp, local, device, mse, logger):
         logger.warning("By passing `--local`, `-qp` arg will be ignored and model from %s will be loaded. Please ensure you obtain this local model from a trusted source.", local)
         ckpt = torch.load(local, device)
 
+        logger.info("Use local model.")
     else:
         suffix = "mse" if mse else "msssim"
         ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}.mcquic", map_location=device)
 
+        logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
+
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)
+    model.QuantizationParameter = str(local) if local is not None else str(qp)
     model.load_state_dict(ckpt["model"])
     logger.info(f"Model loaded, params: {config.Model.Params}.")
     return model
@@ -153,7 +173,9 @@ Args:
 
     output (optional, str): Output file path or dir. If not provided, this program will only print compressor information of input file.
     """
-    main(debug, quiet, qp, local, disable_gpu, mse, crop, input, output)
+    import torch
+    with torch.inference_mode():
+        main(debug, quiet, qp, local, disable_gpu, mse, crop, input, output)
 
 
 @entryPoint.command()
@@ -190,7 +212,9 @@ Args:
     output (str): File path or dir to publish this model.
     """
     from mcquic.validate.cli import main
-    main(debug, quiet, path, images, output)
+    import torch
+    with torch.inference_mode():
+        main(debug, quiet, path, images, output)
 
 
 @entryPoint.command()

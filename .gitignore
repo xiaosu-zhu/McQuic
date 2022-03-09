@@ -1,27 +1,11 @@
 # User-defined paths
+*ckpt*
+data/
+data
 *.mcquic
 *.mcq
-psnr/
-ckpt/
-*.ckpt
-*.npy
-log/
-data
-data/
-.vscode/
-saved*/
-*.aux
-*.bbl
-*.blg
-*.brf
-*.log
-*.synctex.gz
-BUILD
-test/
+saved/
 tmp/
-temp/
-*.pt
-core.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
