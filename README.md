@@ -19,9 +19,6 @@
   <a href="https://pytorch.org/" target="_blank">
     <image src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
   </a>
-  <a href="https://github.com/xiaosu-zhu/McQuic/commits/main">
-    <image src="https://img.shields.io/github/commit-activity/m/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github commits"/>
-  </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/stargazers">
     <image src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github stars"/>
   </a>
