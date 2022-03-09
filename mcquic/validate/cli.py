@@ -31,7 +31,7 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
 
     from .validator import Validator
 
-    logger = configLogging(os.path.dirname(path), "root", loggingLevel, logName="validate")
+    logger = configLogging(None, "root", loggingLevel)
 
     checkpoint = torch.load(path, "cuda")
 

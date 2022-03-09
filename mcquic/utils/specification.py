@@ -36,6 +36,10 @@ class ImageSize(Serializable):
     width: int
     channel: int
 
+    @property
+    def Pixels(self) -> int:
+        return self.height * self.width
+
     def serialize(self):
         return f"{self.height},{self.width},{self.channel}"
 
@@ -79,8 +83,7 @@ class CodeSize(Serializable):
     def __str__(self) -> str:
         sequence = ", ".join(f"[{w}×{h}, {k}]" for h, w, k in zip(self.heights, self.widths, self.k))
         return f"""
-        {self.m} code-groups: {sequence}
-"""
+        {self.m} code-groups: {sequence}"""
 
 
 class FileHeader(Serializable):
@@ -122,8 +125,7 @@ class FileHeader(Serializable):
     Version    : {self.Version}
     QP         : {self.QuantizationParameter}
     Image size : {self.ImageSize}
-    Code size  : {self.CodeSize}
-"""
+    Code size  : {self.CodeSize}"""
 
 
 class File(Serializable):
@@ -153,6 +155,10 @@ class File(Serializable):
         content = contents.split(File._bsep)
         return File(header, content)
 
+    @property
+    def BPP(self) -> float:
+        return sum(len(x) for x in self._content) * 8 / self.Header.ImageSize.Pixels
+
     def size(self, human: bool = False) -> Union[int, str]:
         """Compute size of compressed binary, in bytes.
 
@@ -169,4 +175,5 @@ class File(Serializable):
 
     def __str__(self) -> str:
         return f"""Header: {self._header}
-Size  : {self.size(True)}"""
+Size  : {self.size(True)}
+BPP   : {self.BPP}"""
