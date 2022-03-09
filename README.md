@@ -343,18 +343,13 @@ It will be very nice if you want to check your new ideas or add new functions ðŸ
 
 
 # To-do List
-* use marshmallow to parse config
+* Docker file and bash script
 * PyPI auto-packaging (with github actions: major, minor, revision)
-* execute pattern: mcquic, train, validate, service, publish, dataset
+* execute pattern: `mcquic service`
 * reference model: 1,2,4~4+
-* remove absl, go to argparse
-* binary specification
-* LogDir,DataDir,TempDir in PyPI package
-* save config in ckpt
 * ref model download and save
 * change compressor args
-* fonts in framework
-* images put in license
+* fonts in epilog
 
 # References and License
 ## References
