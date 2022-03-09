@@ -19,6 +19,15 @@ class BaseCompressor(nn.Module):
         self._encoder = encoder
         self._decoder = decoder
         self._quantizer = quantizer
+        self._qp = "-1"
+
+    @property
+    def QuantizationParameter(self) -> str:
+        return self._qp
+
+    @QuantizationParameter.setter
+    def QuantizationParameter(self, qp: str):
+        self._qp = qp
 
     def forward(self, x: torch.Tensor):
         y = self._encoder(x)
@@ -54,7 +63,7 @@ class BaseCompressor(nn.Module):
         # codes: lv * [n, m, h, w]
         # binaries: List of binary, len = n, len(binaries[0]) = level
         codes, binaries, codeSizes = self._quantizer.compress(y, cdfs)
-        header = [FileHeader(mcquic.__version__, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
+        header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
         return codes, binaries, header
 
     def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> torch.Tensor:

@@ -1,14 +1,20 @@
 
 import logging
 import os
+import shutil
+import tempfile
+import atexit
 
 
 class ConstsMetaClass(type):
     @property
     def TempDir(cls):
         if getattr(cls, '_tempDir', None) is None:
-            os.makedirs("/tmp/mcquic/", exist_ok=True)
-            cls._tempDir = "/tmp/mcquic/"
+            tempDir = tempfile.mkdtemp()
+            cls._tempDir = tempDir
+            def removeTmp():
+                shutil.rmtree(tempDir, ignore_errors=True)
+            atexit.register(removeTmp)
         return cls._tempDir
 
 class Consts(metaclass=ConstsMetaClass):
