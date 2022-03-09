@@ -36,7 +36,7 @@
 <br/>
 
 <p align="center">
-  <b>🥳Our paper has been accepted to be presented at CVPR 2022!🥳</b>
+  <b>🥳Our paper will be presented at CVPR 2022!🥳</b>
 </p>
 <br/>
 <p align="center">
@@ -91,7 +91,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Wed Mar  9 05:08:52 UTC 2022 -->
+<!-- Added by: runner, at: Wed Mar  9 12:18:55 UTC 2022 -->
 
 <!--te-->
 
@@ -178,9 +178,8 @@ We recommend you to use our pre-built [`docker` images](localhost) to get away f
 
 Test with the latest docker image:
 ```bash
-sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/docker/demo.sh)"
+docker run
 ```
-The demo would let you choose an image to compress.
 
 The latest docker image could be accessed by tag: `mcquic/main:latest`.
 
@@ -199,11 +198,11 @@ Now you should in the conda env `mcquic`, if not, please activate it by `conda a
 ```bash
 mcquic --help
 # mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
-mcquic -q 1 -o path/to/output.mcq path/to/an/image
+mcquic -qp 3 path/to/an/image path/to/output.mcq
 ```
 * Decompress images
 ```bash
-mcquic -q 1 -o path/to/restored.png path/to/output.mcq
+mcquic -qp 3 path/to/output.mcq path/to/restored.png
 ```
 
 ## Install Manually (for dev)
@@ -229,11 +228,11 @@ pip install -e ./
 ```bash
 mcquic --help
 # mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
-mcquic -q 1 -o assets/compressed.mcq assets/sample.png
+mcquic -qp 3 assets/sample.png assets/compressed.mcq
 ```
 * Decompress images
 ```bash
-mcquic -q 1 -o assets/restored.png assets/compressed.mcq
+mcquic -qp 3 assets/compressed.mcq assets/restored.png
 ```
 And check outputs: [`assets/compressed.mcq`](./assets/compressed.mcq) and [`assets/restored.png`](./assets/restored.png).
 
@@ -282,8 +281,9 @@ to build a `lmdb` dataset for `mcquic` to read.
 ```yaml
 # `configs/train.yaml`
 ...
-dataset: mcquic_dataset # path to the training dataset
-valDataset: val_images # path to folder of validation images
+trainSet: mcquic_dataset # path to the training dataset
+valSet: val_images # path to folder of validation images
+savePath: saved
 ...
 ```
 where `dataset` and `valDataset` can be any relative or absolute paths.
@@ -296,6 +296,7 @@ In this example, the final folder structure is shown below:
 │   ...
 │   └── 📄train.yaml
 ├── 📄README.md # this readme
+├── 📂saved # saved models apprear here
 ├── 📂train_images # a lot of training images
 │   ├── 📂ImageNet
 │   |   ├── 📂folder1 # a lot of images
