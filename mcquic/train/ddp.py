@@ -1,5 +1,6 @@
+import pathlib
 from shutil import copy2
-from typing import Tuple, Union
+from typing import Tuple
 import os
 import functools
 
@@ -37,12 +38,12 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
     return compressor, criterion
 
 
-def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: Union[str, None], loggingLevel: int):
+def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: pathlib.Path, loggingLevel: int):
     registerForTrain()
 
 
     # load ckpt before create trainer, in case it moved to other place.
-    if resume is not None and os.path.exists(resume) and resume.endswith("ckpt"):
+    if resume is not None:
         if rank == 0:
             tmpFile = copy2(resume, os.path.join(Consts.TempDir, "resume.ckpt"), follow_symlinks=False)
         else:

@@ -1,8 +1,8 @@
 #!/bin/sh
 
-tmpdir = $(mktemp -d)
+tmpdir=$(mktemp -d)
 
 cp ../environment.yml $tmpdir
 cp Dockerfile $tmpdir && cd $tmpdir
 
-docker build -t .
+docker build -t xiaosuzhu/mcquic:latest .

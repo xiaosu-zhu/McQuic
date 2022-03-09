@@ -21,10 +21,17 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
     from vlutils.runtime import queryGPU
     from mcquic.config import Config
     import yaml
+    import torch
 
     logging.getLogger().setLevel(loggingLevel)
 
-    config = Config.deserialize(yaml.full_load(configPath.read_text()))
+    if configPath is not None:
+        config = Config.deserialize(yaml.full_load(configPath.read_text()))
+    elif resume is not None:
+        ckpt = torch.load(resume, "cpu")
+        config = Config.deserialize(ckpt["config"])
+    else:
+        raise ValueError("Both `--resume` and `config` are None.")
 
     gpus = queryGPU(needGPUs=config.GPU.GPUs, wantsMore=config.GPU.WantsMore, needVRamEachGPU=(config.GPU.VRam + 256) if config.GPU.VRam > 0 else -1, writeOSEnv=True)
     worldSize = len(gpus)
