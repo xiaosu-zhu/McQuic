@@ -1,0 +1,35 @@
+{% set data = load_setup_py_data() %}
+
+package:
+  name: mcquic
+  version: {{ data.get('version') }}
+
+source:
+  path: ../
+
+requirements:
+  build:
+    - python
+    - setuptools
+    - pybind11
+
+  host:
+    - python>=3.9
+    - pytorch<2
+    - torchvision<1
+    - tqdm
+    - tensorboard<3
+    - rich<11
+    - scipy<2
+    - python-lmdb<2
+    - pyyaml<7
+    - marshmallow<4
+    - click<9
+
+build:
+  noarch: generic
+
+about:
+  home: https://github.com/xiaosu-zhu/McQuic
+  license: Apache-2.0
+  summary: McQuic, a.k.a. Multi-codebook Quantizers for neural image compression
