@@ -255,7 +255,10 @@ class MainTrainer(_baseTrainer):
         signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
-        self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
+        if self.bestRate / self.bestDistortion > 1e4:
+            self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: N/A.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
+        else:
+            self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoader: Prefetcher, trainSampler: DistributedSampler, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):

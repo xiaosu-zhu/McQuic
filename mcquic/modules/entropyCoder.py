@@ -4,8 +4,10 @@ from typing import List, Tuple, Generator
 import torch
 from torch import nn
 import torch.distributed as dist
-from compressai._CXX import pmf_to_quantized_cdf
-from compressai import ans
+
+# Port from CompressAI
+from mcquic.rans import pmfToQuantizedCDF
+from mcquic.rans import RansEncoder, RansDecoder
 
 from mcquic.utils.specification import CodeSize
 
@@ -13,8 +15,8 @@ from mcquic.utils.specification import CodeSize
 class EntropyCoder(nn.Module):
     def __init__(self, m: int, k: List[int], ema: float = 0.9):
         super().__init__()
-        self.encooder = ans.RansEncoder()
-        self.decoder = ans.RansDecoder()
+        self.encooder = RansEncoder()
+        self.decoder = RansDecoder()
         # initial value is uniform
         self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k) # type: ignore
         self._k = k
@@ -49,7 +51,7 @@ class EntropyCoder(nn.Module):
                     prob = torch.ones_like(freqAtM, dtype=torch.float) / len(freqAtM)
                 else:
                     prob = freqAtM.float() / total
-                cdf = pmf_to_quantized_cdf(prob.tolist(), 16)
+                cdf = pmfToQuantizedCDF(prob.tolist(), 16)
                 cdfAtLv.append(cdf)
             cdfs.append(cdfAtLv)
         try:

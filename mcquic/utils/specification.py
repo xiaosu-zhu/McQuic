@@ -176,4 +176,4 @@ class File(Serializable):
     def __str__(self) -> str:
         return f"""Header: {self._header}
 Size  : {self.size(True)}
-BPP   : {self.BPP}"""
+BPP   : {self.BPP:.4f}"""

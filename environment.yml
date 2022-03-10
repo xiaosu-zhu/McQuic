@@ -13,11 +13,9 @@ dependencies:
   - tensorboard<3
   - rich<11
   - scipy<2
+  - python-lmdb<2
+  - pyyaml<7
+  - marshmallow<4
+  - click<9
   - pip:
-    - pyyaml>=6.0,<7
     - vlutils
-    - lmdb>=1.3,<2
-    # need gcc > 8, nvcc
-    - compressai==1.1.9
-    - marshmallow>=3.14,<4
-    - click>=8,<9

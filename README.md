@@ -183,7 +183,7 @@ docker run
 
 The latest docker image could be accessed by tag: `mcquic/main:latest`.
 
-## Install via PyPI
+## Install via `conda`
 Another way needs a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 And instructions are still yet simple.
@@ -192,7 +192,7 @@ And instructions are still yet simple.
 ```bash
 sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh)"
 ```
-Now you should in the conda env `mcquic`, if not, please activate it by `conda activate mcquic`.
+Now you should in the conda env `mcquic`. If not, please activate it by `conda activate mcquic`.
 
 * Compress images
 ```bash
