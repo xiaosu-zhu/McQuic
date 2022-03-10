@@ -19,9 +19,6 @@
   <a href="https://pytorch.org/" target="_blank">
     <image src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
   </a>
-  <a href="https://github.com/xiaosu-zhu/McQuic/commits/main">
-    <image src="https://img.shields.io/github/commit-activity/m/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github commits"/>
-  </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/stargazers">
     <image src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github stars"/>
   </a>
@@ -91,7 +88,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Wed Mar  9 12:18:55 UTC 2022 -->
+<!-- Added by: runner, at: Wed Mar  9 12:34:37 UTC 2022 -->
 
 <!--te-->
 
