@@ -72,7 +72,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 * [Quick Start](#quick-start)
    * [Requirements](#requirements)
    * [Docker (Recommended)](#docker-recommended)
-   * [Install via PyPI](#install-via-pypi)
+   * [Install via conda](#install-via-conda)
    * [Install Manually (for dev)](#install-manually-for-dev)
 * [Reference Models](#reference-models)
 * [Train a New Model](#train-a-new-model)
@@ -88,7 +88,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Wed Mar  9 12:34:37 UTC 2022 -->
+<!-- Added by: runner, at: Thu Mar 10 15:06:57 UTC 2022 -->
 
 <!--te-->
 
