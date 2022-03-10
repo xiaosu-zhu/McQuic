@@ -33,7 +33,7 @@ jobs:
           python-version: 3.9
       - uses: actions/checkout@master
       - name: Update version
-        run: echo "__version__ = \"${{ github.event.inputs.release-tag }}\"" > vlutils/__init__.py
+        run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py
       - name: Commit changes
         uses: EndBug/add-and-commit@v4
         with:
