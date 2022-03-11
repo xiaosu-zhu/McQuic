@@ -102,10 +102,8 @@ jobs:
       - uses: actions/checkout@master
         with:
           ref: r${{ github.event.inputs.release-tag }}
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.9
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Publish distribution 📦 to Anaconda
         run: conda install anaconda-client conda-build
       - name: cd working dir
@@ -147,12 +145,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Prepare files
-        run: cp environment.yml docker && cd docker
+        run: cp environment.yml docker
 
       - name: Build and push Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
         with:
-          context: .
+          context: ./docker
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
