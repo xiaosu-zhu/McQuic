@@ -67,7 +67,7 @@ std::vector<uint32_t> pmfToQuantizedCDF(const std::vector<float> &pmf,
 
   std::transform(cdf.begin(), cdf.end(), cdf.begin(),
                  [precision, total](uint32_t p) {
-                   return ((static_cast<uint64_t>(1 << precision) * p) / total);
+                   return ((static_cast<uint64_t>(1ULL << precision) * p) / total);
                  });
 
   std::partial_sum(cdf.begin(), cdf.end(), cdf.begin());

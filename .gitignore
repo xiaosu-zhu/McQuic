@@ -1,4 +1,5 @@
 # User-defined paths
+.vscode/
 *ckpt*
 data/
 data
