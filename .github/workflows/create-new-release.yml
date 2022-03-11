@@ -115,7 +115,7 @@ jobs:
       - name: Run conda-build
         run: "conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder . ."
       - name: Publish distribution 📦 to Anaconda
-        run: "%CONDA%/bin/anaconda" upload --label main win-64/*.tar.bz2
+        run: \"%CONDA%/bin/anaconda\" upload --label main win-64/*.tar.bz2
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
