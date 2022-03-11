@@ -5,7 +5,7 @@ from setuptools import setup
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
 
-CWD = Path(__file__).resolve().parent
+CWD = Path("./")
 PKG_NAME = "mcquic"
 
 # https://github.com/InterDigitalInc/CompressAI/blob/master/setup.py
@@ -17,15 +17,17 @@ def get_extensions():
     # Add rANS module
     rans_lib_dir = CWD / "third_party/ryg_rans"
 
-    extra_compile_args = ["-std=c++17"]
-    extra_compile_args += ["-O3"]
+    if os.name == "nt":
+        compiler_args = ["/std:c++17", "/O2", "/GL", "/MP8"]
+    else:
+        compiler_args = ["-std=c++17", "-O3", "-j8"]
     ext_modules.append(
         Pybind11Extension(
             name=f"{PKG_NAME}.rans",
             sources=[str(s) for s in ext_dirs.glob("*.cpp")],
             language="c++",
             include_dirs=[rans_lib_dir, ext_dirs],
-            extra_compile_args=extra_compile_args,
+            extra_compile_args=compiler_args,
         )
     )
 

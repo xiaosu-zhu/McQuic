@@ -45,14 +45,8 @@
 
 namespace py = pybind11;
 
-/* probability range, this could be a parameter... */
-constexpr int precision = 16;
-
-constexpr uint16_t bypass_precision = 4; /* number of bits in bypass mode */
-constexpr uint16_t max_bypass_val = (1 << bypass_precision) - 1;
 
 namespace {
-
 /* We only run this in debug mode as its costly... */
 void assert_cdfs(const std::vector<std::vector<int>> &cdfs,
                  const std::vector<int> &cdfs_sizes) {
@@ -64,6 +58,7 @@ void assert_cdfs(const std::vector<std::vector<int>> &cdfs,
     }
   }
 }
+
 
 /* Support only 16 bits word max */
 inline void Rans64EncPutBits(Rans64State *r, uint32_t **pptr, uint32_t val,
@@ -103,7 +98,8 @@ inline uint32_t Rans64DecGetBits(Rans64State *r, uint32_t **pptr,
 
   return val;
 }
-} // namespace
+
+}
 
 void BufferedRansEncoder::encode_with_indexes(
     const std::vector<int32_t> &symbols, const std::vector<int32_t> &indexes,
@@ -194,185 +190,16 @@ py::bytes BufferedRansEncoder::flush() {
 
   Rans64EncFlush(&rans, &ptr);
 
-  const int nbytes =
+  std::size_t nbytes =
       std::distance(ptr, output.data() + output.size()) * sizeof(uint32_t);
   return std::string(reinterpret_cast<char *>(ptr), nbytes);
 }
 
-py::bytes
-RansEncoder::encode_with_indexes(const std::vector<int32_t> &symbols,
-                                 const std::vector<int32_t> &indexes,
-                                 const std::vector<std::vector<int32_t>> &cdfs,
-                                 const std::vector<int32_t> &cdfs_sizes,
-                                 const std::vector<int32_t> &offsets) {
-
-  BufferedRansEncoder buffered_rans_enc;
-  buffered_rans_enc.encode_with_indexes(symbols, indexes, cdfs, cdfs_sizes,
-                                        offsets);
-  return buffered_rans_enc.flush();
-}
-
-std::vector<int32_t>
-RansDecoder::decode_with_indexes(const std::string &encoded,
-                                 const std::vector<int32_t> &indexes,
-                                 const std::vector<std::vector<int32_t>> &cdfs,
-                                 const std::vector<int32_t> &cdfs_sizes,
-                                 const std::vector<int32_t> &offsets) {
-  assert(cdfs.size() == cdfs_sizes.size());
-  assert_cdfs(cdfs, cdfs_sizes);
-
-  std::vector<int32_t> output(indexes.size());
-
-  Rans64State rans;
-  uint32_t *ptr = (uint32_t *)encoded.data();
-  assert(ptr != nullptr);
-  Rans64DecInit(&rans, &ptr);
-
-  for (int i = 0; i < static_cast<int>(indexes.size()); ++i) {
-    const int32_t cdf_idx = indexes[i];
-    assert(cdf_idx >= 0);
-    assert(cdf_idx < cdfs.size());
-
-    const auto &cdf = cdfs[cdf_idx];
-
-    const int32_t max_value = cdfs_sizes[cdf_idx] - 2;
-    assert(max_value >= 0);
-    assert((max_value + 1) < cdf.size());
-
-    const int32_t offset = offsets[cdf_idx];
-
-    const uint32_t cum_freq = Rans64DecGet(&rans, precision);
-
-    const auto cdf_end = cdf.begin() + cdfs_sizes[cdf_idx];
-    const auto it = std::find_if(cdf.begin(), cdf_end,
-                                 [cum_freq](int v) { return v > cum_freq; });
-    assert(it != cdf_end + 1);
-    const uint32_t s = std::distance(cdf.begin(), it) - 1;
-
-    Rans64DecAdvance(&rans, &ptr, cdf[s], cdf[s + 1] - cdf[s], precision);
-
-    int32_t value = static_cast<int32_t>(s);
-
-    if (value == max_value) {
-      /* Bypass decoding mode */
-      int32_t val = Rans64DecGetBits(&rans, &ptr, bypass_precision);
-      int32_t n_bypass = val;
-
-      while (val == max_bypass_val) {
-        val = Rans64DecGetBits(&rans, &ptr, bypass_precision);
-        n_bypass += val;
-      }
-
-      int32_t raw_val = 0;
-      for (int j = 0; j < n_bypass; ++j) {
-        val = Rans64DecGetBits(&rans, &ptr, bypass_precision);
-        assert(val <= max_bypass_val);
-        raw_val |= val << (j * bypass_precision);
-      }
-      value = raw_val >> 1;
-      if (raw_val & 1) {
-        value = -value - 1;
-      } else {
-        value += max_value;
-      }
-    }
-
-    output[i] = value + offset;
-  }
-
-  return output;
-}
-
-void RansDecoder::set_stream(const std::string &encoded) {
-  _stream = encoded;
-  uint32_t *ptr = (uint32_t *)_stream.data();
-  assert(ptr != nullptr);
-  _ptr = ptr;
-  Rans64DecInit(&_rans, &_ptr);
-}
-
-std::vector<int32_t>
-RansDecoder::decode_stream(const std::vector<int32_t> &indexes,
-                           const std::vector<std::vector<int32_t>> &cdfs,
-                           const std::vector<int32_t> &cdfs_sizes,
-                           const std::vector<int32_t> &offsets) {
-  assert(cdfs.size() == cdfs_sizes.size());
-  assert_cdfs(cdfs, cdfs_sizes);
-
-  std::vector<int32_t> output(indexes.size());
-
-  assert(_ptr != nullptr);
-
-  for (int i = 0; i < static_cast<int>(indexes.size()); ++i) {
-    const int32_t cdf_idx = indexes[i];
-    assert(cdf_idx >= 0);
-    assert(cdf_idx < cdfs.size());
-
-    const auto &cdf = cdfs[cdf_idx];
-
-    const int32_t max_value = cdfs_sizes[cdf_idx] - 2;
-    assert(max_value >= 0);
-    assert((max_value + 1) < cdf.size());
-
-    const int32_t offset = offsets[cdf_idx];
-
-    const uint32_t cum_freq = Rans64DecGet(&_rans, precision);
-
-    const auto cdf_end = cdf.begin() + cdfs_sizes[cdf_idx];
-    const auto it = std::find_if(cdf.begin(), cdf_end,
-                                 [cum_freq](int v) { return v > cum_freq; });
-    assert(it != cdf_end + 1);
-    const uint32_t s = std::distance(cdf.begin(), it) - 1;
-
-    Rans64DecAdvance(&_rans, &_ptr, cdf[s], cdf[s + 1] - cdf[s], precision);
-
-    int32_t value = static_cast<int32_t>(s);
-
-    if (value == max_value) {
-      /* Bypass decoding mode */
-      int32_t val = Rans64DecGetBits(&_rans, &_ptr, bypass_precision);
-      int32_t n_bypass = val;
-
-      while (val == max_bypass_val) {
-        val = Rans64DecGetBits(&_rans, &_ptr, bypass_precision);
-        n_bypass += val;
-      }
-
-      int32_t raw_val = 0;
-      for (int j = 0; j < n_bypass; ++j) {
-        val = Rans64DecGetBits(&_rans, &_ptr, bypass_precision);
-        assert(val <= max_bypass_val);
-        raw_val |= val << (j * bypass_precision);
-      }
-      value = raw_val >> 1;
-      if (raw_val & 1) {
-        value = -value - 1;
-      } else {
-        value += max_value;
-      }
-    }
-
-    output[i] = value + offset;
-  }
-
-  return output;
-}
 
 
-void init_coders(py::module_ &m) {
+void init_buffered_coders(py::module_ &m) {
   py::class_<BufferedRansEncoder>(m, "BufferedRansEncoder")
       .def(py::init<>())
       .def("encode_with_indexes", &BufferedRansEncoder::encode_with_indexes)
       .def("flush", &BufferedRansEncoder::flush);
-
-  py::class_<RansEncoder>(m, "RansEncoder")
-      .def(py::init<>())
-      .def("encode_with_indexes", &RansEncoder::encode_with_indexes);
-
-  py::class_<RansDecoder>(m, "RansDecoder")
-      .def(py::init<>())
-      .def("set_stream", &RansDecoder::set_stream)
-      .def("decode_stream", &RansDecoder::decode_stream)
-      .def("decode_with_indexes", &RansDecoder::decode_with_indexes,
-           "Decode a string to a list of symbols");
 }

@@ -37,6 +37,14 @@
 
 namespace py = pybind11;
 
+
+/* probability range, this could be a parameter... */
+constexpr int precision = 16;
+
+constexpr uint16_t bypass_precision = 4; /* number of bits in bypass mode */
+constexpr uint16_t max_bypass_val = (1 << bypass_precision) - 1;
+
+
 struct RansSymbol {
   uint16_t start;
   uint16_t range;
