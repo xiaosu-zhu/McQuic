@@ -10,6 +10,10 @@ on:
         description: 'Tag of release branch'
         required: true
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   check-version-and-create-branch:
@@ -33,7 +37,7 @@ jobs:
           python-version: 3.9
       - uses: actions/checkout@master
       - name: Update version
-        run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py
+        run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py && cd conda && python finalize.py ${{ github.event.inputs.release-tag }}
       - name: Commit changes
         uses: EndBug/add-and-commit@v4
         with:
@@ -45,7 +49,7 @@ jobs:
         with:
           github_token: ${{ secrets.PUSH_TO_RELEASE }}
           branch: r${{ github.event.inputs.release-tag }}
-  test-n-build-publish:
+  build-ubuntu:
     needs: [check-version-and-create-branch]
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -58,18 +62,92 @@ jobs:
         uses: actions/setup-python@v1
         with:
           python-version: 3.9
-      - name: Build and publish distribution 📦 to Anaconda
-        uses: maxibor/conda-package-publish-action@v1.1
+      - name: Publish distribution 📦 to Anaconda
+        run: conda install anaconda-client conda-build && cd conda && ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }} ./exec.sh
+      - name: Release
+        uses: softprops/action-gh-release@v1
         with:
-          subDir: 'conda'
-          AnacondaToken: ${{ secrets.ANACONDA_TOKEN }}
-      # - name: Release
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     body_path: README.md
-      #     files: dist/*
-      #     fail_on_unmatched_files: true
-      #     tag_name: r${{ github.event.inputs.release-tag }}
-      #     name: Release ${{ github.event.inputs.release-tag }}
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.PUSH_TO_RELEASE }}
+          files: linux-64/*.tar.bz2
+          fail_on_unmatched_files: true
+          tag_name: r${{ github.event.inputs.release-tag }}
+          name: Release ${{ github.event.inputs.release-tag }}
+  build-osx:
+    needs: [check-version-and-create-branch]
+    # The type of runner that the job will run on
+    runs-on: macos-latest
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - uses: actions/checkout@master
+        with:
+          ref: r${{ github.event.inputs.release-tag }}
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+      - name: Publish distribution 📦 to Anaconda
+        run: conda install anaconda-client conda-build && cd conda && ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }} ./exec.sh
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: linux-64/*.tar.bz2
+          fail_on_unmatched_files: true
+          tag_name: r${{ github.event.inputs.release-tag }}
+          name: Release ${{ github.event.inputs.release-tag }}
+  build-windows:
+    needs: [check-version-and-create-branch]
+    # The type of runner that the job will run on
+    runs-on: windows-latest
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - uses: actions/checkout@master
+        with:
+          ref: r${{ github.event.inputs.release-tag }}
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+      - name: Publish distribution 📦 to Anaconda
+        run: conda install anaconda-client conda-build
+      - run: cd conda
+      - run: set ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
+      - run: conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder . .
+      - run: "%CONDA%/bin/anaconda" upload --label main win-64/*.tar.bz2
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: win-64/*.tar.bz2
+          fail_on_unmatched_files: true
+          tag_name: r${{ github.event.inputs.release-tag }}
+          name: Release ${{ github.event.inputs.release-tag }}
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - run: cp environment.yml docker && cd docker
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
