@@ -113,7 +113,7 @@ jobs:
       - name: Set Anaconda token
         run: set ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
       - name: Run conda-build
-        run: conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder . .
+        run: "conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder . ."
       - name: Publish distribution 📦 to Anaconda
         run: "%CONDA%/bin/anaconda" upload --label main win-64/*.tar.bz2
       - name: Release
