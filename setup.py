@@ -2,8 +2,9 @@ import os
 from pathlib import Path
 from setuptools import setup
 
-from pybind11.setup_helpers import Pybind11Extension, build_ext
+from pybind11.setup_helpers import Pybind11Extension, build_ext, ParallelCompile
 
+ParallelCompile("NPY_NUM_BUILD_JOBS").install()
 
 CWD = Path("./")
 PKG_NAME = "mcquic"
@@ -20,7 +21,7 @@ def get_extensions():
     if os.name == "nt":
         compiler_args = ["/std:c++17", "/O2", "/GL", "/MP8"]
     else:
-        compiler_args = ["-std=c++17", "-O3", "-j8"]
+        compiler_args = ["-std=c++17", "-O3"]
     ext_modules.append(
         Pybind11Extension(
             name=f"{PKG_NAME}.rans",

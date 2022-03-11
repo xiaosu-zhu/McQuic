@@ -7,6 +7,6 @@ RUN conda env update --name base --file environment.yml --prune && rm environmen
 
 WORKDIR /workspace
 
-RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic && pip install -e .
+RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic && python setup.py install
 
 WORKDIR /workspace/mcquic
