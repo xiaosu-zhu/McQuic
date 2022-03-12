@@ -3,13 +3,11 @@ channels:
   - pytorch
   - defaults
   - conda-forge
+  - xiaosu-zhu
 dependencies:
   - python>=3.9
   - conda
   - pip
-  - pytorch<2
-  - torchvision<1
-  - cudatoolkit
   - tensorboard<3
   - rich<11
   - scipy<2
@@ -19,3 +17,4 @@ dependencies:
   - click<9
   - tqdm
   - vlutils
+  - pybind11

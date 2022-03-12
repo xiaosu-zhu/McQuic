@@ -1,3 +1,5 @@
+name: Update TOC in README.md
+
 on:
   push:
     branches: [main]
