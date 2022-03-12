@@ -35,7 +35,7 @@ def get_extensions():
     return ext_modules
 
 
-distribution = setup(
+setup(
     ext_modules = get_extensions(),
     cmdclass = {
         "build_ext": build_ext
