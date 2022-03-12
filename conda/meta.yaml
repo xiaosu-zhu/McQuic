@@ -15,19 +15,11 @@ source:
 requirements:
   build:
     - {{ compiler('cxx') }}
-    - setuptools
-    - pybind11
-  entry_points:
-    - mcquic = mcquic.cli:entryPoint
-    - mcquic-train = mcquic.train.cli:entryPoint
-    - mcquic-dataset = mcquic.datasets.cli:entryPoint
-    - mcquic-validate = mcquic.validate.cli:entryPoint
-
   host:
-    - {{ compiler('cxx') }}
-    - python>=3.9
+    - python
     - setuptools
     - pybind11
+    - pytorch<2
 
   run:
     - python>=3.9
@@ -42,6 +34,12 @@ requirements:
     - marshmallow<4
     - click<9
     - vlutils>=0.1.16
+
+  entry_points:
+    - mcquic = mcquic.cli:entryPoint
+    - mcquic-train = mcquic.train.cli:entryPoint
+    - mcquic-dataset = mcquic.datasets.cli:entryPoint
+    - mcquic-validate = mcquic.validate.cli:entryPoint
 
 about:
   home: https://github.com/xiaosu-zhu/McQuic
