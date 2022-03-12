@@ -4,7 +4,7 @@ from setuptools import setup
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext, ParallelCompile
 
-ParallelCompile("NPY_NUM_BUILD_JOBS").install()
+# ParallelCompile("NPY_NUM_BUILD_JOBS").install()
 
 CWD = Path("./")
 PKG_NAME = "mcquic"
