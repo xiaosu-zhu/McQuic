@@ -64,7 +64,7 @@ jobs:
           python-version: 3.9
       - name: Publish distribution 📦 to Anaconda
         run: |
-          conda install anaconda-client conda-build pybind11
+          conda install anaconda-client conda-build pybind11 conda-verify
           cd conda
           ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }} ./exec.sh
       - name: Release
@@ -89,7 +89,7 @@ jobs:
           python-version: 3.9
       - name: Publish distribution 📦 to Anaconda
         run: |
-          conda install anaconda-client conda-build pybind11
+          conda install anaconda-client conda-build pybind11 conda-verify
           cd conda
           ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }} ./exec.sh
       - name: Release
@@ -110,10 +110,15 @@ jobs:
           ref: r${{ github.event.inputs.release-tag }}
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: true
+          activate-environment: ""
       - name: Publish distribution 📦 to Anaconda
         run: |
           $env:ANACONDA_API_TOKEN = '${{ secrets.ANACONDA_TOKEN }}'
-          C:\Miniconda3\condabin\conda install anaconda-client conda-build pybind11
+          conda install anaconda-client conda-build pybind11 conda-verify
           cd conda
           .\exec.ps1
       - name: Release
