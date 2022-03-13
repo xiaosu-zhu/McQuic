@@ -1,7 +1,7 @@
 # Tested under this image, try newer images at your own risk
 FROM nvcr.io/nvidia/pytorch:21.12-py3
 
-RUN conda install --only-deps -c xiaosu-zhu -c conda-forge -c pytorch -c anaconda mcquic
+RUN conda install tqdm tensorboard<3 rich<11 python-lmdb<2 pyyaml<7 marshmallow<4 click<9 vlutils -c xiaosu-zhu -c conda-forge -c pytorch -c anaconda
 
 WORKDIR /workspace
 
