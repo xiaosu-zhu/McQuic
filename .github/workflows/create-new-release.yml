@@ -53,6 +53,8 @@ jobs:
     needs: [check-version-and-create-branch]
     # The type of runner that the job will run on
     runs-on: ${{ matrix.os }}
+    env:
+      ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -80,8 +82,6 @@ jobs:
           conda install anaconda-client conda-build pybind11 conda-verify
           conda config --set anaconda_upload yes
           conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
-        env:
-          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
