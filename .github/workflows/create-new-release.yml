@@ -49,67 +49,26 @@ jobs:
         with:
           github_token: ${{ secrets.PUSH_TO_RELEASE }}
           branch: r${{ github.event.inputs.release-tag }}
-  build-ubuntu:
+  build-all:
     needs: [check-version-and-create-branch]
     # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - uses: actions/checkout@master
         with:
           ref: r${{ github.event.inputs.release-tag }}
-      - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
         with:
-          auto-activate-base: true
-          activate-environment: ""
-      - name: Run conda build and publish 📦
+          python-version: 3.9
+      - name: Write entry points
         run: |
-          conda install anaconda-client conda-build pybind11 conda-verify
           cd conda
-          ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }} ./exec.sh
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: conda/linux-64/*.tar.bz2
-          fail_on_unmatched_files: true
-          tag_name: r${{ github.event.inputs.release-tag }}
-          name: Release ${{ github.event.inputs.release-tag }}
-  build-macos:
-    needs: [check-version-and-create-branch]
-    # The type of runner that the job will run on
-    runs-on: macos-latest
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-      - uses: actions/checkout@master
-        with:
-          ref: r${{ github.event.inputs.release-tag }}
-      - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          auto-activate-base: true
-          activate-environment: ""
-      - name: Run conda build and publish 📦
-        run: |
-          conda install anaconda-client conda-build pybind11 conda-verify
-          cd conda
-          ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }} ./exec.sh
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: macos-64/*.tar.bz2
-          fail_on_unmatched_files: true
-          tag_name: r${{ github.event.inputs.release-tag }}
-          name: Release ${{ github.event.inputs.release-tag }}
-  build-windows:
-    needs: [check-version-and-create-branch]
-    # The type of runner that the job will run on
-    runs-on: windows-latest
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-      - uses: actions/checkout@master
-        with:
-          ref: r${{ github.event.inputs.release-tag }}
+          python write_entry_points.py
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       - name: Setup conda
@@ -119,22 +78,26 @@ jobs:
           activate-environment: ""
       - name: Run conda build and publish 📦
         run: |
-          $env:ANACONDA_API_TOKEN = '${{ secrets.ANACONDA_TOKEN }}'
           conda install anaconda-client conda-build pybind11 conda-verify
-          cd conda
-          .\exec.ps1
+          export ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
+          conda config --set anaconda_upload yes
+          conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
+        shell: bash
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: win-64/*.tar.bz2
+          files: build/*/*.tar.bz2
           fail_on_unmatched_files: true
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
-  build-and-push-image:
+
+  build-docker:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      DOCKER_BUILD: True
 
     steps:
       - name: Checkout repository
