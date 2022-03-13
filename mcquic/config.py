@@ -162,3 +162,4 @@ class Config:
     def deserialize(data: dict) -> "Config":
         return ConfigSchema().load(data) # type: ignore
 
+# again
