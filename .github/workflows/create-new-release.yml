@@ -78,10 +78,10 @@ jobs:
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
-          export ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
           conda config --set anaconda_upload yes
           conda build -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
-        shell: bash
+        env:
+          ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
