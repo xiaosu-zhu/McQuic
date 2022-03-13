@@ -7,7 +7,7 @@ from marshmallow import Schema, fields, post_load
 
 class GeneralSchema(Schema):
     key = fields.Str(description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
-    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.")
+    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.", type=["string", "number", "boolean"])
 
     @post_load
     def _(self, data, **kwargs):
@@ -30,17 +30,17 @@ class TrainSchema(Schema):
     valSet = fields.Str(description="A dir path to load image files for validation.")
     saveDir = fields.Str(description="A dir path to save model checkpoints, TensorBoard messages and logs.")
     target = fields.Str(description="Training target. Now is one of `[PSNR, MsSSIM]`.", enum=["PSNR", "MsSSIM"])
-    optim = fields.Nested(GeneralSchema(), description="Optimizer used for training. As for current we have `Adam` and `Lamb`.")
-    schdr = fields.Nested(GeneralSchema(), description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
-    gpu = fields.Nested(GPUSchema(), description="GPU configs for training.")
+    optim = fields.Nested(GeneralSchema(), description="Optimizer used for training. As for current we have `Adam` and `Lamb`.", additionalProperties=False)
+    schdr = fields.Nested(GeneralSchema(), description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.", additionalProperties=False)
+    gpu = fields.Nested(GPUSchema(), description="GPU configs for training.", additionalProperties=False)
 
     @post_load
     def _(self, data, **kwargs):
         return Train(**data)
 
 class ConfigSchema(Schema):
-    model = fields.Nested(GeneralSchema(), description="Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.")
-    train = fields.Nested(TrainSchema(), description="Training configs.")
+    model = fields.Nested(GeneralSchema(), description="Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.", additionalProperties=False)
+    train = fields.Nested(TrainSchema(), description="Training configs.", additionalProperties=False)
 
     @post_load
     def _(self, data, **kwargs):
