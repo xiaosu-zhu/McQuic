@@ -34,10 +34,18 @@ def get_extensions():
 
     return ext_modules
 
+if os.getenv("DOCKER_BUILD", "") != "":
+    from conda.write_entry_points import __ENTRY_POINTS__
+    entryPoints = {
+        'console_scripts': [f"{key} = {value}" for key, value in __ENTRY_POINTS__.items()],
+    }
+else:
+    entryPoints = None
 
 setup(
     ext_modules = get_extensions(),
     cmdclass = {
         "build_ext": build_ext
-    }
+    },
+    entry_points=entryPoints
 )

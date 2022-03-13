@@ -28,19 +28,17 @@ requirements:
     - tqdm
     - tensorboard<3
     - rich<11
-    - scipy<2
     - python-lmdb<2
     - pyyaml<7
     - marshmallow<4
     - click<9
-    - vlutils>=0.1.16
+    - vlutils
 
+# Write it by finalize.py
 build:
   entry_points:
-    - mcquic = mcquic.cli:entryPoint
-    - mcquic-train = mcquic.train.cli:entryPoint
-    - mcquic-dataset = mcquic.datasets.cli:entryPoint
-    - mcquic-validate = mcquic.validate.cli:entryPoint
+    ${{ ENTRY_POINTS }}
+  include_recipe: False
 
 about:
   home: https://github.com/xiaosu-zhu/McQuic
