@@ -1,22 +1,22 @@
 # Config schema
 
-- [1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `model`](#model)
-  - [1.1. Property `None`](#model_allOf_i0)
-- [2. ![badge](https://img.shields.io/badge/Optional-yellow) Property `train`](#train)
-  - [2.1. Property `None`](#train_allOf_i0)
-    - [2.1.1. Property `trainSet`](#train_allOf_i0_trainSet)
-    - [2.1.2. Property `valFreq`](#train_allOf_i0_valFreq)
-    - [2.1.3. Property `valSet`](#train_allOf_i0_valSet)
-    - [2.1.4. Property `optim`](#train_allOf_i0_optim)
-      - [2.1.4.1. Property `None`](#train_allOf_i0_optim_allOf_i0)
-    - [2.1.5. Property `saveDir`](#train_allOf_i0_saveDir)
-    - [2.1.6. Property `target`](#train_allOf_i0_target)
-    - [2.1.7. Property `schdr`](#train_allOf_i0_schdr)
-      - [2.1.7.1. Property `None`](#train_allOf_i0_schdr_allOf_i0)
-    - [2.1.8. Property `batchSize`](#train_allOf_i0_batchSize)
-    - [2.1.9. Property `gpu`](#train_allOf_i0_gpu)
-      - [2.1.9.1. Property `None`](#train_allOf_i0_gpu_allOf_i0)
-    - [2.1.10. Property `epoch`](#train_allOf_i0_epoch)
+- [1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `train`](#train)
+  - [1.1. Property `None`](#train_allOf_i0)
+    - [1.1.1. Property `valSet`](#train_allOf_i0_valSet)
+    - [1.1.2. Property `target`](#train_allOf_i0_target)
+    - [1.1.3. Property `valFreq`](#train_allOf_i0_valFreq)
+    - [1.1.4. Property `gpu`](#train_allOf_i0_gpu)
+      - [1.1.4.1. Property `None`](#train_allOf_i0_gpu_allOf_i0)
+    - [1.1.5. Property `trainSet`](#train_allOf_i0_trainSet)
+    - [1.1.6. Property `saveDir`](#train_allOf_i0_saveDir)
+    - [1.1.7. Property `batchSize`](#train_allOf_i0_batchSize)
+    - [1.1.8. Property `epoch`](#train_allOf_i0_epoch)
+    - [1.1.9. Property `optim`](#train_allOf_i0_optim)
+      - [1.1.9.1. Property `None`](#train_allOf_i0_optim_allOf_i0)
+    - [1.1.10. Property `schdr`](#train_allOf_i0_schdr)
+      - [1.1.10.1. Property `None`](#train_allOf_i0_schdr_allOf_i0)
+- [2. ![badge](https://img.shields.io/badge/Optional-yellow) Property `model`](#model)
+  - [2.1. Property `None`](#model_allOf_i0)
 
 **Title:** Config schema
 
@@ -29,33 +29,11 @@
 
 | Property           | Pattern | Type        | Deprecated | Definition | Title/Description                                                                    |
 | ------------------ | ------- | ----------- | ---------- | ---------- | ------------------------------------------------------------------------------------ |
-| - [model](#model ) | No      | Combination | No         | -          | Compression model to use. Now we only have one model, so 'key' is ignored. Avali ... |
 | - [train](#train ) | No      | Combination | No         | -          | Training configs.                                                                    |
+| - [model](#model ) | No      | Combination | No         | -          | Compression model to use. Now we only have one model, so 'key' is ignored. Avali ... |
 |                    |         |             |            |            |                                                                                      |
 
-## <a name="model"></a>1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `model`
-
-| Type                      | `combining`                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.
-
-| All of(Requirement)        |
-| -------------------------- |
-| [General](#model_allOf_i0) |
-|                            |
-
-### <a name="model_allOf_i0"></a>1.1. Property `None`
-
-| Type                      | `object`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-| **Same definition as**    | [Train_optim_allOf_i0](#Train_optim_allOf_i0)                                                                       |
-|                           |                                                                                                                     |
-
-## <a name="train"></a>2. ![badge](https://img.shields.io/badge/Optional-yellow) Property `train`
+## <a name="train"></a>1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `train`
 
 | Type                      | `combining`                                                                                                         |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -69,7 +47,7 @@
 | [Train](#train_allOf_i0) |
 |                          |
 
-### <a name="train_allOf_i0"></a>2.1. Property `None`
+### <a name="train_allOf_i0"></a>1.1. Property `None`
 
 | Type                      | `object`                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -79,28 +57,41 @@
 
 | Property                                  | Pattern | Type             | Deprecated | Definition | Title/Description                                                                    |
 | ----------------------------------------- | ------- | ---------------- | ---------- | ---------- | ------------------------------------------------------------------------------------ |
-| - [trainSet](#train_allOf_i0_trainSet )   | No      | string           | No         | -          | A dir path to load 'lmdb' dataset. You need to convert your images before you gi ... |
-| - [valFreq](#train_allOf_i0_valFreq )     | No      | integer          | No         | -          | Run validation after every 'valFreq' epochs.                                         |
 | - [valSet](#train_allOf_i0_valSet )       | No      | string           | No         | -          | A dir path to load image files for validation.                                       |
-| - [optim](#train_allOf_i0_optim )         | No      | Combination      | No         | -          | Optimizer used for training. As for current we have 'Adam' and 'Lamb'.               |
-| - [saveDir](#train_allOf_i0_saveDir )     | No      | string           | No         | -          | A dir path to save model checkpoints, TensorBoard messages and logs.                 |
 | - [target](#train_allOf_i0_target )       | No      | enum (of string) | No         | -          | Training target. Now is one of '[PSNR, MsSSIM]'.                                     |
-| - [schdr](#train_allOf_i0_schdr )         | No      | Combination      | No         | -          | Learning rate scheduler used for training. As for current we have 'ReduceLROnPla ... |
-| - [batchSize](#train_allOf_i0_batchSize ) | No      | integer          | No         | -          | Batch size for training. NOTE: The actual batch size (whole world) is computed b ... |
+| - [valFreq](#train_allOf_i0_valFreq )     | No      | integer          | No         | -          | Run validation after every 'valFreq' epochs.                                         |
 | - [gpu](#train_allOf_i0_gpu )             | No      | Combination      | No         | -          | GPU configs for training.                                                            |
+| - [trainSet](#train_allOf_i0_trainSet )   | No      | string           | No         | -          | A dir path to load 'lmdb' dataset. You need to convert your images before you gi ... |
+| - [saveDir](#train_allOf_i0_saveDir )     | No      | string           | No         | -          | A dir path to save model checkpoints, TensorBoard messages and logs.                 |
+| - [batchSize](#train_allOf_i0_batchSize ) | No      | integer          | No         | -          | Batch size for training. NOTE: The actual batch size (whole world) is computed b ... |
 | - [epoch](#train_allOf_i0_epoch )         | No      | integer          | No         | -          | Total training epochs.                                                               |
+| - [optim](#train_allOf_i0_optim )         | No      | Combination      | No         | -          | Optimizer used for training. As for current we have 'Adam' and 'Lamb'.               |
+| - [schdr](#train_allOf_i0_schdr )         | No      | Combination      | No         | -          | Learning rate scheduler used for training. As for current we have 'ReduceLROnPla ... |
 |                                           |         |                  |            |            |                                                                                      |
 
-#### <a name="train_allOf_i0_trainSet"></a>2.1.1. Property `trainSet`
+#### <a name="train_allOf_i0_valSet"></a>1.1.1. Property `valSet`
 
 | Type                      | `string`                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
 |                           |                                                                                                                     |
 
-**Description:** A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`.
+**Description:** A dir path to load image files for validation.
 
-#### <a name="train_allOf_i0_valFreq"></a>2.1.2. Property `valFreq`
+#### <a name="train_allOf_i0_target"></a>1.1.2. Property `target`
+
+| Type                      | `enum (of string)`                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** Training target. Now is one of `[PSNR, MsSSIM]`.
+
+Must be one of:
+* "PSNR"
+* "MsSSIM"
+
+#### <a name="train_allOf_i0_valFreq"></a>1.1.3. Property `valFreq`
 
 | Type                      | `integer`                                                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -114,96 +105,7 @@
 | **Minimum**  | &gt; 0 |
 |              |        |
 
-#### <a name="train_allOf_i0_valSet"></a>2.1.3. Property `valSet`
-
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** A dir path to load image files for validation.
-
-#### <a name="train_allOf_i0_optim"></a>2.1.4. Property `optim`
-
-| Type                      | `combining`                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** Optimizer used for training. As for current we have `Adam` and `Lamb`.
-
-| All of(Requirement)                       |
-| ----------------------------------------- |
-| [General](#train_allOf_i0_optim_allOf_i0) |
-|                                           |
-
-##### <a name="train_allOf_i0_optim_allOf_i0"></a>2.1.4.1. Property `None`
-
-| Type                      | `object`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-| **Same definition as**    | [Train_optim_allOf_i0](#Train_optim_allOf_i0)                                                                       |
-|                           |                                                                                                                     |
-
-#### <a name="train_allOf_i0_saveDir"></a>2.1.5. Property `saveDir`
-
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** A dir path to save model checkpoints, TensorBoard messages and logs.
-
-#### <a name="train_allOf_i0_target"></a>2.1.6. Property `target`
-
-| Type                      | `enum (of string)`                                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** Training target. Now is one of `[PSNR, MsSSIM]`.
-
-Must be one of:
-* "PSNR"
-* "MsSSIM"
-
-#### <a name="train_allOf_i0_schdr"></a>2.1.7. Property `schdr`
-
-| Type                      | `combining`                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.
-
-| All of(Requirement)                       |
-| ----------------------------------------- |
-| [General](#train_allOf_i0_schdr_allOf_i0) |
-|                                           |
-
-##### <a name="train_allOf_i0_schdr_allOf_i0"></a>2.1.7.1. Property `None`
-
-| Type                      | `object`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-| **Same definition as**    | [Train_optim_allOf_i0](#Train_optim_allOf_i0)                                                                       |
-|                           |                                                                                                                     |
-
-#### <a name="train_allOf_i0_batchSize"></a>2.1.8. Property `batchSize`
-
-| Type                      | `integer`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
-
-**Description:** Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.
-
-| Restrictions |        |
-| ------------ | ------ |
-| **Minimum**  | &gt; 0 |
-|              |        |
-
-#### <a name="train_allOf_i0_gpu"></a>2.1.9. Property `gpu`
+#### <a name="train_allOf_i0_gpu"></a>1.1.4. Property `gpu`
 
 | Type                      | `combining`                                                                                                         |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -217,7 +119,7 @@ Must be one of:
 | [GPU](#train_allOf_i0_gpu_allOf_i0) |
 |                                     |
 
-##### <a name="train_allOf_i0_gpu_allOf_i0"></a>2.1.9.1. Property `None`
+##### <a name="train_allOf_i0_gpu_allOf_i0"></a>1.1.4.1. Property `None`
 
 | Type                      | `object`                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +127,39 @@ Must be one of:
 | **Same definition as**    | [Train_gpu_allOf_i0](#Train_gpu_allOf_i0)                                                                           |
 |                           |                                                                                                                     |
 
-#### <a name="train_allOf_i0_epoch"></a>2.1.10. Property `epoch`
+#### <a name="train_allOf_i0_trainSet"></a>1.1.5. Property `trainSet`
+
+| Type                      | `string`                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`.
+
+#### <a name="train_allOf_i0_saveDir"></a>1.1.6. Property `saveDir`
+
+| Type                      | `string`                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** A dir path to save model checkpoints, TensorBoard messages and logs.
+
+#### <a name="train_allOf_i0_batchSize"></a>1.1.7. Property `batchSize`
+
+| Type                      | `integer`                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.
+
+| Restrictions |        |
+| ------------ | ------ |
+| **Minimum**  | &gt; 0 |
+|              |        |
+
+#### <a name="train_allOf_i0_epoch"></a>1.1.8. Property `epoch`
 
 | Type                      | `integer`                                                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -238,6 +172,72 @@ Must be one of:
 | ------------ | ------ |
 | **Minimum**  | &gt; 0 |
 |              |        |
+
+#### <a name="train_allOf_i0_optim"></a>1.1.9. Property `optim`
+
+| Type                      | `combining`                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** Optimizer used for training. As for current we have `Adam` and `Lamb`.
+
+| All of(Requirement)                       |
+| ----------------------------------------- |
+| [General](#train_allOf_i0_optim_allOf_i0) |
+|                                           |
+
+##### <a name="train_allOf_i0_optim_allOf_i0"></a>1.1.9.1. Property `None`
+
+| Type                      | `object`                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+| **Same definition as**    | [Train_optim_allOf_i0](#Train_optim_allOf_i0)                                                                       |
+|                           |                                                                                                                     |
+
+#### <a name="train_allOf_i0_schdr"></a>1.1.10. Property `schdr`
+
+| Type                      | `combining`                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.
+
+| All of(Requirement)                       |
+| ----------------------------------------- |
+| [General](#train_allOf_i0_schdr_allOf_i0) |
+|                                           |
+
+##### <a name="train_allOf_i0_schdr_allOf_i0"></a>1.1.10.1. Property `None`
+
+| Type                      | `object`                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+| **Same definition as**    | [Train_optim_allOf_i0](#Train_optim_allOf_i0)                                                                       |
+|                           |                                                                                                                     |
+
+## <a name="model"></a>2. ![badge](https://img.shields.io/badge/Optional-yellow) Property `model`
+
+| Type                      | `combining`                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
+
+**Description:** Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.
+
+| All of(Requirement)        |
+| -------------------------- |
+| [General](#model_allOf_i0) |
+|                            |
+
+### <a name="model_allOf_i0"></a>2.1. Property `None`
+
+| Type                      | `object`                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+| **Same definition as**    | [Train_optim_allOf_i0](#Train_optim_allOf_i0)                                                                       |
+|                           |                                                                                                                     |
 
 ----------------------------------------------------------------------------------------------------------------------------
 Generated using [json-schema-for-humans](https://github.com/coveooss/json-schema-for-humans)
