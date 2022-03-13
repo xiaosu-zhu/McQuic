@@ -20,6 +20,7 @@ requirements:
     - setuptools
     - pybind11
     - pytorch<2
+    - pip
 
   run:
     - python>=3.9
