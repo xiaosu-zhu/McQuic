@@ -25,4 +25,5 @@ def writeYAML(lines):
 if __name__ == "__main__":
     with open(sys.argv[1]) as fp:
         result = writeYAML(fp.readlines())
-        sys.stdout.writelines(result)
+    with open(sys.argv[1], "w") as fp:
+        fp.writelines(result)
