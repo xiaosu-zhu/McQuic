@@ -33,7 +33,7 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
     else:
         raise ValueError("Both `--resume` and `config` are None.")
 
-    gpus = queryGPU(needGPUs=config.GPU.GPUs, wantsMore=config.GPU.WantsMore, needVRamEachGPU=(config.GPU.VRam + 256) if config.GPU.VRam > 0 else -1, writeOSEnv=True)
+    gpus = queryGPU(needGPUs=config.Train.GPU.GPUs, wantsMore=config.Train.GPU.WantsMore, needVRamEachGPU=(config.Train.GPU.VRam + 256) if config.Train.GPU.VRam > 0 else -1, writeOSEnv=True)
     worldSize = len(gpus)
     config.scaleByWorldSize(worldSize)
 
@@ -43,7 +43,7 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
 
     # `daemon` is True --- Way to handle SIGINT globally.
     # Give up handling SIGINT by yourself... PyTorch hacks it.
-    mp.spawn(ddpSpawnTraining, (worldSize, masterPort, config, config.Training.SaveDir, resume, loggingLevel), worldSize, daemon=True) # type: ignore
+    mp.spawn(ddpSpawnTraining, (worldSize, masterPort, config, config.Train.SaveDir, resume, loggingLevel), worldSize, daemon=True) # type: ignore
     return 0
 
 

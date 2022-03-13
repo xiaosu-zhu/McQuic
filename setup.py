@@ -12,16 +12,17 @@ PKG_NAME = "mcquic"
 # https://github.com/InterDigitalInc/CompressAI/blob/master/setup.py
 # Copyright (c) 2021-2022, InterDigital Communications, Inc
 def get_extensions():
-    ext_dirs = CWD / "third_party/cpp_exts"
+    ext_dirs = CWD / "third_party/CompressAI/cpp_exts"
     ext_modules = []
 
     # Add rANS module
-    rans_lib_dir = CWD / "third_party/ryg_rans"
+    rans_lib_dir = CWD / "third_party/CompressAI/ryg_rans"
 
     if os.name == "nt":
         compiler_args = ["/std:c++17", "/O2", "/GL", "/MP8"]
     else:
         compiler_args = ["-std=c++17", "-O3"]
+
     ext_modules.append(
         Pybind11Extension(
             name=f"{PKG_NAME}.rans",
@@ -35,7 +36,7 @@ def get_extensions():
     return ext_modules
 
 if os.getenv("DOCKER_BUILD", "") != "":
-    from conda.write_entry_points import __ENTRY_POINTS__
+    from ci.write_entry_points import __ENTRY_POINTS__
     entryPoints = {
         'console_scripts': [f"{key} = {value}" for key, value in __ENTRY_POINTS__.items()],
     }

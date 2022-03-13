@@ -37,7 +37,7 @@ jobs:
           python-version: 3.9
       - uses: actions/checkout@master
       - name: Update version
-        run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py && cd conda && python finalize.py ${{ github.event.inputs.release-tag }}
+        run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py && python ci/finalize.py conda/meta.yaml ${{ github.event.inputs.release-tag }}
       - name: Commit changes
         uses: EndBug/add-and-commit@v4
         with:
@@ -67,8 +67,7 @@ jobs:
           python-version: 3.9
       - name: Write entry points
         run: |
-          cd conda
-          python write_entry_points.py
+          python ci/write_entry_points.py conda/meta.yaml
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       - name: Setup conda
@@ -87,7 +86,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: build/*/*.tar.bz2
-          fail_on_unmatched_files: true
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
 

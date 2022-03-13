@@ -244,10 +244,16 @@ For more information such as building toolchains, please refer to [their reposit
 
 
 # Reference Models
-We've released a bunch of pretrained models targeting various BPPs (bits per pixel). You could fetch them by specifying `-q [1~12]`. Following is the pretrained model list:
+We've released a bunch of pretrained models targeting various BPPs (bits per pixel). You could fetch them by specifying `-q [1~12]`. Following is the pretrained model list (Others ***TBA***):
 
-***TBA***
 
+| Model No. 	| Channel 	| M 	|        K        	| Throughput (Encode/Decode) 	| Avg.BPP 	|
+|:---------:	|:-------:	|:-:	|:---------------:	|:--------------------------:	|:-------:	|
+|         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
+|         3 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
+|         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
+
+The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. **`Mpps = Mega-pixels per second`**
 
 # Train a New Model
 Please ensure you've installed [`NVIDIA/Apex`](https://github.com/NVIDIA/apex). To train models, here are minimal and recommended system requirements.
@@ -334,7 +340,8 @@ if you want to use an updated config (e.g. tuned learning rate, modified hyper-p
 
 
 ## Test
-**TBA**
+Call ???
+
 
 # Contribute to this Repository
 It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at [issue templates](https://github.com/xiaosu-zhu/McQuic/issues/new/choose).

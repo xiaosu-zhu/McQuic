@@ -63,17 +63,17 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
 
     dist.barrier()
 
-    optimizerFn = OptimizerRegistry.get(config.Optim.Type, logger=saver)
-    schdrFn = LrSchedulerRegistry.get(config.Schdr.type, logger=saver)
+    optimizerFn = OptimizerRegistry.get(config.Train.Optim.Type, logger=saver)
+    schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.type, logger=saver)
 
-    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.Params, config.Training.Target), optimizerFn, schdrFn, saver)
+    trainer = getTrainer(rank, config, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
 
     if tmpFile is not None:
         saver.info("Found ckpt to resume at %s", resume)
         trainer.restoreStates(tmpFile)
 
-    trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Training.TrainSet, config.Training.BatchSize, logger=saver)
-    valLoader = getValLoader(config.Training.ValSet, disable=rank != 0, logger=saver)
+    trainLoader, trainSampler = getTrainLoader(rank, worldSize, config.Train.TrainSet, config.Train.BatchSize, logger=saver)
+    valLoader = getValLoader(config.Train.ValSet, disable=rank != 0, logger=saver)
     saver.debug("Train and validation datasets mounted.")
 
     trainer.train(trainLoader, trainSampler, valLoader)

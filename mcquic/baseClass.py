@@ -1,4 +1,17 @@
+import abc
+
 from vlutils.base import Restorable
+
+
+class Serializable(abc.ABC):
+    @abc.abstractmethod
+    def serialize(self):
+        raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def deserialize(raw):
+        raise NotImplementedError
 
 
 class ValueTuner(Restorable):
