@@ -52,7 +52,7 @@ class General:
     params: Dict[str, Any]
 
     @property
-    def Type(self) -> str:
+    def Key(self) -> str:
         return self.key
 
     @property
@@ -151,12 +151,13 @@ class Config:
         batchSize = self.train.BatchSize * worldSize
         exponent = math.log2(batchSize)
         scale = 3 - exponent / 2
-        if "lr" in self.Train.Optim.params:
-            self.Train.Optim.params["lr"] /= (2 ** scale)
+        if "lr" in self.Train.Optim.Params:
+            self.Train.Optim.Params["lr"] /= (2 ** scale)
 
     def serialize(self) -> dict:
         return ConfigSchema().dump(self) # type: ignore
 
     @staticmethod
     def deserialize(data: dict) -> "Config":
+        data = { key: value for key, value in data.items() if "$" not in key }
         return ConfigSchema().load(data) # type: ignore

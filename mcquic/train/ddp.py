@@ -63,8 +63,8 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
 
     dist.barrier()
 
-    optimizerFn = OptimizerRegistry.get(config.Train.Optim.Type, logger=saver)
-    schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.type, logger=saver)
+    optimizerFn = OptimizerRegistry.get(config.Train.Optim.Key, logger=saver)
+    schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.Key, logger=saver)
 
     trainer = getTrainer(rank, config, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
 
