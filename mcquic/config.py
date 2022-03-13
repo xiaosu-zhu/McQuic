@@ -6,8 +6,8 @@ from marshmallow import Schema, fields, post_load
 
 
 class GeneralSchema(Schema):
-    type = fields.Str(description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
-    params = fields.Dict(keys=fields.Str(), description="Corresponding funcation call parameters.")
+    key = fields.Str(description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
+    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), description="Corresponding funcation call parameters.")
 
     @post_load
     def _(self, data, **kwargs):
@@ -39,22 +39,21 @@ class TrainSchema(Schema):
         return Train(**data)
 
 class ConfigSchema(Schema):
-    model = fields.Nested(GeneralSchema(), description="Compression model to use. Now we only have one model, so `type` is ignored. Avaliable params are `channel`, `m` and `k`.")
+    model = fields.Nested(GeneralSchema(), description="Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.")
     train = fields.Nested(TrainSchema(), description="Training configs.")
 
     @post_load
     def _(self, data, **kwargs):
         return Config(**data)
 
-
+@dataclass
 class General:
-    def __init__(self, type: str, params: Dict[str, Any]):
-        self.type = type
-        self.params = params
+    key: str
+    params: Dict[str, Any]
 
     @property
     def Type(self) -> str:
-        return self.type
+        return self.key
 
     @property
     def Params(self) -> Dict[str, Any]:
@@ -161,4 +160,3 @@ class Config:
     @staticmethod
     def deserialize(data: dict) -> "Config":
         return ConfigSchema().load(data) # type: ignore
-
