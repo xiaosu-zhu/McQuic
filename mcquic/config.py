@@ -7,7 +7,7 @@ from marshmallow import Schema, fields, post_load
 
 class GeneralSchema(Schema):
     key = fields.Str(description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
-    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), description="Corresponding funcation call parameters.")
+    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.")
 
     @post_load
     def _(self, data, **kwargs):
