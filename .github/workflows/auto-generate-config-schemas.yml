@@ -15,13 +15,16 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '14'
+      - run: npm install
+      - run: npm test
       - run: npm install -g @adobe/jsonschema2md
+      - run: npm test
       - name: Generate schema.json
         run: |
           pip install marshmallow-jsonschema apispec
           python ci/generate_schema.py mcquic/config.py configs/config.schema.json
           jsonschema2md -f yaml -d configs/ -o configs/
-          mv configs.md README.md
+          mv configs/configs.md configs/README.md
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: Auto update config schema and config/README.md
+          commit_message: Auto update config schema and configs/README.md

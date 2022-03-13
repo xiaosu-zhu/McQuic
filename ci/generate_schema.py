@@ -30,3 +30,5 @@ with open(sys.argv[2]) as fp:
 with open(sys.argv[2], "w") as fp:
     for line in lines:
         fp.write(line.replace("/components/schemas", ""))
+
+print("Generate config.schema.json done.")
