@@ -30,8 +30,8 @@ class TrainSchema(Schema):
     valSet = fields.Str(description="A dir path to load image files for validation.")
     saveDir = fields.Str(description="A dir path to save model checkpoints, TensorBoard messages and logs.")
     target = fields.Str(description="Training target. Now is one of `[PSNR, MsSSIM]`.", enum=["PSNR", "MsSSIM"])
-    optim = fields.Nested(GeneralSchema(), description="Optimizer used for training. Now we have `Adam` and `Lamb`.")
-    schdr = fields.Nested(GeneralSchema(), description="Learning rate scheduler used for training. Now we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
+    optim = fields.Nested(GeneralSchema(), description="Optimizer used for training. As for current we have `Adam` and `Lamb`.")
+    schdr = fields.Nested(GeneralSchema(), description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
     gpu = fields.Nested(GPUSchema(), description="GPU configs for training.")
 
     @post_load
