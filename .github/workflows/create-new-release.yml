@@ -90,12 +90,11 @@ jobs:
           name: Release ${{ github.event.inputs.release-tag }}
 
   build-docker:
+    needs: [check-version-and-create-branch]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    env:
-      DOCKER_BUILD: True
 
     steps:
       - name: Checkout repository
