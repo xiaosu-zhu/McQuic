@@ -5,6 +5,8 @@ RUN conda install tqdm tensorboard<3 rich<11 python-lmdb<2 pyyaml<7 marshmallow<
 
 WORKDIR /workspace
 
-RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic && python setup.py install
+RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic && pip install -e .
+
+RUN sed -i "1 s|$| -O|" /opt/conda/bin/mcquic*
 
 WORKDIR /workspace/mcquic

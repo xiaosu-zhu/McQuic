@@ -11,14 +11,17 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v2
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v1
+      - name: Setup Node
+      - uses: actions/setup-node@v2
         with:
-          python-version: 3.9
+          node-version: '14'
+      - run: npm install -g @adobe/jsonschema2md
       - name: Generate schema.json
         run: |
           pip install marshmallow-jsonschema
-          python ci/generate_schema.py mcquic/config.py configs/schema.json
+          python ci/generate_schema.py mcquic/config.py configs/config.schema.json
+          jsonschema2md -f yaml -d configs/ -o configs/
+          mv configs.md README.md
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: Auto update markdown TOC
+          commit_message: Auto update config schema and config/README.md
