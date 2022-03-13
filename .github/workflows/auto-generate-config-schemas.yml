@@ -18,7 +18,7 @@ jobs:
       - run: npm install -g @adobe/jsonschema2md
       - name: Generate schema.json
         run: |
-          pip install marshmallow-jsonschema
+          pip install marshmallow-jsonschema apispec
           python ci/generate_schema.py mcquic/config.py configs/config.schema.json
           jsonschema2md -f yaml -d configs/ -o configs/
           mv configs.md README.md
