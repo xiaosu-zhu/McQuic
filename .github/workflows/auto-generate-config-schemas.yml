@@ -11,17 +11,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v2
-      - name: Setup Node
-        uses: actions/setup-node@v2
-        with:
-          node-version: '12'
-      - run: npm install -g @adobe/jsonschema2md
       - name: Generate schema.json
         run: |
           pip install marshmallow-jsonschema apispec
-          python ci/generate_schema.py mcquic/config.py configs/config.schema.json
-          jsonschema2md -f yaml -d configs/ -o configs/
-          mv configs/configs.md configs/README.md
+          python ci/generate_schema.py mcquic/config.py configs/schema.json configs/README.md
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Auto update config schema and configs/README.md
