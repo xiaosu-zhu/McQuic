@@ -1,6 +1,6 @@
 $schema: "https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/configs/schema.json"
 model:
-    type: Compressor
+    key: Compressor
     params:
         channel: 128
         k: [8192, 2048, 512]
@@ -14,13 +14,13 @@ train:
     saveDir: saved
     target: MsSSIM
     optim:
-        type: Lamb
+        key: Lamb
         params:
             lr: 1.e-3
             # weight_decay: 0.0
             # use_nvlamb: true
     schdr:
-        type: CosineAnnealingWarmupRestarts
+        key: CosineAnnealingWarmupRestarts
         params:
             first_cycle_steps: 1000 # match 10 * testFreq
             warmup_steps: 5
