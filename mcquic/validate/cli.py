@@ -65,7 +65,7 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
         return 0
 
     if output.is_dir():
-        modelName = "_".join([f"{key}_{value}" for key, value in config.Model.params.items()])
+        modelName = "_".join([f"{key}_{value}" for key, value in config.Model.Params.items()])
         modelName = modelName.replace(", ", "_").replace("[", "").replace("]", "")
         output = output.joinpath(f"{modelName}_{config.Train.Target.lower()}.mcquic")
 

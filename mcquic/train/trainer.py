@@ -56,13 +56,13 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-        self._optimizer = optimizer(self._model.parameters(), **self.config.Train.Optim.params)
+        self._optimizer = optimizer(self._model.parameters(), **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
         self.saver.debug("[%s] Creating LR scheduler...", self.PrettyStep)
         scheduler = trackingFunctionCalls(scheduler, self.saver)
-        self._scheduler = scheduler(self._optimizer, **self.config.Train.Schdr.params)
+        self._scheduler = scheduler(self._optimizer, **self.config.Train.Schdr.Params)
         self.schdrFn = scheduler
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
@@ -109,13 +109,13 @@ class _baseTrainer(Restorable):
 
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self.optimFn(self._model.parameters(), **self.config.Train.Optim.params)
+        self._optimizer = self.optimFn(self._model.parameters(), **self.config.Train.Optim.Params)
 
         self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
-        self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Train.Schdr.params)
+        self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Train.Schdr.Params)
 
         self.saver.debug("[%s] LR scheduler reset.", self.PrettyStep)
 
