@@ -56,13 +56,13 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-        self._optimizer = optimizer(self._model.parameters(), **self.config.Optim.params)
+        self._optimizer = optimizer(self._model.parameters(), **self.config.Train.Optim.params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
         self.saver.debug("[%s] Creating LR scheduler...", self.PrettyStep)
         scheduler = trackingFunctionCalls(scheduler, self.saver)
-        self._scheduler = scheduler(self._optimizer, **self.config.Schdr.params)
+        self._scheduler = scheduler(self._optimizer, **self.config.Train.Schdr.params)
         self.schdrFn = scheduler
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
@@ -109,13 +109,13 @@ class _baseTrainer(Restorable):
 
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self.optimFn(self._model.parameters(), **self.config.Optim.params)
+        self._optimizer = self.optimFn(self._model.parameters(), **self.config.Train.Optim.params)
 
         self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
-        self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Schdr.params)
+        self._scheduler = self.schdrFn(self._optimizer, last_epoch=lastEpoch, **self.config.Train.Schdr.params)
 
         self.saver.debug("[%s] LR scheduler reset.", self.PrettyStep)
 
@@ -155,7 +155,7 @@ class _baseTrainer(Restorable):
 
         hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
 
-        if self._epoch % (self.config.Training.ValFreq) == 0:
+        if self._epoch % (self.config.Train.ValFreq) == 0:
             self.refresh()
 
         gc.collect()
@@ -182,7 +182,7 @@ class _baseTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, totalBatches=len(trainLoader._loader))
 
-        for _ in range(self._epoch, self.config.Training.Epoch):
+        for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
             for images in trainLoader:
                 self._stepStart(stepStartHook)
@@ -220,7 +220,7 @@ class MainTrainer(_baseTrainer):
         # Call function at every X epoches.
         hooks = EpochFrequencyHook(
             (1, self.log),
-            (self.config.Training.ValFreq, self.validate),
+            (self.config.Train.ValFreq, self.validate),
             logger=self.saver
         )
 
@@ -274,7 +274,7 @@ class MainTrainer(_baseTrainer):
 
     def _beforeRun(self, hook, *args, totalBatches, **kwargs):
         self.progress.update(self.trainingBar, total=totalBatches)
-        self.progress.update(self.epochBar, total=self.config.Training.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Training.Epoch:4d}]")
+        self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
@@ -296,12 +296,12 @@ class MainTrainer(_baseTrainer):
 
         if self._step % 100 != 0:
             return
-        self.saver.add_scalar(f"Stat/{self.config.Training.Target}", moment, global_step=self._step)
+        self.saver.add_scalar(f"Stat/{self.config.Train.Target}", moment, global_step=self._step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
     def _epochStart(self, hook, *args, **kwArgs):
         self.progress.reset(self.trainingBar)
-        self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Training.Epoch:4d}]")
+        self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
         super()._epochStart(hook, *args, **kwArgs)
 
     def refresh(self, *_, **__):
@@ -334,7 +334,7 @@ class MainTrainer(_baseTrainer):
 
         self.save()
 
-        rate, distortion = results["BPP"], results[self.config.Training.Target]
+        rate, distortion = results["BPP"], results[self.config.Train.Target]
 
         if (distortion / rate) > (self.bestDistortion / self.bestRate):
             self.bestDistortion = distortion

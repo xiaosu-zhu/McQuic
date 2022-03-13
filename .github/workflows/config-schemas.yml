@@ -1,0 +1,24 @@
+name: Update schema.json and docs based on mcquic.config.ConfigSchema
+
+on:
+  push:
+    branches: [main]
+    paths: ['mcquic/config.py']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+      - name: Generate schema.json
+        run: |
+          pip install marshmallow-jsonschema
+          python ci/generate_schema.py mcquic/config.py configs/schema.json
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Auto update markdown TOC

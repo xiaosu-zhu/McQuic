@@ -40,7 +40,11 @@ class Validator:
         self._meter.reset()
         total = len(valLoader)
         now = 0
-        task = progress.add_task(f"[ Val@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
+        if epoch is None:
+            # test mode
+            task = progress.add_task(f"[ Test ]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
+        else:
+            task = progress.add_task(f"[ Val@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
         with model._quantizer.readyForCoding() as cdfs:
             for now, images in enumerate(valLoader):
                 images = images.to(self._rank, non_blocking=True)
@@ -54,7 +58,11 @@ class Validator:
     @torch.inference_mode()
     def speed(self, epoch: int, model: BaseCompressor, progress: Progress):
         now = 0
-        task = progress.add_task(f"[ Spd@{epoch:4d}]", total=100, progress=f"{now:4d}/{100:4d}", suffix="")
+        if epoch is None:
+            # test mode
+            task = progress.add_task(f"[ Speed test ]", total=100, progress=f"{now:4d}/{100:4d}", suffix="")
+        else:
+            task = progress.add_task(f"[ Spd@{epoch:4d}]", total=100, progress=f"{now:4d}/{100:4d}", suffix="")
 
         with model._quantizer.readyForCoding() as cdfs:
             tensor = torch.rand(10, 3, 768, 512).to(self._rank)

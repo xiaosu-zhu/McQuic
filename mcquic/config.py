@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import math
 from typing import Any, Dict
 
@@ -5,41 +6,41 @@ from marshmallow import Schema, fields, post_load
 
 
 class GeneralSchema(Schema):
-    type = fields.Str()
-    params = fields.Dict(keys=fields.Str())
+    type = fields.Str(description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
+    params = fields.Dict(keys=fields.Str(), description="Corresponding funcation call parameters.")
 
     @post_load
     def _(self, data, **kwargs):
         return General(**data)
 
-class TrainingSchema(Schema):
-    batchSize = fields.Int()
-    epoch = fields.Int()
-    valFreq = fields.Int()
-    trainSet = fields.Str()
-    valSet = fields.Str()
-    saveDir = fields.Str()
-    target = fields.Str()
-
-    @post_load
-    def _(self, data, **kwargs):
-        return Training(**data)
-
 class GPUSchema(Schema):
-    gpus = fields.Int()
-    vRam = fields.Int()
-    wantsMore = fields.Bool()
+    gpus = fields.Int(description="Number of gpus for training. This affects the `world size` of PyTorch DDP.", exclusiveMinimum=0)
+    vRam = fields.Int(description="Minimum VRam required for each gpu. Set it to `-1` to use all gpus.")
+    wantsMore = fields.Bool(description="Set to `true` to use all visible gpus and all VRams and ignore `gpus` and `vRam`.")
 
     @post_load
     def _(self, data, **kwargs):
         return GPU(**data)
 
+class TrainSchema(Schema):
+    batchSize = fields.Int(description="Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.", exclusiveMinimum=0)
+    epoch = fields.Int(description="Total training epochs.", exclusiveMinimum=0)
+    valFreq = fields.Int(description="Run validation after every `valFreq` epochs.", exclusiveMinimum=0)
+    trainSet = fields.Str(description="A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`.")
+    valSet = fields.Str(description="A dir path to load image files for validation.")
+    saveDir = fields.Str(description="A dir path to save model checkpoints, TensorBoard messages and logs.")
+    target = fields.Str(description="Training target. Now is one of `[PSNR, MsSSIM]`.", enum=["PSNR", "MsSSIM"])
+    optim = fields.Nested(GeneralSchema(), description="Optimizer used for training. Now we have `Adam` and `Lamb`.")
+    schdr = fields.Nested(GeneralSchema(), description="Learning rate scheduler used for training. Now we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
+    gpu = fields.Nested(GPUSchema(), description="GPU configs for training.")
+
+    @post_load
+    def _(self, data, **kwargs):
+        return Train(**data)
+
 class ConfigSchema(Schema):
-    model = fields.Nested(GeneralSchema())
-    optim = fields.Nested(GeneralSchema())
-    schdr = fields.Nested(GeneralSchema())
-    training = fields.Nested(TrainingSchema())
-    gpu = fields.Nested(GPUSchema())
+    model = fields.Nested(GeneralSchema(), description="Compression model to use. Now we only have one model, so `type` is ignored. Avaliable params are `channel`, `m` and `k`.")
+    train = fields.Nested(TrainSchema(), description="Training configs.")
 
     @post_load
     def _(self, data, **kwargs):
@@ -60,15 +61,38 @@ class General:
         return self.params
 
 
-class Training:
-    def __init__(self, batchSize: int, epoch: int, valFreq: int, trainSet: str, valSet: str, saveDir: str, target: str):
-        self.batchSize = batchSize
-        self.epoch = epoch
-        self.valFreq = valFreq
-        self.trainSet = trainSet
-        self.valSet = valSet
-        self.saveDir = saveDir
-        self.target = target
+
+@dataclass
+class GPU:
+    gpus: int
+    vRam: int
+    wantsMore: bool
+
+    @property
+    def GPUs(self) -> int:
+        return self.gpus
+
+    @property
+    def VRam(self) -> int:
+        return self.vRam
+
+    @property
+    def WantsMore(self) -> bool:
+        return self.wantsMore
+
+
+@dataclass
+class Train:
+    batchSize: int
+    epoch: int
+    valFreq: int
+    trainSet: str
+    valSet: str
+    saveDir: str
+    target: str
+    optim: General
+    schdr: General
+    gpu: GPU
 
     @property
     def BatchSize(self) -> int:
@@ -98,38 +122,6 @@ class Training:
     def Target(self) -> str:
         return self.target
 
-
-class GPU:
-    def __init__(self, gpus: int, vRam: int, wantsMore: bool) -> None:
-        self.gpus = gpus
-        self.vRam = vRam
-        self.wantsMore = wantsMore
-
-    @property
-    def GPUs(self) -> int:
-        return self.gpus
-
-    @property
-    def VRam(self) -> int:
-        return self.vRam
-
-    @property
-    def WantsMore(self) -> bool:
-        return self.wantsMore
-
-
-class Config:
-    def __init__(self, model: General, optim: General, schdr: General, training: Training, gpu: GPU):
-        self.model = model
-        self.optim = optim
-        self.schdr = schdr
-        self.training = training
-        self.gpu = gpu
-
-    @property
-    def Model(self) -> General:
-        return self.model
-
     @property
     def Optim(self) -> General:
         return self.optim
@@ -139,19 +131,29 @@ class Config:
         return self.schdr
 
     @property
-    def Training(self) -> Training:
-        return self.training
-
-    @property
     def GPU(self) -> GPU:
         return self.gpu
 
+
+@dataclass
+class Config:
+    model: General
+    train: Train
+
+    @property
+    def Model(self) -> General:
+        return self.model
+
+    @property
+    def Train(self) -> Train:
+        return self.train
+
     def scaleByWorldSize(self, worldSize: int):
-        batchSize = self.training.BatchSize * worldSize
+        batchSize = self.train.BatchSize * worldSize
         exponent = math.log2(batchSize)
         scale = 3 - exponent / 2
-        if "lr" in self.Optim.params:
-            self.Optim.params["lr"] /= (2 ** scale)
+        if "lr" in self.Train.Optim.params:
+            self.Train.Optim.params["lr"] /= (2 ** scale)
 
     def serialize(self) -> dict:
         return ConfigSchema().dump(self) # type: ignore

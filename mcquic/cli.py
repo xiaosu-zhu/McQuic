@@ -4,7 +4,7 @@ import click
 from vlutils.utils import DefaultGroup
 
 
-MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/r0.0.9/"
+MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
 
 def version(ctx, param, value):
@@ -65,10 +65,10 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
             newQP = -1
 
             try:
-                newQP = int(source.Header.QuantizationParameter)
+                newQP = int(source.FileHeader.QuantizationParameter)
                 newLocal = None
             except ValueError:
-                newLocal = pathlib.Path(source.Header.QuantizationParameter)
+                newLocal = pathlib.Path(source.FileHeader.QuantizationParameter)
                 newQP = -1
             finally:
                 if newLocal is None and newQP < 0:
@@ -116,7 +116,7 @@ def decompressImage(sourceFile, model):
 
     with model._quantizer.readyForCoding() as cdfs:
         # [1, c, h, w]
-        restored = model.decompress([binaries], cdfs, [sourceFile.Header])
+        restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
 
     from mcquic.utils.vision import DeTransform
 
@@ -128,6 +128,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
     import torch
     from mcquic import Config
     from mcquic.modules.compressor import Compressor
+    import mcquic
 
     if local is not None:
         logger.warning("By passing `--local`, `-qp` arg will be ignored and model from %s will be loaded. Please ensure you obtain this local model from a trusted source.", local)
@@ -139,6 +140,10 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
         ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}.mcquic", map_location=device)
 
         logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
+
+    if not "version" in ckpt or (ckpt["version"] != mcquic.__version__):
+        v = ckpt.get("version", None)
+        logger.warning(f"Version mismatch: It seems this ckpt has a version {v} but mcquic now is {mcquic.__version__}.")
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)

@@ -19,4 +19,4 @@ def updateBuildNumber(fileName, releaseVersion):
 
 
 if __name__ == "__main__":
-    updateBuildNumber("./meta.yaml", sys.argv[1])
+    updateBuildNumber(sys.argv[1], sys.argv[2])

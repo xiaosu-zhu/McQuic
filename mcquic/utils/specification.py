@@ -2,6 +2,8 @@ import abc
 from dataclasses import dataclass
 from typing import List, Union
 
+import msgpack
+from marshmallow import Schema, fields, post_load, ValidationError
 import vlutils.logger
 
 import mcquic
@@ -9,22 +11,51 @@ import mcquic
 
 # TODO: goto marshmallow
 
-class Serializable(abc.ABC):
-    @abc.abstractmethod
-    def serialize(self):
-        raise NotImplementedError
 
-    @staticmethod
-    @abc.abstractmethod
-    def deserialize(raw):
-        raise NotImplementedError
+class BytesField(fields.Field):
+    def _validate(self, value):
+        if not isinstance(value, bytes):
+            raise ValidationError('Invalid input type.')
+        if value is None or value == b'':
+            raise ValidationError('Invalid value')
 
 
-SEPARATOR = "@|@"
+class ImageSizeSchema(Schema):
+    height = fields.Int()
+    width = fields.Int()
+    channel = fields.Int()
+    @post_load
+    def _(self, data, **kwargs):
+        return ImageSize(**data)
 
+class CodeSizeSchema(Schema):
+    m = fields.Int()
+    heights = fields.List(fields.Int())
+    widths = fields.List(fields.Int())
+    k = fields.List(fields.Int())
+    @post_load
+    def _(self, data, **kwargs):
+        return CodeSize(**data)
+
+class FileHeaderSchema(Schema):
+    qp = fields.Str()
+    version = fields.Str()
+    codeSize = fields.Nested(CodeSizeSchema())
+    imageSize = fields.Nested(ImageSizeSchema())
+    @post_load
+    def _(self, data, **kwargs):
+        return FileHeader(**data)
+
+
+class FileSchema(Schema):
+    fileHeader = fields.Nested(FileHeaderSchema())
+    contents = fields.List(BytesField())
+    @post_load
+    def _(self, data, **kwargs):
+        return File(**data)
 
 @dataclass
-class ImageSize(Serializable):
+class ImageSize:
     """Image size specification.
 
     Args:
@@ -40,20 +71,12 @@ class ImageSize(Serializable):
     def Pixels(self) -> int:
         return self.height * self.width
 
-    def serialize(self):
-        return f"{self.height},{self.width},{self.channel}"
-
-    @staticmethod
-    def deserialize(raw):
-        height, width, channel = raw.split(",")
-        return ImageSize(int(height), int(width), int(channel))
-
     def __str__(self) -> str:
         return f"[{self.width}×{self.height}, {self.channel}]"
 
 
 @dataclass
-class CodeSize(Serializable):
+class CodeSize:
     """Latent code specification.
            Code in this paper is of shape: `[[1, m, h, w], [1, m, h, w] ... ]`
                                                             `↑ total length = L`
@@ -69,56 +92,41 @@ class CodeSize(Serializable):
     widths: List[int]
     k: List[int]
 
-    def serialize(self):
-        sequence = SEPARATOR.join(",".join(map(str, x)) for x in zip(self.heights, self.widths, self.k))
-        return f"{self.m}+{sequence}"
-
-    @staticmethod
-    def deserialize(raw):
-        m, sequence = raw.split("+")
-        sequence = sequence.split(SEPARATOR)
-        heights, widths, k = list(map(list, zip(*[s.split(",") for s in sequence])))
-        return CodeSize(int(m), list(map(int, heights)), list(map(int, widths)), list(map(int, k)))
-
     def __str__(self) -> str:
         sequence = ", ".join(f"[{w}×{h}, {k}]" for h, w, k in zip(self.heights, self.widths, self.k))
         return f"""
         {self.m} code-groups: {sequence}"""
 
 
-class FileHeader(Serializable):
-    _sep = ":|:"
+@dataclass(init=False)
+class FileHeader:
+    qp: str
+    version: str
+    codeSize: CodeSize
+    imageSize: ImageSize
     def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize, strict: bool = True) -> None:
         if strict and mcquic.__version__ != version:
             raise ValueError("Version mismatch.")
-        self._qp = qp
-        self._version = version
-        self._codeSize = codeSize
-        self._imageSize = imageSize
+        self.qp = qp
+        self.version = version
+        self.codeSize = codeSize
+        self.imageSize = imageSize
 
     @property
     def QuantizationParameter(self) -> str:
-        return str(self._qp)
+        return str(self.qp)
 
     @property
     def Version(self) -> str:
-        return self._version
+        return self.version
 
     @property
     def CodeSize(self) -> CodeSize:
-        return self._codeSize
+        return self.codeSize
 
     @property
     def ImageSize(self) -> ImageSize:
-        return self._imageSize
-
-    def serialize(self) -> str:
-        return self._sep.join([self._version, self._qp, self._codeSize.serialize(), self._imageSize.serialize()])
-
-    @staticmethod
-    def deserialize(raw: str) -> "FileHeader":
-        version, qp, codeSize, imageSize = raw.split(FileHeader._sep)
-        return FileHeader(version, qp, CodeSize.deserialize(codeSize), ImageSize.deserialize(imageSize))
+        return self.imageSize
 
     def __str__(self) -> str:
         return f"""
@@ -127,37 +135,31 @@ class FileHeader(Serializable):
     Image size : {self.ImageSize}
     Code size  : {self.CodeSize}"""
 
-
-class File(Serializable):
-    _bsep = b"/|/"
-    _gsep = b"&|&"
-
-    def __init__(self, header: FileHeader, content: List[bytes]):
-        self._header = header
-        self._content = content
+@dataclass
+class File:
+    fileHeader: FileHeader
+    contents: List[bytes]
 
     @property
-    def Header(self):
-        return self._header
+    def FileHeader(self):
+        return self.fileHeader
 
     @property
     def Content(self):
-        return self._content
+        return self.contents
 
     def serialize(self) -> bytes:
-        contents = self._bsep.join(self._content)
-        return self._gsep.join([self._header.serialize().encode("utf-8"), contents])
+        thisFile: dict = FileSchema().dump(self) # type: ignore
+        return msgpack.packb(thisFile, use_bin_type=True) # type: ignore
 
     @staticmethod
-    def deserialize(raw: bytes) -> "File":
-        headerBin, contents = raw.split(File._gsep)
-        header = FileHeader.deserialize(headerBin.decode("utf-8"))
-        content = contents.split(File._bsep)
-        return File(header, content)
+    def deserialize(data: bytes) -> "File":
+        thisFile = msgpack.unpackb(data, use_list=False, raw=False)
+        return FileSchema().load(thisFile) # type: ignore
 
     @property
     def BPP(self) -> float:
-        return sum(len(x) for x in self._content) * 8 / self.Header.ImageSize.Pixels
+        return sum(len(x) for x in self.contents) * 8 / self.FileHeader.ImageSize.Pixels
 
     def size(self, human: bool = False) -> Union[int, str]:
         """Compute size of compressed binary, in bytes.
@@ -168,12 +170,12 @@ class File(Serializable):
         Returns:
             Union[int, str]: If `human` is True, return integer of total bytes, else return human-readable string.
         """
-        size = sum(len(x) for x in self._content)
+        size = sum(len(x) for x in self.contents)
         if not human:
             return size
         return vlutils.logger.readableSize(size)
 
     def __str__(self) -> str:
-        return f"""Header: {self._header}
+        return f"""Header: {self.fileHeader}
 Size  : {self.size(True)}
 BPP   : {self.BPP:.4f}"""
