@@ -15,6 +15,10 @@
     "GPU": {
         "type": "object",
         "properties": {
+            "vRam": {
+                "type": "integer",
+                "description": "Minimum VRam required for each gpu. Set it to `-1` to use all gpus."
+            },
             "wantsMore": {
                 "type": "boolean",
                 "description": "Set to `true` to use all visible gpus and all VRams and ignore `gpus` and `vRam`."
@@ -23,10 +27,6 @@
                 "type": "integer",
                 "description": "Number of gpus for training. This affects the `world size` of PyTorch DDP.",
                 "exclusiveMinimum": 0
-            },
-            "vRam": {
-                "type": "integer",
-                "description": "Minimum VRam required for each gpu. Set it to `-1` to use all gpus."
             }
         }
     },
@@ -36,6 +36,14 @@
             "valSet": {
                 "type": "string",
                 "description": "A dir path to load image files for validation."
+            },
+            "schdr": {
+                "description": "Learning rate scheduler used for training. Now we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.",
+                "allOf": [
+                    {
+                        "$ref": "#/General"
+                    }
+                ]
             },
             "batchSize": {
                 "type": "integer",
@@ -47,42 +55,6 @@
                 "description": "Total training epochs.",
                 "exclusiveMinimum": 0
             },
-            "target": {
-                "type": "string",
-                "description": "Training target. Now is one of `[PSNR, MsSSIM]`.",
-                "enum": [
-                    "PSNR",
-                    "MsSSIM"
-                ]
-            },
-            "gpu": {
-                "description": "GPU configs for training.",
-                "allOf": [
-                    {
-                        "$ref": "#/components/schemas/GPU"
-                    }
-                ]
-            },
-            "trainSet": {
-                "type": "string",
-                "description": "A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`."
-            },
-            "optim": {
-                "description": "Optimizer used for training. Now we have `Adam` and `Lamb`.",
-                "allOf": [
-                    {
-                        "$ref": "#/components/schemas/General"
-                    }
-                ]
-            },
-            "schdr": {
-                "description": "Learning rate scheduler used for training. Now we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.",
-                "allOf": [
-                    {
-                        "$ref": "#/components/schemas/General"
-                    }
-                ]
-            },
             "saveDir": {
                 "type": "string",
                 "description": "A dir path to save model checkpoints, TensorBoard messages and logs."
@@ -91,26 +63,56 @@
                 "type": "integer",
                 "description": "Run validation after every `valFreq` epochs.",
                 "exclusiveMinimum": 0
+            },
+            "target": {
+                "type": "string",
+                "description": "Training target. Now is one of `[PSNR, MsSSIM]`.",
+                "enum": [
+                    "PSNR",
+                    "MsSSIM"
+                ]
+            },
+            "optim": {
+                "description": "Optimizer used for training. Now we have `Adam` and `Lamb`.",
+                "allOf": [
+                    {
+                        "$ref": "#/General"
+                    }
+                ]
+            },
+            "gpu": {
+                "description": "GPU configs for training.",
+                "allOf": [
+                    {
+                        "$ref": "#/GPU"
+                    }
+                ]
+            },
+            "trainSet": {
+                "type": "string",
+                "description": "A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`."
             }
         }
     },
     "type": "object",
     "properties": {
-        "model": {
-            "description": "Compression model to use. Now we only have one model, so `type` is ignored. Avaliable params are `channel`, `m` and `k`.",
-            "allOf": [
-                {
-                    "$ref": "#/components/schemas/General"
-                }
-            ]
-        },
         "train": {
             "description": "Training configs.",
             "allOf": [
                 {
-                    "$ref": "#/components/schemas/Train"
+                    "$ref": "#/Train"
+                }
+            ]
+        },
+        "model": {
+            "description": "Compression model to use. Now we only have one model, so `type` is ignored. Avaliable params are `channel`, `m` and `k`.",
+            "allOf": [
+                {
+                    "$ref": "#/General"
                 }
             ]
         }
-    }
+    },
+    "title": "Config schema",
+    "description": "The bravo schema for writing a config!"
 }

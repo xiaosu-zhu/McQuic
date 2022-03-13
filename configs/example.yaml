@@ -1,4 +1,4 @@
-$schema: "http://json-schema.org/draft-04/schema"
+$schema: "https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/configs/schema.json"
 model:
     type: Compressor
     params:
