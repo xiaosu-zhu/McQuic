@@ -1,19 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
 
-FOR %%F in ("%PREFIX%\Scripts\mcquic*-script.py") DO (
+FOR %%F in ("C:\Users\Xiaos\anaconda3\envs\mcquic\Scripts\mcquic*-script.py") DO (
+    echo %%F
     call :modifyShebang %%F
 )
 echo.&pause&goto:eof
 
 :modifyShebang
-FOR /F "usebackq delims=" %%i IN (%~1) DO (
-    if not defined shebang (
-        set "shebang=1"
-        echo.%PREFIX%\python -O>"%~1"
-        echo.%%i>>"%~1"
-    ) else (
-        echo.%%i>>"%~1"
-    )
-)
+echo.#^^!%PREFIX%\python.exe -O > "%~1.new"
+type "%~1" >> "%~1.new"
+type "%~1.new" > "%~1"
+del "%~1.new"
 goto:eof
