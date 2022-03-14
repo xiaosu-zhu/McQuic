@@ -125,12 +125,13 @@ jobs:
 
             eval "$($HOME/miniconda/bin/conda shell.bash hook)"
 
-            conda init
+            conda activate
 
             conda install anaconda-client conda-build pybind11 conda-verify python
 
             conda config --set anaconda_upload yes
           run: |
+            eval "$($HOME/miniconda/bin/conda shell.bash hook)"
             conda activate
             python ci/pre_build/conda_entry_points.py conda/meta.yaml
             conda build --variants "{"cxx_compiler": ["clangxx"], "target_platform": ["osx-arm64"]}" -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
