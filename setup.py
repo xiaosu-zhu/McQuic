@@ -4,7 +4,7 @@ from setuptools import setup
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext, ParallelCompile
 
-# ParallelCompile("NPY_NUM_BUILD_JOBS").install()
+ParallelCompile("NPY_NUM_BUILD_JOBS").install()
 
 CWD = Path("./")
 PKG_NAME = "mcquic"
@@ -35,18 +35,9 @@ def get_extensions():
 
     return ext_modules
 
-if os.getenv("DOCKER_BUILD", "") != "":
-    from ci.write_entry_points import __ENTRY_POINTS__
-    entryPoints = {
-        'console_scripts': [f"{key} = {value}" for key, value in __ENTRY_POINTS__.items()],
-    }
-else:
-    entryPoints = None
-
 setup(
     ext_modules = get_extensions(),
     cmdclass = {
         "build_ext": build_ext
-    },
-    entry_points=entryPoints
+    }
 )
