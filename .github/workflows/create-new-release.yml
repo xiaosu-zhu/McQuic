@@ -111,21 +111,24 @@ jobs:
           # The image is cached publically like a package
           githubToken: ${{ github.token }}
           install: |
-            ENV PATH="/root/miniconda3/bin:${PATH}"
-            ARG PATH="/root/miniconda3/bin:${PATH}"
-            ENV ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
-            RUN apt-get update
+            export ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
+            apt-get update
 
-            RUN apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+            apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 
-            RUN wget \
-                https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh \
-                && mkdir /opt/conda \
-                && bash Miniconda3-latest-Linux-x86_64.sh -b \
-                && rm -f Miniconda3-latest-Linux-x86_64.sh \
-                && conda init
-            RUN conda install anaconda-client conda-build pybind11 conda-verify python
-            RUN conda config --set anaconda_upload yes
+            wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh
+
+            bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+
+            rm -f Miniconda3-latest-Linux-x86_64.sh
+
+            eval "$(/Users/jsmith/anaconda/bin/conda shell.bash hook)"
+
+            conda init
+
+            conda install anaconda-client conda-build pybind11 conda-verify python
+
+            conda config --set anaconda_upload yes
           run: |
             conda activate
             python ci/pre_build/conda_entry_points.py conda/meta.yaml
