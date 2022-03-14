@@ -77,7 +77,6 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
 </p>
 
 <!--ts-->
-* [Introduction](#introduction)
 * [Quick Start](#quick-start)
    * [Requirements](#requirements)
    * [Conda (Recommended)](#conda-recommended)
@@ -91,6 +90,7 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
    * [Prepare a Dataset](#prepare-a-dataset)
    * [Training](#training)
    * [Test](#test)
+* [Implement MCQ by yourself](#implement-mcq-by-yourself)
 * [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
 * [Detailed framework](#detailed-framework)
@@ -99,7 +99,7 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Mon Mar 14 06:51:06 UTC 2022 -->
+<!-- Added by: runner, at: Mon Mar 14 09:31:36 UTC 2022 -->
 
 <!--te-->
 
