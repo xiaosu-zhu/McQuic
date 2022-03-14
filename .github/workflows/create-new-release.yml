@@ -120,7 +120,7 @@ jobs:
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
           conda config --set anaconda_upload yes
-          conda build --variants "{"cxx_compiler": ["clangxx"],"target_platform": ["osx-64", "osx-arm64"]}" -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
+          conda build --variants "{"cxx_compiler": ["clangxx"], "target_platform": ["osx-64", "osx-arm64"]}" -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
       - name: Rename built packages
         run: |
           python ci/post_build/rename_package.py build/

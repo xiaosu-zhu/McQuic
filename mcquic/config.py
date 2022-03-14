@@ -2,45 +2,53 @@ from dataclasses import dataclass
 import math
 from typing import Any, Dict
 
-from marshmallow import Schema, fields, post_load
+from marshmallow import Schema, fields, post_load, RAISE
 
 
 class GeneralSchema(Schema):
-    key = fields.Str(description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
-    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.", type=["string", "number", "boolean"])
+    class Meta:
+        unknown = RAISE
+    key = fields.Str(required=True, description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
+    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), required=True, description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.", type=["string", "number", "boolean"])
 
     @post_load
     def _(self, data, **kwargs):
         return General(**data)
 
 class GPUSchema(Schema):
-    gpus = fields.Int(description="Number of gpus for training. This affects the `world size` of PyTorch DDP.", exclusiveMinimum=0)
-    vRam = fields.Int(description="Minimum VRam required for each gpu. Set it to `-1` to use all gpus.")
-    wantsMore = fields.Bool(description="Set to `true` to use all visible gpus and all VRams and ignore `gpus` and `vRam`.")
+    class Meta:
+        unknown = RAISE
+    gpus = fields.Int(required=True, description="Number of gpus for training. This affects the `world size` of PyTorch DDP.", exclusiveMinimum=0)
+    vRam = fields.Int(required=True, description="Minimum VRam required for each gpu. Set it to `-1` to use all gpus.")
+    wantsMore = fields.Bool(required=True, description="Set to `true` to use all visible gpus and all VRams and ignore `gpus` and `vRam`.")
 
     @post_load
     def _(self, data, **kwargs):
         return GPU(**data)
 
 class TrainSchema(Schema):
-    batchSize = fields.Int(description="Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.", exclusiveMinimum=0)
-    epoch = fields.Int(description="Total training epochs.", exclusiveMinimum=0)
-    valFreq = fields.Int(description="Run validation after every `valFreq` epochs.", exclusiveMinimum=0)
-    trainSet = fields.Str(description="A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`.")
-    valSet = fields.Str(description="A dir path to load image files for validation.")
-    saveDir = fields.Str(description="A dir path to save model checkpoints, TensorBoard messages and logs.")
-    target = fields.Str(description="Training target. Now is one of `[PSNR, MsSSIM]`.", enum=["PSNR", "MsSSIM"])
-    optim = fields.Nested(GeneralSchema(), description="Optimizer used for training. As for current we have `Adam` and `Lamb`.", additionalProperties=False)
-    schdr = fields.Nested(GeneralSchema(), description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.", additionalProperties=False)
-    gpu = fields.Nested(GPUSchema(), description="GPU configs for training.", additionalProperties=False)
+    class Meta:
+        unknown = RAISE
+    batchSize = fields.Int(required=True, description="Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.", exclusiveMinimum=0)
+    epoch = fields.Int(required=True, description="Total training epochs.", exclusiveMinimum=0)
+    valFreq = fields.Int(required=True, description="Run validation after every `valFreq` epochs.", exclusiveMinimum=0)
+    trainSet = fields.Str(required=True, description="A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`.")
+    valSet = fields.Str(required=True, description="A dir path to load image files for validation.")
+    saveDir = fields.Str(required=True, description="A dir path to save model checkpoints, TensorBoard messages and logs.")
+    target = fields.Str(required=True, description="Training target. Now is one of `[PSNR, MsSSIM]`.", enum=["PSNR", "MsSSIM"])
+    optim = fields.Nested(GeneralSchema(), required=True, description="Optimizer used for training. As for current we have `Adam` and `Lamb`.")
+    schdr = fields.Nested(GeneralSchema(), required=True, description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
+    gpu = fields.Nested(GPUSchema(), required=True, description="GPU configs for training.")
 
     @post_load
     def _(self, data, **kwargs):
         return Train(**data)
 
 class ConfigSchema(Schema):
-    model = fields.Nested(GeneralSchema(), description="Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.", additionalProperties=False)
-    train = fields.Nested(TrainSchema(), description="Training configs.", additionalProperties=False)
+    class Meta:
+        unknown = RAISE
+    model = fields.Nested(GeneralSchema(), required=True, description="Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.")
+    train = fields.Nested(TrainSchema(), required=True, description="Training configs.")
 
     @post_load
     def _(self, data, **kwargs):

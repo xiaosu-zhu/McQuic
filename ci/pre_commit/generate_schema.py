@@ -1,6 +1,5 @@
 import sys
-from apispec import APISpec
-from apispec.ext.marshmallow import MarshmallowPlugin
+from marshmallow_jsonschema import JSONSchema
 import importlib.util
 import json
 import copy
@@ -9,17 +8,22 @@ mcquic_config = importlib.util.spec_from_file_location("mcquic.config", sys.argv
 config = importlib.util.module_from_spec(mcquic_config)
 mcquic_config.loader.exec_module(config)
 
-spec = APISpec(title="", version="1.0.0", openapi_version="3.1.0", plugins=[MarshmallowPlugin()])
-spec.components.schema("result", schema=config.ConfigSchema)
+configSchema = config.ConfigSchema()
 
-result = spec.to_dict()["components"]["schemas"]
+json_schema = JSONSchema()
+result = json_schema.dump(configSchema)
 
-result.update({key: value for key, value in copy.deepcopy(result["result"]).items()})
+# spec = APISpec(title="", version="1.0.0", openapi_version="3.1.0", plugins=[MarshmallowPlugin()])
+# spec.components.schema("result", schema=config.ConfigSchema)
 
-del result["result"]
+# result = spec.to_dict()["components"]["schemas"]
 
-result["title"] = "Config schema"
-result["description"] = "The bravo schema for writing a config!"
+# result.update({key: value for key, value in copy.deepcopy(result["result"]).items()})
+
+# del result["result"]
+
+# result["title"] = "Config schema"
+# result["description"] = "The bravo schema for writing a config!"
 
 with open(sys.argv[2], "w") as fp:
     json.dump(result, fp)
