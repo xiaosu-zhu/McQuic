@@ -30,6 +30,7 @@
   </a>
 </p>
 
+
 <br/>
 
 <p align="center">
@@ -52,7 +53,13 @@
 <br/>
 <br/>
 
-Multi-codebook quantizers hold rich codebooks to quantize visual features and restore images by these quantized features. Similar ideas are presented in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
+**Features**:
+* Solid performance and super-fast coding speed (See [Reference Models](#reference-models)).
+* Cross-platform support (Linux-64, Windows-64 and macOS-64, macOS-arm64).
+
+**Techs**:
+
+The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and restore images by these quantized features. Similar ideas are presented in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
 
 <p align="center">
     <img src="./assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
@@ -95,17 +102,7 @@ Multi-codebook quantizers hold rich codebooks to quantize visual features and re
 
 
 # Introduction
-Thanks for your attention!❤️ Next we would like to say some details...
-
-Following previous works, we build the compression model as an AutoEncoder. Bottleneck of encoder (analysis transform) outputs a small feature map and is quantized by *multi-codebook vector-quantization* other than scalar-quantization. Quantizers are cascaded to effectively estimate latent distribution.
-
-<p align="center">
-    <img src="./assets/paper/framework-light.svg#gh-light-mode-only" alt="Framework" title="Framework" width="100%">
-    <img src="./assets/paper/framework-dark.svg#gh-dark-mode-only" alt="Framework" title="Framework" width="100%">
-    <span><b>Figure 3. Left: Overall framework. Right: Structure of a quantizer.</b></span>
-</p>
-
-Right part of above figure shows detailed structure of our proposed quantizer. A minimal implementation comes up with:
+A minimal implementation of the multi-codebook quantizer comes up with:
 
 ```python
 class Quantizer(nn.Module):
@@ -158,89 +155,92 @@ class Quantizer(nn.Module):
 
 
 # Quick Start
-It is easy (with a GPU) to try our model. We would give a quick guide to help you compress an image and restore it.
+It is easy (with a GPU, or CPU if you like) to try our model. We would give a quick guide to help you compress an image and restore it.
 
 ## Requirements
 To run the model, your device needs to meet following requirements.
 
 * Hardware
-  * a CUDA-enabled GPU (Driver version `≥ 450.80.02`)
+  * a CUDA-enabled GPU (`≥ 8GiB VRAM`, Driver version `≥ 450.80.02`)
+  * If you don't have GPU, running models on CPU may be slower.
   * `≥ 8GiB RAM`
-  * `≥ 8GiB VRAM`
 * OS
-  * Tested on `Linux`
+  * I've tested all features on `Ubuntu`, other platforms should also work. If not, please [file bugs](#contribute-to-this-repository).
 
-## Docker (Recommended)
-We recommend you to use our pre-built [`docker` images](localhost) to get away from environment issues.
-
-Test with the latest docker image:
+## Conda (Recommended)
+Install this package is very easy with a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html). I recommend you to install it to a new virtual environment directly by:
 ```bash
-docker run
+conda create -n mcquic mcquic cudatoolkit -c pytorch -c conda-forge -c xiaosu-zhu
 ```
 
-The latest docker image could be accessed by tag: `mcquic/main:latest`.
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
 
-## Install via `conda`
-Another way needs a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+> Above command install packages with `CUDA` support. If you just want to run it on CPU, please remove `cudatoolkit` in command.
 
-And instructions are still yet simple.
-
-* Create a virtual env `mcquic` and install all packages
-```bash
-sh -c "$(curl -fsSL https://raw.github.com/xiaosu-zhu/main/get-mcquic.sh)"
-```
-Now you should in the conda env `mcquic`. If not, please activate it by `conda activate mcquic`.
 
 * Compress images
 ```bash
 mcquic --help
-# mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
 mcquic -qp 3 path/to/an/image path/to/output.mcq
 ```
 * Decompress images
 ```bash
-mcquic -qp 3 path/to/output.mcq path/to/restored.png
+# `-qp` is not necessary. Since this arg is written to `output.mcq`.
+mcquic path/to/output.mcq path/to/restored.png
 ```
 
+
+## Docker
+I also build [`docker` images](https://github.com/xiaosu-zhu/McQuic/pkgs/container/mcquic) to get away from environment issues.
+
+Test with the latest docker image:
+```bash
+docker pull ghcr.io/xiaosu-zhu/mcquic:main
+```
+
+
 ## Install Manually (for dev)
-This way enables your full access to this repo. Also, if you want to go on, a `conda` environment is needed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+This way enables your full access to this repo for modifying. Also, if you want to go on, a `conda` environment is needed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
 
 * Clone this repository
 ```bash
 git clone https://github.com/xiaosu-zhu/McQuic.git && cd McQuic
 ```
-* Create a virtual env `mcquic` and install all required packages by
+* Create a virtual env `mcquic` and install all packages by
 ```bash
-conda env create -f environment.yml
+./install.sh  # for POSIX with bash
+./install.ps1 # for Windows with PowerShell
 ```
-* Activate the new environment
-```bash
-conda activate mcquic
-```
-* Install this repo locally via `PyPI`
-```bash
-pip install -e ./
-```
+
+Now you should in the `mcquic` virtual environment. If not, please activate it by `conda activate mcquic`.
+
 * Compress images
 ```bash
 mcquic --help
-# mcquic [-q [1]] [-o OUTPUT_PATH] INPUT_PATH
 mcquic -qp 3 assets/sample.png assets/compressed.mcq
 ```
 * Decompress images
 ```bash
-mcquic -qp 3 assets/compressed.mcq assets/restored.png
+# `-qp` is not necessary. Since this arg is written to `output.mcq`.
+mcquic assets/compressed.mcq assets/restored.png
 ```
 And check outputs: [`assets/compressed.mcq`](./assets/compressed.mcq) and [`assets/restored.png`](./assets/restored.png).
 
-* (***Optional***) Install `NVIDIA/Apex`
+## (***Optional***) Install `NVIDIA/Apex`
 
 [`NVIDIA/Apex`](https://github.com/NVIDIA/apex) is an additional package **required** for training. If you want to [**develop, contribute**](#contribute-to-this-repository), or [**train a new model**](#train-a-new-model), please ensure you've installed `NVIDIA/Apex` by following snippets.
 ```bash
 git clone https://github.com/NVIDIA/apex && cd apex
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 ```
-For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
+
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
+
+> If you are using [Docker images](#docker), this step is not necessary. Please make sure you've installed it in the correct virtual environment. For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
 
 
 # Reference Models
@@ -256,7 +256,7 @@ We've released a bunch of pretrained models targeting various BPPs (bits per pix
 The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. **`Mpps = Mega-pixels per second`**
 
 # Train a New Model
-Please ensure you've installed [`NVIDIA/Apex`](https://github.com/NVIDIA/apex). To train models, here are minimal and recommended system requirements.
+Please ensure you've installed [`NVIDIA/Apex`](#optional-install-nvidiaapex). To train models, here are minimal and recommended system requirements.
 
 ## Requirements
 * Minimal
@@ -267,7 +267,7 @@ Please ensure you've installed [`NVIDIA/Apex`](https://github.com/NVIDIA/apex). 
   * Better if you have `≥4-way` NVIDIA RTX 3090s or faster GPUs.
 
 ## Configs
-The folder [configs](configs) provides some example configs to train models. Please check specifications in [configs/README.md](configs/README.md).
+The folder [configs](configs) provides example config `example.yaml` to train models. Please check specifications in [configs/README.md](configs/README.md).
 
 ## Prepare a Dataset
 Before training models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
@@ -280,16 +280,16 @@ mcquic dataset train_images mcquic_dataset
 ```
 to build a `lmdb` dataset for `mcquic` to read.
 
-* Then, you could prepare a training config, and don't forget to speify dataset path.
+* Then, you could prepare a training config *e.g.* `configs/train.yaml`, and don't forget to speify dataset path.
 ```yaml
 # `configs/train.yaml`
 ...
-trainSet: mcquic_dataset # path to the training dataset
-valSet: val_images # path to folder of validation images
-savePath: saved
+trainSet: mcquic_dataset # path to the training dataset.
+valSet: val_images # path to a folder of validation images.
+savePath: saved # path to a folder to save checkpoints.
 ...
 ```
-where `dataset` and `valDataset` can be any relative or absolute paths.
+where `trainSet` and `valSet` can be any relative or absolute paths, and `savePath` is a folder for saving checkpoints and logs.
 
 In this example, the final folder structure is shown below:
 
@@ -340,7 +340,19 @@ if you want to use an updated config (e.g. tuned learning rate, modified hyper-p
 
 
 ## Test
-Call ???
+You could use any save checkpoints (usually located in above `savePath`) to validate the performance. For example
+```bash
+mcquic validate --help
+mcquic validate path/to/a/checkpoint path/to/images/folder path/to/final/model
+```
+
+And the output "final model" is compatible with the main program `mcquic`, you could directly use this local model to perform compression. Try:
+```bash
+mcquic --local assets/sample.png assets/compressed.mcq
+# `--local` is not necessary. Since this arg is written to `output.mcq`.
+mcquic assets/compressed.mcq assets/restored.png
+```
+If you think your model is awesome, please don't hasitate to [Contribute to this Repository](#contribute-to-this-repository)!
 
 
 # Contribute to this Repository
@@ -349,12 +361,22 @@ It will be very nice if you want to check your new ideas or add new functions �
 
 # To-do List
 * Docker file and bash script
-* PyPI auto-packaging (with github actions: major, minor, revision)
 * execute pattern: `mcquic service`
 * reference model: 1,2,4~4+
-* ref model download and save
 * change compressor args
-* fonts in epilog
+
+# Detailed framework
+Thanks for your attention!❤️ Here are details in the paper.
+
+Following previous works, we build the compression model as an AutoEncoder. Bottleneck of encoder (analysis transform) outputs a small feature map and is quantized by *multi-codebook vector-quantization* other than scalar-quantization. Quantizers are cascaded to effectively estimate latent distribution.
+
+<p align="center">
+    <img src="./assets/paper/framework-light.svg#gh-light-mode-only" alt="Framework" title="Framework" width="100%">
+    <img src="./assets/paper/framework-dark.svg#gh-dark-mode-only" alt="Framework" title="Framework" width="100%">
+    <span><b>Figure 3. Left: Overall framework. Right: Structure of a quantizer.</b></span>
+</p>
+
+Right part of above figure shows detailed structure of our proposed quantizer.
 
 # References and License
 ## References
@@ -391,6 +413,32 @@ To cite our paper, please use following BibTex:
 **Pictures**:
 * [**kodim24.png**](http://r0k.us/graphics/kodak/kodim24.html) by Alfons Rudolph, Kodak Image Dataset.
 * [**assets/sample.png**](https://unsplash.com/photos/hLxqYJspAkE) by Ales Krivec, CLIC Professional valid set.
+
+
+**Third-party repos**:
+
+|                  Repos | License |
+|-----------------------:|---------|
+|                PyTorch |         |
+|            Torchvision |         |
+|            Apex        |         |
+|                   tqdm |         |
+|            Tensorboard |         |
+|                   rich |         |
+|            python-lmdb |         |
+|                 pyyaml |         |
+|            marshmallow |         |
+|                  click |         |
+|                vlutils |         |
+|         msgpack-python |         |
+|               pybind11 |         |
+|             CompressAI |         |
+|     Taming-transformer |         |
+| marshmallow-jsonschema |         |
+| json-schema-for-humans |         |
+| CyclicLR               |         |
+| batch-transforms       |         |
+
 
 <br/>
 <br/>
