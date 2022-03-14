@@ -78,9 +78,10 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
 * [Introduction](#introduction)
 * [Quick Start](#quick-start)
    * [Requirements](#requirements)
-   * [Docker (Recommended)](#docker-recommended)
-   * [Install via conda](#install-via-conda)
+   * [Conda (Recommended)](#conda-recommended)
+   * [Docker](#docker)
    * [Install Manually (for dev)](#install-manually-for-dev)
+   * [(<em><strong>Optional</strong></em>) Install NVIDIA/Apex](#optional-install-nvidiaapex)
 * [Reference Models](#reference-models)
 * [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
@@ -90,12 +91,13 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
    * [Test](#test)
 * [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
+* [Detailed framework](#detailed-framework)
 * [References and License](#references-and-license)
    * [References](#references)
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Sun Mar 13 10:57:53 UTC 2022 -->
+<!-- Added by: runner, at: Mon Mar 14 05:14:31 UTC 2022 -->
 
 <!--te-->
 
@@ -170,7 +172,8 @@ To run the model, your device needs to meet following requirements.
 ## Conda (Recommended)
 Install this package is very easy with a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html). I recommend you to install it to a new virtual environment directly by:
 ```bash
-conda create -n mcquic mcquic cudatoolkit -c pytorch -c conda-forge -c xiaosu-zhu
+conda create -n [ENV_NAME] mcquic cudatoolkit -c pytorch -c conda-forge -c xiaosu-zhu
+conda activate [ENV_NAME]
 ```
 
 <a href="#">
@@ -193,9 +196,9 @@ mcquic path/to/output.mcq path/to/restored.png
 
 
 ## Docker
-I also build [`docker` images](https://github.com/xiaosu-zhu/McQuic/pkgs/container/mcquic) to get away from environment issues.
+I also build [`docker` images](https://github.com/xiaosu-zhu/McQuic/pkgs/container/mcquic) for you to get away from environment issues.
 
-Test with the latest docker image:
+Try with the latest docker image:
 ```bash
 docker pull ghcr.io/xiaosu-zhu/mcquic:main
 ```
@@ -240,7 +243,20 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
   <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
-> If you are using [Docker images](#docker), this step is not necessary. Please make sure you've installed it in the correct virtual environment. For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
+> If you are using [Docker images](#docker), this step is not necessary. 
+
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
+
+> Please make sure you've installed it in the correct virtual environment. 
+
+
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
+
+> For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
 
 
 # Reference Models
@@ -253,7 +269,9 @@ I've released one pretrained model (Sorry, currently I don't have much free GPUs
 |         3 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 
-The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. **`Mpps = Mega-pixels per second`**
+The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. 
+- **`Mpps = Mega-pixels per second`**
+- **`BPP = Bits per pixel`**
 
 # Train a New Model
 Please ensure you've installed [`NVIDIA/Apex`](#optional-install-nvidiaapex). To train models, here are minimal and recommended system requirements.
