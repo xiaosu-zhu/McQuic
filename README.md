@@ -78,9 +78,10 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
 * [Introduction](#introduction)
 * [Quick Start](#quick-start)
    * [Requirements](#requirements)
-   * [Docker (Recommended)](#docker-recommended)
-   * [Install via conda](#install-via-conda)
+   * [Conda (Recommended)](#conda-recommended)
+   * [Docker](#docker)
    * [Install Manually (for dev)](#install-manually-for-dev)
+   * [(<em><strong>Optional</strong></em>) Install NVIDIA/Apex](#optional-install-nvidiaapex)
 * [Reference Models](#reference-models)
 * [Train a New Model](#train-a-new-model)
    * [Requirements](#requirements-1)
@@ -90,12 +91,13 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
    * [Test](#test)
 * [Contribute to this Repository](#contribute-to-this-repository)
 * [To-do List](#to-do-list)
+* [Detailed framework](#detailed-framework)
 * [References and License](#references-and-license)
    * [References](#references)
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Sun Mar 13 10:57:53 UTC 2022 -->
+<!-- Added by: runner, at: Mon Mar 14 05:02:26 UTC 2022 -->
 
 <!--te-->
 
