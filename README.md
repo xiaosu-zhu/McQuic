@@ -155,7 +155,7 @@ class Quantizer(nn.Module):
 
 
 # Quick Start
-It is easy (with a GPU, or CPU if you like) to try our model. We would give a quick guide to help you compress an image and restore it.
+It is easy (with a GPU, or CPU if you like) to try our model. I would give a quick guide to help you compress an image and restore it.
 
 ## Requirements
 To run the model, your device needs to meet following requirements.
@@ -244,7 +244,7 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 
 
 # Reference Models
-We've released a bunch of pretrained models targeting various BPPs (bits per pixel). You could fetch them by specifying `-q [1~12]`. Following is the pretrained model list (Others ***TBA***):
+I've released one pretrained model (Sorry, currently I don't have much free GPUs). You could fetch them by specifying `-qp [Model_NO]`. Following is the pretrained model list (Others ***TBA***):
 
 
 | Model No. 	| Channel 	| M 	|        K        	| Throughput (Encode/Decode) 	| Avg.BPP 	|
