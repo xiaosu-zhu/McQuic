@@ -243,7 +243,20 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
   <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
-> If you are using [Docker images](#docker), this step is not necessary. Please make sure you've installed it in the correct virtual environment. For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
+> If you are using [Docker images](#docker), this step is not necessary. 
+
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
+
+> Please make sure you've installed it in the correct virtual environment. 
+
+
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
+
+> For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
 
 
 # Reference Models
