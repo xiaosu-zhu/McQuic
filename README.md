@@ -53,6 +53,8 @@
 <br/>
 <br/>
 
+**Mc*****Quic*** is a deep image compressor.
+
 **Features**:
 * Solid performance and super-fast coding speed (See [Reference Models](#reference-models)).
 * Cross-platform support (Linux-64, Windows-64 and macOS-64, macOS-arm64).
@@ -100,59 +102,6 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
 <!-- Added by: runner, at: Mon Mar 14 05:14:31 UTC 2022 -->
 
 <!--te-->
-
-
-
-# Introduction
-A minimal implementation of the multi-codebook quantizer comes up with:
-
-```python
-class Quantizer(nn.Module):
-    """
-    Quantizer with `m` sub-codebooks,
-        `k` codewords for each, and
-        `n` total channels.
-    Args:
-        m (int): Number of sub-codebooks.
-        k (int): Number of codewords for each sub-codebook.
-        n (int): Number of channels of latent variables.
-    """
-    def __init__(self, m: int, k: int, n: int):
-        super().__init__()
-        # A codebook, channel `n -> n // m`.
-        self._codebook = nn.Parameter(torch.empty(m, k, n // m))
-        self._initParameters()
-
-    def forward(self, x: Tensor, t: float = 1.0) -> (Tensor, Tensor):
-        """
-        Module forward.
-        Args:
-            x (Tensor): Latent variable with shape [b, n, h, w].
-            t (float, 1.0): Temperature for Gumbel softmax.
-        Return:
-            Tensor: Quantized latent with shape [b, n, h, w].
-            Tensor: Binary codes with shape [b, m, h, w].
-        """
-        b, _, h, w = x.shape
-        # [b, m, d, h, w]
-        x = x.reshape(n, len(self._codebook), -1, h, w)
-        # [b, m, 1, h, w], square of x
-        x2 = (x ** 2).sum(2, keepdim=True)
-        # [m, k, 1, 1], square of codebook
-        c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
-        # [b, m, d, h, w] * [m, k, d] -sum-> [b, m, k, h, w], dot product between x and codebook
-        inter = torch.einsum("bmdhw,mkd->bmkhw", x, self._codebook)
-        # [b, m, k, h, w], pairwise L2-distance
-        distance = x2 + c2 - 2 * inter
-        # [b, m, k, h, w], distance as logits to sample
-        sample = F.gumbel_softmax(distance, t, hard=True, dim=2)
-        # [b, m, d, h, w], use sample to find codewords
-        quantized = torch.einsum("bmkhw,mkd->bmdhw", sample, self._codebook)
-        # back to [b, n, h, w]
-        quantized = quantized.reshape(b, -1, h, w)
-        # [b, n, h, w], [b, m, h, w], quantizeds and binaries
-        return quantized, sample.argmax(2)
-```
 
 
 
@@ -243,13 +192,13 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
   <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
-> If you are using [Docker images](#docker), this step is not necessary. 
+> If you are using [Docker images](#docker), this step is not necessary.
 
 <a href="#">
   <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
-> Please make sure you've installed it in the correct virtual environment. 
+> Please make sure you've installed it in the correct virtual environment.
 
 
 <a href="#">
@@ -269,7 +218,7 @@ I've released one pretrained model (Sorry, currently I don't have much free GPUs
 |         3 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 
-The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. 
+The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test.
 - **`Mpps = Mega-pixels per second`**
 - **`BPP = Bits per pixel`**
 
@@ -373,6 +322,59 @@ mcquic assets/compressed.mcq assets/restored.png
 If you think your model is awesome, please don't hasitate to [Contribute to this Repository](#contribute-to-this-repository)!
 
 
+
+# Implement MCQ by yourself
+A minimal implementation of the multi-codebook quantizer comes up with:
+
+```python
+class Quantizer(nn.Module):
+    """
+    Quantizer with `m` sub-codebooks,
+        `k` codewords for each, and
+        `n` total channels.
+    Args:
+        m (int): Number of sub-codebooks.
+        k (int): Number of codewords for each sub-codebook.
+        n (int): Number of channels of latent variables.
+    """
+    def __init__(self, m: int, k: int, n: int):
+        super().__init__()
+        # A codebook, channel `n -> n // m`.
+        self._codebook = nn.Parameter(torch.empty(m, k, n // m))
+        self._initParameters()
+
+    def forward(self, x: Tensor, t: float = 1.0) -> (Tensor, Tensor):
+        """
+        Module forward.
+        Args:
+            x (Tensor): Latent variable with shape [b, n, h, w].
+            t (float, 1.0): Temperature for Gumbel softmax.
+        Return:
+            Tensor: Quantized latent with shape [b, n, h, w].
+            Tensor: Binary codes with shape [b, m, h, w].
+        """
+        b, _, h, w = x.shape
+        # [b, m, d, h, w]
+        x = x.reshape(n, len(self._codebook), -1, h, w)
+        # [b, m, 1, h, w], square of x
+        x2 = (x ** 2).sum(2, keepdim=True)
+        # [m, k, 1, 1], square of codebook
+        c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
+        # [b, m, d, h, w] * [m, k, d] -sum-> [b, m, k, h, w], dot product between x and codebook
+        inter = torch.einsum("bmdhw,mkd->bmkhw", x, self._codebook)
+        # [b, m, k, h, w], pairwise L2-distance
+        distance = x2 + c2 - 2 * inter
+        # [b, m, k, h, w], distance as logits to sample
+        sample = F.gumbel_softmax(distance, t, hard=True, dim=2)
+        # [b, m, d, h, w], use sample to find codewords
+        quantized = torch.einsum("bmkhw,mkd->bmdhw", sample, self._codebook)
+        # back to [b, n, h, w]
+        quantized = quantized.reshape(b, -1, h, w)
+        # [b, n, h, w], [b, m, h, w], quantizeds and binaries
+        return quantized, sample.argmax(2)
+```
+
+
 # Contribute to this Repository
 It will be very nice if you want to check your new ideas or add new functions 😊. You will need to install `mcquic` by [**Docker**](#docker-recommended) or [**manually (with optional step)**](#install-manually-for-dev). Just like other git repos, before raising issues or pull requests, please take a thorough look at [issue templates](https://github.com/xiaosu-zhu/McQuic/issues/new/choose).
 
@@ -427,6 +429,7 @@ To cite our paper, please use following BibTex:
 * [**Flash Rogers 3D**](https://www.iconian.com/index.html). © 2007 Iconian Fonts, donationware.
 * [**Cambria Math**](https://docs.microsoft.com/en-us/typography/font-list/cambria-math). © 2017 Microsoft Corporation. All rights reserved.
 * [**Times New Roman**](https://docs.microsoft.com/en-us/typography/font-list/times-new-roman). © 2017 The Monotype Corporation. All Rights Reserved.
+* [**Caramel and Vanilla**](http://www.foundmyfont.com/). © 2017 FOUND MY FONT LTD. All Rights Reserved.
 
 **Pictures**:
 * [**kodim24.png**](http://r0k.us/graphics/kodak/kodim24.html) by Alfons Rudolph, Kodak Image Dataset.
@@ -435,27 +438,27 @@ To cite our paper, please use following BibTex:
 
 **Third-party repos**:
 
-|                  Repos | License |
-|-----------------------:|---------|
-|                PyTorch |         |
-|            Torchvision |         |
-|            Apex        |         |
-|                   tqdm |         |
-|            Tensorboard |         |
-|                   rich |         |
-|            python-lmdb |         |
-|                 pyyaml |         |
-|            marshmallow |         |
-|                  click |         |
-|                vlutils |         |
-|         msgpack-python |         |
-|               pybind11 |         |
-|             CompressAI |         |
-|     Taming-transformer |         |
-| marshmallow-jsonschema |         |
-| json-schema-for-humans |         |
-| CyclicLR               |         |
-| batch-transforms       |         |
+| Repos                                                                          | License |
+|-------------------------------------------------------------------------------:|---------|
+| [PyTorch](https://pytorch.org/)                                                | [BSD-style](https://github.com/pytorch/pytorch/blob/master/LICENSE) |
+| [Torchvision](https://pytorch.org/vision/stable/index.html)                    | [BSD-3-Clause](https://github.com/pytorch/vision/blob/main/LICENSE) |
+| [Apex](https://nvidia.github.io/apex/)                                         | [BSD-3-Clause](https://github.com/NVIDIA/apex/blob/master/LICENSE) |
+| [tqdm](https://tqdm.github.io/)                                                | [MPLv2.0, MIT](https://github.com/tqdm/tqdm/blob/master/LICENCE) |
+| [Tensorboard](https://www.tensorflow.org/tensorboard)                          | [Apache-2.0](https://github.com/tensorflow/tensorboard/blob/master/LICENSE) |
+| [rich](https://rich.readthedocs.io/en/latest/)                                 | [MIT](https://github.com/Textualize/rich/blob/master/LICENSE) |
+| [python-lmdb](https://lmdb.readthedocs.io/en/release/)                         | [OpenLDAP Version 2.8](https://github.com/jnwatson/py-lmdb/blob/master/LICENSE) |
+| [PyYAML](https://pyyaml.org/)                                                  | [MIT](https://github.com/yaml/pyyaml/blob/master/LICENSE) |
+| [marshmallow](https://marshmallow.readthedocs.io/en/stable/)                   | [MIT](https://github.com/marshmallow-code/marshmallow/blob/dev/LICENSE) |
+| [click](https://click.palletsprojects.com/)                                    | [BSD-3-Clause](https://github.com/pallets/click/blob/main/LICENSE.rst) |
+| [vlutils](https://github.com/VL-Group/vlutils)                                 | [Apache-2.0](https://github.com/VL-Group/vlutils/blob/main/LICENSE) |
+| [MessagePack](https://msgpack.org/)                                            | [Apache-2.0](https://github.com/msgpack/msgpack-python/blob/main/COPYING) |
+| [pybind11](https://pybind11.readthedocs.io/en/stable/)                         | [BSD-style](https://github.com/pybind/pybind11/blob/master/LICENSE) |
+| [CompressAI](https://interdigitalinc.github.io/CompressAI/)                    | [BSD 3-Clause Clear](https://github.com/InterDigitalInc/CompressAI/blob/master/LICENSE) |
+| [Taming-transformer](https://compvis.github.io/taming-transformers/)           | [MIT](https://github.com/CompVis/taming-transformers/blob/master/License.txt) |
+| [marshmallow-jsonschema](https://github.com/fuhrysteve/marshmallow-jsonschema) | [MIT](https://github.com/fuhrysteve/marshmallow-jsonschema/blob/master/LICENSE) |
+| [json-schema-for-humans](https://coveooss.github.io/json-schema-for-humans/#/) | [Apache-2.0](https://github.com/coveooss/json-schema-for-humans/blob/main/LICENSE.md) |
+| [CyclicLR](https://github.com/bckenstler/CLR)                                  | [MIT](https://github.com/bckenstler/CLR/blob/master/LICENSE) |
+| [batch-transforms](https://github.com/pratogab/batch-transforms)               | [MIT](https://github.com/pratogab/batch-transforms/blob/master/LICENSE) |
 
 
 <br/>
