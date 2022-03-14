@@ -1,6 +1,12 @@
 import sys
 import os
-from .write_entry_points import __ENTRY_POINTS__
+
+__ENTRY_POINTS__ = {
+    "mcquic": "mcquic.cli:entryPoint",
+    "mcquic-train": "mcquic.train.cli:entryPoint",
+    "mcquic-dataset": "mcquic.datasets.cli:entryPoint",
+    "mcquic-validate": "mcquic.validate.cli:entryPoint"
+}
 
 
 template = """[options.entry_points]
