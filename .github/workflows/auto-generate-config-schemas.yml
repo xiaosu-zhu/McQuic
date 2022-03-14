@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v2
       - name: Generate schema.json
         run: |
-          pip install marshmallow-jsonschema apispec json-schema-for-humans
+          pip install marshmallow-jsonschema json-schema-for-humans
           python ci/pre_commit/generate_schema.py mcquic/config.py configs/schema.json configs/README.md
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
