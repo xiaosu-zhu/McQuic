@@ -172,7 +172,8 @@ To run the model, your device needs to meet following requirements.
 ## Conda (Recommended)
 Install this package is very easy with a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html). I recommend you to install it to a new virtual environment directly by:
 ```bash
-conda create -n mcquic mcquic cudatoolkit -c pytorch -c conda-forge -c xiaosu-zhu
+conda create -n [ENV_NAME] mcquic cudatoolkit -c pytorch -c conda-forge -c xiaosu-zhu
+conda activate [ENV_NAME]
 ```
 
 <a href="#">
@@ -195,9 +196,9 @@ mcquic path/to/output.mcq path/to/restored.png
 
 
 ## Docker
-I also build [`docker` images](https://github.com/xiaosu-zhu/McQuic/pkgs/container/mcquic) to get away from environment issues.
+I also build [`docker` images](https://github.com/xiaosu-zhu/McQuic/pkgs/container/mcquic) for you to get away from environment issues.
 
-Test with the latest docker image:
+Try with the latest docker image:
 ```bash
 docker pull ghcr.io/xiaosu-zhu/mcquic:main
 ```
@@ -255,7 +256,9 @@ We've released a bunch of pretrained models targeting various BPPs (bits per pix
 |         3 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 
-The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. **`Mpps = Mega-pixels per second`**
+The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test. 
+- **`Mpps = Mega-pixels per second`**
+- **`BPP = Bits per pixel`**
 
 # Train a New Model
 Please ensure you've installed [`NVIDIA/Apex`](#optional-install-nvidiaapex). To train models, here are minimal and recommended system requirements.
