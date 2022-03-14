@@ -108,9 +108,7 @@ jobs:
           python-version: 3.9
       - name: Write entry points
         run: |
-          python ci/pre_build/write_entry_points.py conda/meta.yaml
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+          python ci/pre_build/conda_entry_points.py conda/meta.yaml
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
