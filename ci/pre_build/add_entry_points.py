@@ -1,6 +1,6 @@
 import sys
 import os
-from write_entry_points import __ENTRY_POINTS__
+from .write_entry_points import __ENTRY_POINTS__
 
 
 template = """[options.entry_points]
