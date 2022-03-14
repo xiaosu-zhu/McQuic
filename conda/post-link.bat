@@ -11,6 +11,7 @@ FOR /F "usebackq delims=" %%i IN (%~1) DO (
     if not defined shebang (
         set "shebang=1"
         echo.%PREFIX%\python -O>"%~1"
+        echo.%%i>>"%~1"
     ) else (
         echo.%%i>>"%~1"
     )

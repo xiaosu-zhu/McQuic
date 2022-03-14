@@ -69,7 +69,7 @@ jobs:
           python-version: 3.9
       - name: Write entry points
         run: |
-          python ci/pre_build/write_entry_points.py conda/meta.yaml
+          python ci/pre_build/conda_entry_points.py conda/meta.yaml
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       - name: Setup conda
@@ -128,7 +128,7 @@ jobs:
             RUN conda config --set anaconda_upload yes
           run: |
             conda activate
-            python ci/pre_build/write_entry_points.py conda/meta.yaml
+            python ci/pre_build/conda_entry_points.py conda/meta.yaml
             conda build --variants "{"cxx_compiler": ["clangxx"], "target_platform": ["osx-arm64"]}" -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
             python ci/post_build/rename_package.py build/
       - name: Release
