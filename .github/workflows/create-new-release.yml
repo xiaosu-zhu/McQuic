@@ -112,6 +112,7 @@ jobs:
           githubToken: ${{ github.token }}
           install: |
             export ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
+
             apt-get update
 
             apt-get install -y wget && rm -rf /var/lib/apt/lists/*
