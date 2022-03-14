@@ -53,7 +53,7 @@ jobs:
     needs: [check-version-and-create-branch]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     # The type of runner that the job will run on
     runs-on: ${{ matrix.os }}
     env:
@@ -91,10 +91,10 @@ jobs:
           files: build/*/*.tar.bz2
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
-  build-mac:
+  build-mac-on-aarch64-docker:
     needs: [check-version-and-create-branch]
     # The type of runner that the job will run on
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     env:
       ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_TOKEN }}
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -102,28 +102,35 @@ jobs:
       - uses: actions/checkout@master
         with:
           ref: r${{ github.event.inputs.release-tag }}
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v1
+      - name: Build in arm64 container
+        uses: uraimo/run-on-arch-action@v2.1.1
         with:
-          python-version: 3.9
-      - name: Write entry points
-        run: |
-          python ci/pre_build/write_entry_points.py conda/meta.yaml
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-      - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          auto-activate-base: true
-          activate-environment: ""
-      - name: Run conda build and publish 📦
-        run: |
-          conda install anaconda-client conda-build pybind11 conda-verify
-          conda config --set anaconda_upload yes
-          conda build --variants "{"cxx_compiler": ["clangxx"], "target_platform": ["osx-64", "osx-arm64"]}" -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
-      - name: Rename built packages
-        run: |
-          python ci/post_build/rename_package.py build/
+          arch: aarch64
+          distro: ubuntu20.04
+          # Install deps into the container. With the token, the container will be cached
+          # The image is cached publically like a package
+          githubToken: ${{ github.token }}
+          install: |
+            ENV PATH="/root/miniconda3/bin:${PATH}"
+            ARG PATH="/root/miniconda3/bin:${PATH}"
+            ENV ANACONDA_API_TOKEN=${{ secrets.ANACONDA_TOKEN }}
+            RUN apt-get update
+
+            RUN apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
+            RUN wget \
+                https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh \
+                && mkdir /opt/conda \
+                && bash Miniconda3-latest-Linux-x86_64.sh -b \
+                && rm -f Miniconda3-latest-Linux-x86_64.sh \
+                && conda init
+            RUN conda install anaconda-client conda-build pybind11 conda-verify python
+            RUN conda config --set anaconda_upload yes
+          run: |
+            conda activate
+            python ci/pre_build/write_entry_points.py conda/meta.yaml
+            conda build --variants "{"cxx_compiler": ["clangxx"], "target_platform": ["osx-arm64"]}" -c conda-forge -c bioconda -c pytorch -c xiaosu-zhu --output-folder build conda/
+            python ci/post_build/rename_package.py build/
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
