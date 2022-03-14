@@ -1,3 +1,8 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+$PSDefaultParameterValues['*:ErrorAction']='Stop'
+
+
 function Check-Command($cmdname)
 {
     return [bool](Get-Command -Name $cmdname -ErrorAction SilentlyContinue)
@@ -32,13 +37,13 @@ if (Check-Command -cmdname 'conda')
 
     pip install -e .
 
-    $env:PREFIX = $env:CONDA_PREFIX
-
-    cmd.exe /c "conda/post-link.bat"
+    python ci/post_build/win_install_post_link.py $env:CONDA_PREFIX
 
     Remove-Item "setup.cfg"
 
     Copy-Item "setup.cfg.bak" -Destination "setup.cfg"
+
+    Remove-Item "setup.cfg.bak"
 
     Write-Output "Installation done!"
 
