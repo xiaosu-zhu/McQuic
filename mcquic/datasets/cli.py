@@ -69,7 +69,8 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
     env.close()
 
 
-@click.command()
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+@click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)

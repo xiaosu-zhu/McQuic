@@ -18,6 +18,9 @@ def checkArgs(debug: bool, quiet: bool, path: pathlib.Path, output: pathlib.Path
 
 def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path) -> int:
     loggingLevel = checkArgs(debug, quiet, path, output)
+
+    import hashlib
+
     import torch
     from vlutils.logger import configLogging
 
@@ -76,11 +79,30 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
     }, output)
 
     logger.info(f"Saved at `{output}`.")
+    logger.info("Add hash to file...")
+    sha256 = hashlib.sha256()
+
+    with open(output, 'rb') as fp:
+        while True:
+            # Reading is buffered, so we can read smaller chunks.
+            chunk = fp.read(65536)
+            if not chunk:
+                break
+            sha256.update(chunk)
+
+    hashResult = sha256.hexdigest()
+
+    newName = f"{output.stem}-{hashResult[:8]}.{output.suffix}"
+
+    os.rename(output, output.parent.joinpath(newName))
+
+    logger.info("Rename file to %s", newName)
 
     return 0
 
 
-@click.command()
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+@click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
