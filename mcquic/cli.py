@@ -79,7 +79,7 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
                     qp = newQP
                     local = newLocal
 
-            model = loadModel(qp, local, device, mse, logger)
+            model = loadModel(qp, local, device, mse, logger).eval()
 
             restored = decompressImage(source, model)
 

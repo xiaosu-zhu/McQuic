@@ -134,6 +134,12 @@ conda activate [ENV_NAME]
 
 > Above command install packages with `CUDA` support. If you just want to run it on CPU, please use `cpuonly` other than `cudatoolkit` in the first command.
 
+<a href="#">
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+</a>
+
+> Since there is no proper version of torchvision now for Apple M1, you need to change channel from `pytorch` to `conda-forge` in the first command.
+
 
 * Compress images
 ```bash
