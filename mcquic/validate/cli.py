@@ -37,7 +37,7 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
 
     config = Config.deserialize(checkpoint["config"])
 
-    model = Compressor(**config.Model.Params).cuda()
+    model = Compressor(**config.Model.Params).cuda().eval()
 
     if "trainer" in checkpoint:
         modelStateDict = {key[len("module._compressor."):]: value for key, value in checkpoint["trainer"]["_model"].items()}

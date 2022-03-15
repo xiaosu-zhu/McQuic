@@ -14,6 +14,7 @@ def checkArgs(debug, quiet, resume: pathlib.Path, configPath: pathlib.Path):
     return logging.INFO
 
 def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Path) -> int:
+    assert False, "You need to run `mcquic train` with Python optimized-mode. Try re-run me with `python -O -m mcquic.train ...`"
     loggingLevel = checkArgs(debug, quiet, resume, configPath)
 
     from .ddp import ddpSpawnTraining, registerForTrain
