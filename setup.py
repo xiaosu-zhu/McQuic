@@ -35,9 +35,32 @@ def get_extensions():
 
     return ext_modules
 
-setup(
-    ext_modules = get_extensions(),
-    cmdclass = {
+
+setupArgs = {
+    "ext_modules": get_extensions(),
+    "cmdclass": {
         "build_ext": build_ext
     }
-)
+}
+
+if os.getenv("PYPI_BUILDING", "") != "":
+    install_requires = [
+        "pytorch<2",
+        "torchvision",
+        "tqdm",
+        "tensorboard<3",
+        "rich<11",
+        "python-lmdb<2",
+        "pyyaml<7",
+        "marshmallow<4",
+        "click<9",
+        "vlutils",
+        "msgpack-python<2",
+        ""
+    ]
+    setupArgs.update({
+        "install_requires": install_requires
+    })
+
+
+setup(**setupArgs)
