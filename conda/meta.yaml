@@ -20,11 +20,11 @@ requirements:
     - cross-python_{{ target_platform }}     # [build_platform != target_platform]
     - pybind11                               # [build_platform != target_platform]
   host:
-    - python
+    - python>=3.9
     - setuptools
     - pybind11
-    - pytorch<2
     - pip
+    - pytorch<2
 
   run:
     - python>=3.9
@@ -43,7 +43,10 @@ requirements:
 # Write it by finalize.py
 build:
   entry_points:
-    ${{ ENTRY_POINTS }}
+    - mcquic = mcquic.cli:entryPoint
+    - mcquic-train = mcquic.train.cli:entryPoint
+    - mcquic-dataset = mcquic.datasets.cli:entryPoint
+    - mcquic-validate = mcquic.validate.cli:entryPoint
   include_recipe: False
 
 about:
