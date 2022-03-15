@@ -37,6 +37,10 @@ class Validator:
 
     @torch.inference_mode()
     def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
+        isTraining = model.training
+
+        model.eval()
+
         self._meter.reset()
         total = len(valLoader)
         now = 0
@@ -53,10 +57,16 @@ class Validator:
                 self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
         progress.remove_task(task)
+
+        model.train(isTraining)
         return self._meter.results(), self._meter.summary()
 
     @torch.inference_mode()
     def speed(self, epoch: int, model: BaseCompressor, progress: Progress):
+        isTraining = model.training
+
+        model.eval()
+
         now = 0
         if epoch is None:
             # test mode
@@ -87,13 +97,7 @@ class Validator:
             decoderMs = startEvent.elapsed_time(endEvent)
 
         result = ((50 * 10 * 768 * 512 / 1000) / encoderMs, (50 * 10 * 768 * 512 / 1000) / decoderMs)
+
+        model.train(isTraining)
+
         return result, f"Coding rate: encoder: {result[0]:.2f} Mpps, decoder: {result[1]:.2f} Mpps"
-
-    @torch.inference_mode()
-    def test(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
-        # warmup
-        results, summary = self.validate(epoch, model, valLoader, progress)
-
-        speedResult, speedSummary = self.speed(epoch, model, progress)
-
-        return results, speedResult, summary, speedSummary
