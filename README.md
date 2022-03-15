@@ -121,7 +121,10 @@ To run the model, your device needs to meet following requirements.
 ## Conda (Recommended)
 Install this package is very easy with a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html). I recommend you to install it to a new virtual environment directly by:
 ```bash
-conda create -n [ENV_NAME] mcquic cudatoolkit -c pytorch -c conda-forge -c xiaosu-zhu
+# Install a clean pytorch with CUDA support
+conda create -n [ENV_NAME] pytorch torchvision cudatoolkit -c pytorch
+# Install mcquic and other dependencies
+conda install -n [ENV_NAME] mcquic -c xiaosu-zhu -c conda-forge
 conda activate [ENV_NAME]
 ```
 
@@ -129,7 +132,7 @@ conda activate [ENV_NAME]
   <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
-> Above command install packages with `CUDA` support. If you just want to run it on CPU, please remove `cudatoolkit` in command.
+> Above command install packages with `CUDA` support. If you just want to run it on CPU, please use `cpuonly` other than `cudatoolkit` in the first command.
 
 
 * Compress images
@@ -161,9 +164,9 @@ This way enables your full access to this repo for modifying. Also, if you want 
 git clone https://github.com/xiaosu-zhu/McQuic.git && cd McQuic
 ```
 * Create a virtual env `mcquic` and install all packages by
-```bash
+```powershell
 ./install.sh  # for POSIX with bash
-./install.ps1 # for Windows with PowerShell
+.\install.ps1 # for Windows with Anaconda PowerShell
 ```
 
 Now you should in the `mcquic` virtual environment. If not, please activate it by `conda activate mcquic`.
