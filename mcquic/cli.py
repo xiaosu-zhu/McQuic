@@ -153,7 +153,8 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
     return model
 
 
-@click.group(cls=DefaultGroup)
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+@click.group(cls=DefaultGroup, context_settings=CONTEXT_SETTINGS)
 def entryPoint():
     pass
 

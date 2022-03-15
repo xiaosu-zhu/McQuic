@@ -47,7 +47,8 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
     return 0
 
 
-@click.command()
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+@click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
 @click.option("-r", "--resume", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1, help="`.ckpt` file path to resume training.")
