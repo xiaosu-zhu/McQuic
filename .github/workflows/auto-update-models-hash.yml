@@ -1,8 +1,7 @@
 name: Update model hash of releases and update python file
 
 on:
-  release:
-    types: [edited]
+  release
 
 jobs:
   build:
