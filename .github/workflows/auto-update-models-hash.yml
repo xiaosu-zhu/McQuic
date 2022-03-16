@@ -1,4 +1,4 @@
-name: Update schema.json and docs based on mcquic.config.ConfigSchema
+name: Update model hash of releases and update python file
 
 on:
   release:
