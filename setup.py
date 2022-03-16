@@ -55,7 +55,8 @@ if os.getenv("PYPI_BUILDING", "") != "":
         "marshmallow<4",
         "click<9",
         "vlutils",
-        "msgpack-python<2"
+        "msgpack-python<2",
+        "streamlit<2"
     ]
     setupArgs.update({
         "install_requires": install_requires
