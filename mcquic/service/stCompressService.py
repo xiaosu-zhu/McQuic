@@ -89,6 +89,12 @@ def main(debug: bool, quiet: bool, disable_gpu: bool):
 </a>
 
 > Due to resources limitation, I only provide compression service with model `qp = 3`.
+
+
+<a href="#">
+  <image src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" alt="Github"/>
+</a>
+
 """, unsafe_allow_html=True)
 
 
