@@ -42,6 +42,7 @@ class BaseQuantizer(nn.Module):
 
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
         codes = self.encode(x)
+
         # List of binary, len = n, len(binaries[0]) = level
         binaries, codeSize = self._entropyCoder.compress(codes, cdfs)
         return codes, binaries, codeSize

@@ -3,8 +3,11 @@ import pathlib
 import click
 from vlutils.utils import DefaultGroup
 
-
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
+
+MODELS_HASH = {
+    3: "12345678"
+}
 
 
 def version(ctx, param, value):
@@ -137,7 +140,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
         logger.info("Use local model.")
     else:
         suffix = "mse" if mse else "msssim"
-        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}.mcquic", map_location=device)
+        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}_{MODELS_HASH[qp]}.mcquic", map_location=device)
 
         logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
 

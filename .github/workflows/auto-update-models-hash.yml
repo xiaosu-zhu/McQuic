@@ -1,0 +1,24 @@
+name: Update schema.json and docs based on mcquic.config.ConfigSchema
+
+on:
+  release:
+    types: [edited]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check
+        run: |
+          echo $GITHUB_REF
+          if [ $GITHUB_REF != "refs/tags/generic" ]; then
+              exit 0
+          fi
+      - uses: actions/checkout@v2
+      - name: Generate models hash
+        run: |
+          python ci/pre_commit/update_model_hash.py mcquic/cli.py
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Auto update models hash in mcquic/cli.py
