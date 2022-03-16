@@ -39,6 +39,7 @@ requirements:
     - click<9
     - vlutils
     - msgpack-python<2
+    - packaging
 
 # Write it by finalize.py
 build:

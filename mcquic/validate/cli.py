@@ -6,9 +6,7 @@ import logging
 import mcquic
 
 
-def checkArgs(debug: bool, quiet: bool, path: pathlib.Path, output: pathlib.Path):
-    if path.is_dir():
-        raise ValueError("Please provide a file path to `path`, not a dir.")
+def checkArgs(debug: bool, quiet: bool):
     if quiet:
         return logging.CRITICAL
     if debug:
@@ -16,13 +14,14 @@ def checkArgs(debug: bool, quiet: bool, path: pathlib.Path, output: pathlib.Path
     return logging.INFO
 
 
-def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path) -> int:
-    loggingLevel = checkArgs(debug, quiet, path, output)
+def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path) -> int:
+    loggingLevel = checkArgs(debug, quiet)
 
     import hashlib
 
     import torch
     from vlutils.logger import configLogging
+    from torchvision.io.image import write_file
 
     from mcquic.config import Config
     from mcquic.modules.compressor import Compressor
@@ -43,11 +42,12 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
         modelStateDict = {key[len("module._compressor."):]: value for key, value in checkpoint["trainer"]["_model"].items()}
     else:
         modelStateDict = checkpoint["model"]
-        logger.warning("I got an already-converted ckpt. The `output` will be ignored. If you still want to export this ckpt, please copy it directly.")
+        if export is not None:
+            logger.warning("I got an already-converted ckpt. The `--export` will be ignored. If you still want to export this ckpt, please copy it directly.")
         if not "version" in checkpoint or (checkpoint["version"] != mcquic.__version__):
             v = checkpoint.get("version", None)
             logger.warning(f"Version mismatch: It seems this ckpt has a version {v} but mcquic now is {mcquic.__version__}.")
-        output = None
+        export = None
 
     model.load_state_dict(modelStateDict) # type: ignore
 
@@ -58,31 +58,36 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
     progress = getRichProgress()
 
     with progress:
-        _, summary = validator.validate(None, model, valLoader, progress)
+        results, summary = validator.validate(None, model, valLoader, progress)
         logger.info(summary)
         _, speedSummary = validator.speed(None, model, progress)
         logger.info(speedSummary)
 
-    if output is None or (output.is_dir() and not output.exists()):
-        logger.info(f"I got an invalid path: `{output}`, skip saving model.")
+    if output is not None:
+        allImages = results["ImageCollector"]
+        for i, image in enumerate(allImages):
+            write_file(os.path.join(output,f"{i}.png"), image)
+
+    if export is None or (export.is_dir() and not export.exists()):
+        logger.info(f"Skip saving model.")
         return 0
 
-    if output.is_dir():
+    if export.is_dir():
         modelName = "_".join([f"{key}_{value}" for key, value in config.Model.Params.items()])
         modelName = modelName.replace(", ", "_").replace("[", "").replace("]", "")
-        output = output.joinpath(f"{modelName}_{config.Train.Target.lower()}.mcquic")
+        export = export.joinpath(f"{modelName}_{config.Train.Target.lower()}.mcquic")
 
     torch.save({
         "model": model.state_dict(),
         "config": config.serialize(),
         "version": mcquic.__version__
-    }, output)
+    }, export)
 
-    logger.info(f"Saved at `{output}`.")
+    logger.info(f"Saved at `{export}`.")
     logger.info("Add hash to file...")
     sha256 = hashlib.sha256()
 
-    with open(output, 'rb') as fp:
+    with open(export, 'rb') as fp:
         while True:
             # Reading is buffered, so we can read smaller chunks.
             chunk = fp.read(65536)
@@ -92,9 +97,9 @@ def main(debug: bool, quiet: bool, path: pathlib.Path, images: pathlib.Path, out
 
     hashResult = sha256.hexdigest()
 
-    newName = f"{output.stem}-{hashResult[:8]}.{output.suffix}"
+    newName = f"{export.stem}-{hashResult[:8]}.{export.suffix}"
 
-    os.rename(output, output.parent.joinpath(newName))
+    os.rename(export, export.parent.joinpath(newName))
 
     logger.info("Rename file to %s", newName)
 
@@ -105,10 +110,11 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-e", "--export", type=click.Path(exists=False, resolve_path=True, path_type=pathlib.Path), required=False, help="Path to export the final model that is compatible with main program.")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
-@click.argument("output", type=click.Path(exists=False, dir_okay=True, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def entryPoint(debug, quiet, path, images, output):
+@click.argument("output", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
+def entryPoint(debug, quiet, export, path, images, output):
     """Validate a trained model from `path` by images from `images` dir, and publish a final state_dict to `output` path.
 
 Args:
@@ -117,6 +123,6 @@ Args:
 
     images (str): Validation images folder.
 
-    output (str): File path or dir to publish this model.
+    output (str): Dir to save all restored images.
     """
-    main(debug, quiet, path, images, output)
+    main(debug, quiet, export, path, images, output)

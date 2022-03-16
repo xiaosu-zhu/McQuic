@@ -1,7 +1,6 @@
 from typing import List, Tuple, Any, Union
 
 import torch
-from torch import nn
 from vlutils.metrics.meter import Handler
 
 from .metrics import MsSSIM as M, PSNR as P
@@ -81,6 +80,31 @@ class Visualization(Handler):
 
     def __str__(self) -> str:
         return "In Tensorboard."
+
+
+class ImageCollector(Handler):
+    def __init__(self):
+        super().__init__()
+        self._allImages = list()
+
+    def reset(self):
+        self._allImages = list()
+
+    def __call__(self, *args: Any, **kwds: Any):
+        self._allImages.extend(self.handle(*args, **kwds))
+
+    def handle(self, *, restored: torch.ByteTensor, **_) -> torch.Tensor:
+        # binaries: List of binary, len = n, len(binaries[0]) = level
+        return [x for x in restored.detach().cpu().numpy()]
+
+    @property
+    def ShowInSummary(self) -> bool:
+        return False
+
+    @property
+    def Result(self):
+        # percentage of usage of all codes
+        return self._allImages
 
 
 class IdealBPP(Handler):

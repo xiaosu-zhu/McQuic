@@ -6,7 +6,7 @@ from rich.progress import Progress
 from mcquic.config import Config
 
 from mcquic.utils.vision import DeTransform
-from mcquic.validate.handlers import MsSSIM, PSNR, BPP, IdealBPP, Visualization
+from mcquic.validate.handlers import MsSSIM, PSNR, BPP, IdealBPP, Visualization, ImageCollector
 from mcquic.modules.compressor import BaseCompressor
 
 
@@ -19,7 +19,8 @@ class Validator:
             PSNR().to(rank),
             BPP().to(rank),
             Visualization().to(rank),
-            IdealBPP(config.Model.Params["m"], config.Model.Params["k"]).to(rank)
+            IdealBPP(config.Model.Params["m"], config.Model.Params["k"]).to(rank),
+            ImageCollector()
         ])
 
     def tensorToImage(self, x: torch.Tensor) -> torch.Tensor:
