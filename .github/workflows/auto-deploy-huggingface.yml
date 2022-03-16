@@ -19,5 +19,7 @@ jobs:
           cp mcquic/service/stCompressService.py hfSpace/
           cd hfSpace
           git add .
+          git config --global user.email "xiaosu.zhu@outlook.com"
+          git config --global user.name "Xiaosu Zhu"
           git commit -m "Auto deploy"
           git push
