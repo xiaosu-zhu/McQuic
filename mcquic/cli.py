@@ -6,7 +6,7 @@ from vlutils.utils import DefaultGroup
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
 MODELS_HASH = {
-    3: "12345678"
+    3: "fcc58b73"
 }
 
 

@@ -2,8 +2,8 @@ from typing import List, Tuple
 import torch
 from torch import nn
 
-from mcquic import Consts
 import mcquic
+from mcquic.datasets.transforms import AlignedPadding
 from mcquic.nn import pixelShuffle3x3
 from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 from mcquic.nn.blocks import AttentionBlock
@@ -20,6 +20,7 @@ class BaseCompressor(nn.Module):
         self._decoder = decoder
         self._quantizer = quantizer
         self._qp = "-1"
+        self._padding = AlignedPadding()
 
     @property
     def QuantizationParameter(self) -> str:
@@ -58,8 +59,11 @@ class BaseCompressor(nn.Module):
         return torch.cat(list((freq > 0).flatten() for freq in self._quantizer.Freq)).float().mean()
 
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
-        y = self._encoder(x)
         n, c, h, w = x.shape
+
+        x = self._padding(x)
+
+        y = self._encoder(x)
         # codes: lv * [n, m, h, w]
         # binaries: List of binary, len = n, len(binaries[0]) = level
         codes, binaries, codeSizes = self._quantizer.compress(y, cdfs)
@@ -68,7 +72,27 @@ class BaseCompressor(nn.Module):
 
     def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> torch.Tensor:
         yHat = self._quantizer.decompress(binaries, [header.CodeSize for header in headers], cdfs)
-        return self._decoder(yHat)
+        restored = self._decoder(yHat)
+
+        imageSize = headers[0].ImageSize
+
+        H, W = restored.shape[-2], restored.shape[-1]
+
+        h, w = imageSize.height, imageSize.width
+
+        hCrop = H - h
+        wCrop = W - w
+        cropLeft = wCrop // 2
+        cropRight = wCrop - cropLeft
+        cropTop = hCrop // 2
+        cropBottom = hCrop - cropTop
+
+        if cropBottom == 0:
+            cropBottom = -h
+        if cropRight == 0:
+            cropRight = -w
+
+        return restored[..., cropTop:(-cropBottom), cropLeft:(-cropRight)]
 
 
 class Compressor(BaseCompressor):

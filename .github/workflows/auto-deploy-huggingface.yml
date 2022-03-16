@@ -1,0 +1,23 @@
+name: Sync to Hugging Face hub
+on:
+  push:
+    branches: [main]
+    paths: ['mcquic/service/stCompressService.py']
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Clone HF
+        run: |
+          git clone https://xiaosu-zhu:$HF_TOKEN@huggingface.co/spaces/xiaosu-zhu/McQuic.git hfSpace
+          cp mcquic/service/stCompressService.py hfSpace/
+          cd hfSpace
+          git add .
+          git commit -m "Auto deploy"
+          git push
