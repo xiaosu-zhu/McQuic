@@ -67,11 +67,9 @@ jobs:
           activate-environment: ""
       - name: Generate package
         run: |
-          conda activate          
-          conda install pybind11 setuptools wheel gcc gxx -c conda-forge
-
+          conda install python pip pybind11 setuptools wheel gcc gxx -c conda-forge
           which python
-          
+      - run: |
           python setup.py sdist bdist_wheel
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@master
