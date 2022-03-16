@@ -1,13 +1,13 @@
 import pathlib
 import torch
 import torch.hub
-from torchvision.transforms.functional import convert_image_dtype, to_tensor
+from torchvision.transforms.functional import convert_image_dtype
 from torchvision.io.image import ImageReadMode, encode_png, decode_image
 
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor, Compressor
-import mcquic
-from mcquic.utils.specification import File, FileHeader
+from mcquic.datasets.transforms import AlignedCrop
+from mcquic.utils.specification import File
 from mcquic.utils.vision import DeTransform
 
 try:
@@ -16,14 +16,12 @@ except:
     raise ImportError("To run `mcquic service`, please install Streamlit by `pip install streamlit` firstly.")
 
 
-MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
+MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/qp_3_msssim_fcc58b73.mcquic"
 
 
+@st.experimental_singleton
 def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
-    suffix = "mse" if mse else "msssim"
-    # ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}.mcquic", map_location=device)
-
-    ckpt = torch.load("./qp_3_msssim.mcquic", map_location=device)
+    ckpt = torch.hub.load_state_dict_from_url(MODELS_URL, map_location=device)
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)
@@ -33,11 +31,11 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
 
 
 
+@st.cache
 def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
     image = convert_image_dtype(image)
 
     if crop:
-        from mcquic.datasets.transforms import AlignedCrop
         image = AlignedCrop()(image)
 
     # [c, h, w]
@@ -49,6 +47,7 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     return File(headers[0], binaries[0])
 
 
+@st.cache
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
@@ -92,19 +91,33 @@ def main(debug: bool, quiet: bool, disable_gpu: bool):
 > Due to resources limitation, I only provide compression service with model `qp = 3`.
 """, unsafe_allow_html=True)
 
-    uploadedFile = st.file_uploader("Try running McQuic to compress or restore images!", type=["png", "jpg", "jpeg", "mcq"], help="Upload your image or compressed `.mcq` file here.")
-    if uploadedFile is not None:
+
+    with st.form("SubmitForm"):
+        uploadedFile = st.file_uploader("Try running McQuic to compress or restore images!", type=["png", "jpg", "jpeg", "mcq"], help="Upload your image or compressed `.mcq` file here.")
+        cropping = st.checkbox("Cropping image to align grids.", help="If checked, the image is cropped to align to feature map grids. This makes output smaller.")
+        submitted = st.form_submit_button("Submit", help="Click to start compress/restore.")
+    if submitted and uploadedFile is not None:
         if uploadedFile.name.endswith(".mcq"):
             uploadedFile.flush()
-            result = decompressImage(File.deserialize(uploadedFile.read()), model)
-            st.image(result.cpu().numpy().permute(2, 1, 0))
-            st.download_button("Restored image", data=bytes(encode_png(result.cpu()).tolist()), file_name=".".join(uploadedFile.name.split(".")[:-1] + [".mcq"]), mime="image/png")
+
+            binaryFile = File.deserialize(uploadedFile.read())
+
+            st.text(str(binaryFile))
+
+            result = decompressImage(binaryFile, model)
+            st.image(result.cpu().permute(1, 2, 0).numpy())
+            st.download_button("Click to download restored image", data=bytes(encode_png(result.cpu()).tolist()), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["png"]), mime="image/png")
         else:
             raw = torch.ByteTensor(torch.ByteStorage.from_buffer(uploadedFile.read())) # type: ignore
-            image = decode_image(raw, ImageReadMode.RGB)
-            result = compressImage(image, model, False)
-            st.download_button("Compressed file", data=result.serialize(), file_name=".".join(uploadedFile.name.split(".")[:-1] + [".mcq"]), mime="image/mcq")
+            image = decode_image(raw, ImageReadMode.RGB).to(device)
+            st.image(image.cpu().permute(1, 2, 0).numpy())
+            result = compressImage(image, model, cropping)
+
+            st.text(str(result))
+
+            st.download_button("Click to download compressed file", data=result.serialize(), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["mcq"]), mime="image/mcq")
 
 
 if __name__ == "__main__":
-    main(False, False, False)
+    with torch.inference_mode():
+        main(False, False, False)

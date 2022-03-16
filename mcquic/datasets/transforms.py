@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-import math
+import torch.nn.functional as F
 from torchvision import transforms as T
 
 from mcquic.utils.vision import RandomHorizontalFlip, RandomVerticalFlip, RandomGamma, RandomAutocontrast
@@ -35,9 +35,9 @@ class AlignedCrop(nn.Module):
         self._base = base
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        _, h, w = x.shape
-        wCrop = w - math.floor(w / self._base) * self._base
-        hCrop = h - math.floor(h / self._base) * self._base
+        h, w = x.shape[-2], x.shape[-1]
+        wCrop = w - w // self._base * self._base
+        hCrop = h - h // self._base * self._base
         cropLeft = wCrop // 2
         cropRight = wCrop - cropLeft
         cropTop = hCrop // 2
@@ -48,6 +48,27 @@ class AlignedCrop(nn.Module):
         if cropRight == 0:
             cropRight = -w
 
-        x = x[:, cropTop:(-cropBottom), cropLeft:(-cropRight)]
+        x = x[..., cropTop:(-cropBottom), cropLeft:(-cropRight)]
 
         return x
+
+
+class AlignedPadding(nn.Module):
+    def __init__(self, base: int = 128):
+        super().__init__()
+        self._base = base
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h, w = x.shape[-2], x.shape[-1]
+        wPadding = (w // self._base + 1) * self._base - w
+        hPadding = (h // self._base + 1) * self._base - h
+
+        wPadding = wPadding % self._base
+        hPadding = hPadding % self._base
+
+        padLeft = wPadding // 2
+        padRight = wPadding - padLeft
+        padTop = hPadding // 2
+        padBottom = hPadding - padTop
+
+        return F.pad(x, (padLeft, padRight, padTop, padBottom), "reflect")
