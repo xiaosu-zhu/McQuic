@@ -20,7 +20,7 @@ class Validator:
             BPP().to(rank),
             Visualization().to(rank),
             IdealBPP(config.Model.Params["m"], config.Model.Params["k"]).to(rank),
-            ImageCollector()
+            ImageCollector().to(rank)
         ])
 
     def tensorToImage(self, x: torch.Tensor) -> torch.Tensor:

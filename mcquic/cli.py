@@ -91,7 +91,7 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
             if output is not None:
                 if output.is_dir():
                     output = output.joinpath(input.stem + ".png")
-                write_png(restored.cpu(), str(output), 9)
+                write_png(restored.cpu(), str(output))
     else:
         raise ValueError("Invalid input file.")
 

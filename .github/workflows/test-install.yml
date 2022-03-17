@@ -2,7 +2,7 @@ name: Test `install.sh` and `install.ps1` functional
 
 on:
   push:
-    tags:
+    branches:
       - 'r*'
 
 jobs:
