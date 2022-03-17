@@ -1,9 +1,9 @@
 <p align="center">
   <a href="https://github.com/xiaosu-zhu/McQuic#gh-light-mode-only">
-    <img src="./assets/McQuic-light.svg#gh-light-mode-only" alt="McQuic" title="McQuic" width="45%"/>
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/McQuic-light.svg#gh-light-mode-only" alt="McQuic" title="McQuic" width="45%"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic#gh-dark-mode-only">
-    <img src="./assets/McQuic-dark.svg#gh-dark-mode-only" alt="McQuic" title="McQuic" width="45%"/>
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/McQuic-dark.svg#gh-dark-mode-only" alt="McQuic" title="McQuic" width="45%"/>
   </a>
   <br/>
   <span>
@@ -39,10 +39,10 @@
 <br/>
 <p align="center">
   <a href="localhost#gh-light-mode-only">
-    <img src="./assets/papertitle-light.svg#gh-light-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/papertitle-light.svg#gh-light-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
   <a href="localhost#gh-dark-mode-only">
-    <img src="./assets/papertitle-dark.svg#gh-dark-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/papertitle-dark.svg#gh-dark-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
 </p>
   <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost">arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
@@ -64,15 +64,15 @@
 The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and restore images by these quantized features. Similar ideas are presented in SHA [[1](#SHA)], VQ-VAE [[2](#VQ-VAE)], VQ-GAN [[3](#VQ-GAN)], *etc*. We summarize these as vectorized priors, and our method extends these ideas to a ***unified multivariate Gaussian mixture***, to perform high-quality, low-latency image compression.
 
 <p align="center">
-    <img src="./assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
-    <img src="./assets/paper/priors-dark.svg#gh-dark-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/paper/priors-light.svg#gh-light-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/paper/priors-dark.svg#gh-dark-mode-only" alt="Vectorized prior" title="Vectorized prior" width="100%">
     <span><b>Figure 1. Operational diagrams of different methods.</b></span>
 </p>
 
 
 <p align="center">
-    <img src="./assets/paper/kodim24-light.png#gh-light-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
-    <img src="./assets/paper/kodim24-dark.png#gh-dark-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/paper/kodim24-light.png#gh-light-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/paper/kodim24-dark.png#gh-dark-mode-only" alt="kodim24.png" title="kodim24.png" width="100%">
     <span><b>Figure 2. Comparisons with traditional codecs on an image from Kodak dataset.</b></span>
 </p>
 
@@ -187,7 +187,7 @@ mcquic -qp 3 assets/sample.png assets/compressed.mcq
 # `-qp` is not necessary. Since this arg is written to `output.mcq`.
 mcquic assets/compressed.mcq assets/restored.png
 ```
-And check outputs: [`assets/compressed.mcq`](./assets/compressed.mcq) and [`assets/restored.png`](./assets/restored.png).
+And check outputs: [`assets/compressed.mcq`](https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/compressed.mcq) and [`assets/restored.png`](https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/restored.png).
 
 ## (***Optional***) Install `NVIDIA/Apex`
 
@@ -400,8 +400,8 @@ Thanks for your attention!❤️ Here are details in the paper.
 Following previous works, we build the compression model as an AutoEncoder. Bottleneck of encoder (analysis transform) outputs a small feature map and is quantized by *multi-codebook vector-quantization* other than scalar-quantization. Quantizers are cascaded to effectively estimate latent distribution.
 
 <p align="center">
-    <img src="./assets/paper/framework-light.svg#gh-light-mode-only" alt="Framework" title="Framework" width="100%">
-    <img src="./assets/paper/framework-dark.svg#gh-dark-mode-only" alt="Framework" title="Framework" width="100%">
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/paper/framework-light.svg#gh-light-mode-only" alt="Framework" title="Framework" width="100%">
+    <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/paper/framework-dark.svg#gh-dark-mode-only" alt="Framework" title="Framework" width="100%">
     <span><b>Figure 3. Left: Overall framework. Right: Structure of a quantizer.</b></span>
 </p>
 
@@ -481,14 +481,14 @@ This repo is licensed under
 </p>
 <p align="center">
 <a href="https://www.apache.org/licenses/LICENSE-2.0#gh-light-mode-only" target="_blank">
-  <img src="./assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
+  <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/ASF_Logo-light.svg#gh-light-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
 <a href="https://www.apache.org/licenses/LICENSE-2.0#gh-dark-mode-only" target="_blank">
-<img src="./assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
+<img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/ASF_Logo-light.svg#gh-dark-mode-only" alt="The Apache Software Foundation" title="The Apache Software Foundation" width="200px"/>
 </a>
 </p>
 <p align="center">
-<a href="./LICENSE">
+<a href="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/LICENSE">
   <b>Apache License<br/>Version 2.0</b>
 </a>
 </p>
@@ -499,6 +499,6 @@ This repo is licensed under
 
 <p align="center">
 <a href="https://github.com/yaya-cheng#gh-dark-mode-only">
-<img src="./assets/thanks.svg#gh-dark-mode-only" width="250px"/>
+<img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/thanks.svg#gh-dark-mode-only" width="250px"/>
 </a>
 </p>
