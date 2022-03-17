@@ -43,7 +43,7 @@ setupArgs = {
     }
 }
 
-if os.getenv("PYPI_BUILDING", "") != "":
+if "PYPI_BUILDING" in os.environ:
     install_requires = [
         "torch<2",
         "torchvision",
@@ -57,9 +57,18 @@ if os.getenv("PYPI_BUILDING", "") != "":
         "vlutils",
         "msgpack-python<2",
         "streamlit<2"
+    ],
+    console_scripts = [
+        "mcquic = mcquic.cli:entryPoint"
+        "mcquic-train = mcquic.train.cli:entryPoint"
+        "mcquic-dataset = mcquic.datasets.cli:entryPoint"
+        "mcquic-validate = mcquic.validate.cli:entryPoint"
     ]
     setupArgs.update({
-        "install_requires": install_requires
+        "install_requires": install_requires,
+        "entry_points": {
+            'console_scripts': console_scripts
+        },
     })
 
 

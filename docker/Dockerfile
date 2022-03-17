@@ -5,7 +5,7 @@ RUN conda install tqdm "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "mar
 
 WORKDIR /workspace
 
-RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic && cp setup.cfg setup.cfg.bak && python ci/pre_build/cfg_entry_points.py setup.cfg && PYPI_BUILDING="SET" pip install -e . && rm -f setup.cfg && mv setup.cfg.bak setup.cfg
+RUN git clone https://github.com/xiaosu-zhu/mcquic.git && cd mcquic && PYPI_BUILDING="SET" pip install -e .
 
 RUN sed -i "1 s|$| -O|" "$(which mcquic)"*
 

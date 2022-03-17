@@ -33,19 +33,11 @@ if (Check-Command -cmdname 'conda')
         exit 1
     }
 
-    Copy-Item "setup.cfg" -Destination "setup.cfg.bak"
-
-    python ci/pre_build/cfg_entry_points.py setup.cfg
+    $env:PYPI_BUILDING = "SET"
 
     pip install -e .
 
     python ci/post_build/win_install_post_link.py $env:CONDA_PREFIX
-
-    Remove-Item "setup.cfg"
-
-    Copy-Item "setup.cfg.bak" -Destination "setup.cfg"
-
-    Remove-Item "setup.cfg.bak"
 
     Write-Output "Installation done!"
 

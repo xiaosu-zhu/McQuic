@@ -26,11 +26,8 @@ then
     exit
 fi
 
-cp setup.cfg setup.cfg.bak
 
-python ci/pre_build/cfg_entry_points.py setup.cfg
-
-pip install -e .
+PYPI_BUILDING=SET pip install -e .
 
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -40,11 +37,6 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
 else
     sed -i "1 s|$| -O|" "$(which mcquic)"*
 fi
-
-
-rm -f setup.cfg
-
-mv setup.cfg.bak setup.cfg
 
 echo "Installation done!"
 
