@@ -21,7 +21,7 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
 
     import torch
     from vlutils.logger import configLogging
-    from torchvision.io.image import write_file
+    from torchvision.io.image import write_png
 
     from mcquic.config import Config
     from mcquic.modules.compressor import Compressor
@@ -63,10 +63,18 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
         _, speedSummary = validator.speed(None, model, progress)
         logger.info(speedSummary)
 
-    if output is not None:
-        allImages = results["ImageCollector"]
-        for i, image in enumerate(allImages):
-            write_file(os.path.join(output,f"{i}.png"), image)
+        if output is not None:
+            allImages = results["ImageCollector"]
+
+            total = len(allImages)
+
+            task = progress.add_task(f"[ Save ]", total=total, progress=f"{0:4d}/{total:4d}", suffix="")
+
+            for now, image in enumerate(allImages):
+                write_png(image, os.path.join(output, f"{now}.png"))
+
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
+            progress.remove_task(task)
 
     if export is None or (export.is_dir() and not export.exists()):
         logger.info(f"Skip saving model.")

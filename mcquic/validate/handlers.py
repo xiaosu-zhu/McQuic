@@ -1,6 +1,10 @@
-from typing import List, Tuple, Any, Union
+from typing import List, Tuple, Any
 
 import torch
+from torch.distributions import Categorical, kl_divergence
+from torchvision.transforms.functional import resize, center_crop, convert_image_dtype
+from torchvision.models import inception_v3
+from torch.utils.data import DataLoader, Dataset
 from vlutils.metrics.meter import Handler
 
 from .metrics import MsSSIM as M, PSNR as P
@@ -66,7 +70,6 @@ class Visualization(Handler):
         self._temp = self.handle(*args, **kwds)
 
     def handle(self, *, restored: torch.ByteTensor, **_) -> torch.Tensor:
-        # binaries: List of binary, len = n, len(binaries[0]) = level
         return restored.detach()
 
     @property
@@ -75,7 +78,6 @@ class Visualization(Handler):
 
     @property
     def Result(self):
-        # percentage of usage of all codes
         return self._temp
 
     def __str__(self) -> str:
@@ -93,9 +95,8 @@ class ImageCollector(Handler):
     def __call__(self, *args: Any, **kwds: Any):
         self._allImages.extend(self.handle(*args, **kwds))
 
-    def handle(self, *, restored: torch.ByteTensor, **_) -> torch.Tensor:
-        # binaries: List of binary, len = n, len(binaries[0]) = level
-        return [x for x in restored.detach().cpu().numpy()]
+    def handle(self, *, restored: torch.ByteTensor, **_) -> List[torch.Tensor]:
+        return [x for x in restored.detach().cpu()]
 
     @property
     def ShowInSummary(self) -> bool:
@@ -103,7 +104,6 @@ class ImageCollector(Handler):
 
     @property
     def Result(self):
-        # percentage of usage of all codes
         return self._allImages
 
 
@@ -188,3 +188,85 @@ class IdealBPP(Handler):
 
     def __str__(self) -> str:
         return self._format % self.Result
+
+
+class InceptionScore(Handler):
+    def __init__(self):
+        super().__init__()
+        self._allImages = list()
+        self._inceptionModel = inception_v3(pretrained=True, transform_input=False).eval()
+        self._rank = "cpu"
+
+    def to(self, device: Any) -> "Handler":
+        self._inceptionModel.to(device)
+        self._rank = device
+        return super().to(device)
+
+    def reset(self):
+        self._allImages = list()
+
+    def __call__(self, *args: Any, **kwds: Any):
+        self._allImages.extend(self.handle(*args, **kwds))
+
+    def handle(self, *, restored: torch.ByteTensor, **_) -> List[torch.Tensor]:
+        return [x for x in restored.detach().cpu()]
+
+    @property
+    def Length(self) -> int:
+        return len(self._allImages)
+
+    @property
+    def Result(self):
+        def get_pred(x):
+            return self._inceptionModel(x)
+
+        # Get predictions
+        preds = list()
+
+        class _dataset(Dataset):
+            def __init__(self, orig):
+                self.orig = orig
+
+            def __getitem__(self, index):
+                return center_crop(resize((convert_image_dtype(self.orig[index], torch.float) - 0.5) * 2, 299), 299)
+
+            def __len__(self):
+                return len(self.orig)
+
+        dataLoader = DataLoader(_dataset(self._allImages), 8, True)
+
+        for i, batch in enumerate(dataLoader, 0):
+            batch = batch.to(self._rank)
+            preds.append(get_pred(batch))
+
+        preds = torch.cat(preds).cpu()
+
+        # Now compute the mean kl-div
+        split_scores = []
+
+        for k in range(1):
+            part = preds[k * (len(preds) // 1): (k+1) * (len(preds) // 1), ...]
+            py = part.mean(0)
+            scores = []
+            for i in range(part.shape[0]):
+                pyx = part[i, :]
+                p = Categorical(logits=pyx)
+                q = Categorical(logits=py)
+                scores.append(kl_divergence(p, q))
+            split_scores.append(torch.stack(scores).mean().exp())
+
+        return [torch.stack(split_scores).mean(), torch.stack(split_scores).std()]
+
+
+class LPips(Handler):
+    def __init__(self):
+        super().__init__()
+        self._metric = LPIPS(net_type='alex', version='0.1')
+
+    def to(self, device: Any) -> "Handler":
+        self._metric.to(device)
+        return super().to(device)
+
+    def handle(self, images: torch.ByteTensor, restored: torch.ByteTensor, **_) -> List[float]:
+        result = self._metric((convert_image_dtype(images, torch.float) - 0.5) * 2, (convert_image_dtype(restored, torch.float) - 0.5) * 2)
+        return [result.item()]
