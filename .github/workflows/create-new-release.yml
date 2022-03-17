@@ -66,10 +66,9 @@ jobs:
           python-version: 3.9
       - name: Generate package
         run: |
-          conda install python pip pybind11 setuptools wheel gcc gxx auditwheel -c conda-forge
+          conda install python pip pybind11 setuptools wheel gcc gxx -c conda-forge
       - run: |
-          python setup.py sdist bdist_wheel
-          auditwheel repair -w dist dist/*.whl
+          python setup.py sdist
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
@@ -78,7 +77,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/*.whl
             dist/*.tar.gz
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
