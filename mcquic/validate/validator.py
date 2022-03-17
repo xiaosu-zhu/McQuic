@@ -51,11 +51,11 @@ class Validator:
         else:
             task = progress.add_task(f"[ Val@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
         with model._quantizer.readyForCoding() as cdfs:
-            for now, images in enumerate(valLoader):
+            for now, (images, stem) in enumerate(valLoader):
                 images = images.to(self._rank, non_blocking=True)
                 codes, binaries, headers = model.compress(images, cdfs)
                 restored = model.decompress(binaries, cdfs, headers)
-                self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes)
+                self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes, stem=stem)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
         progress.remove_task(task)
 
