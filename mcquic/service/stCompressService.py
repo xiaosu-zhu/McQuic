@@ -21,7 +21,7 @@ MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/qp_
 
 @st.experimental_singleton
 def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
-    ckpt = torch.hub.load_state_dict_from_url(MODELS_URL, map_location=device)
+    ckpt = torch.hub.load_state_dict_from_url(MODELS_URL, map_location=device, check_hash=True)
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)

@@ -141,7 +141,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
         logger.info("Use local model.")
     else:
         suffix = "mse" if mse else "msssim"
-        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}_{MODELS_HASH[qp]}.mcquic", map_location=device)
+        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}_{MODELS_HASH[qp]}.mcquic", map_location=device, check_hash=True)
 
         logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
 
