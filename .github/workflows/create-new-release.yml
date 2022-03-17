@@ -49,26 +49,56 @@ jobs:
         with:
           github_token: ${{ secrets.PUSH_TO_RELEASE }}
           branch: r${{ github.event.inputs.release-tag }}
-  package-PyPI:
+  # package-PyPI:
+  #   needs: [check-version-and-create-branch]
+  #   # The type of runner that the job will run on
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     PYPI_BUILDING: SET
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
+  #   steps:
+  #     - uses: actions/checkout@master
+  #       with:
+  #         ref: r${{ github.event.inputs.release-tag }}
+  #     - name: Setup conda
+  #       uses: s-weigand/setup-conda@v1
+  #       with:
+  #         python-version: 3.9
+  #     - name: Generate package
+  #       run: |
+  #         conda install python pip pybind11 setuptools wheel gcc gxx -c conda-forge
+  #     - run: |
+  #         python setup.py sdist
+  #     - name: Publish distribution 📦 to PyPI
+  #       uses: pypa/gh-action-pypi-publish@master
+  #       with:
+  #         password: ${{ secrets.PYPI_API_TOKEN }}
+  #     - name: Release
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         files: |
+  #           dist/*.tar.gz
+  #         tag_name: r${{ github.event.inputs.release-tag }}
+  #         name: Release ${{ github.event.inputs.release-tag }}
+  linux-wheels:
     needs: [check-version-and-create-branch]
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux2014_x86_64
+    strategy:
+      matrix:
+        python-version: [cp39-cp39]
     env:
       PYPI_BUILDING: SET
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      - uses: actions/checkout@master
-        with:
-          ref: r${{ github.event.inputs.release-tag }}
-      - name: Setup conda
-        uses: s-weigand/setup-conda@v1
-        with:
-          python-version: 3.9
-      - name: Generate package
-        run: |
-          conda install python pip pybind11 setuptools wheel gcc gxx -c conda-forge
-      - run: |
-          python setup.py sdist
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: /opt/python/${{ matrix.python-version }}/bin/python -m pip install build twine
+      - name: Build wheel
+        run: /opt/python/${{ matrix.python-version }}/bin/python -m build --wheel .
+      - name: Run auditwheel for manylinux wheel
+        run: auditwheel repair -w dist dist/*
+      - name: Remove linux wheel
+        run: rm dist/*-linux_x86_64.whl
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
@@ -77,7 +107,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/*.tar.gz
+            dist/*.whl
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   build-native:
