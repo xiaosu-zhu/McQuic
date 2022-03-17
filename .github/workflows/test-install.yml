@@ -1,0 +1,29 @@
+name: Test `install.sh` and `install.ps1` functional
+
+on:
+  push:
+    tags:
+      - 'r*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup conda
+        uses: s-weigand/setup-conda@v1
+        with:
+          python-version: 3.9
+      - name: Install mcquic
+        run: ./install.sh
+      - name: Test mcquic
+        run: |
+          if ! command -v mcquic &> /dev/null
+          then
+              exit 1
+          fi
+
+          mcquic -qp 3 assets/sample.png ./
+          mcquic ./sample.mcq ./
+      - name: Test complete
+        run: echo "All install test completed."

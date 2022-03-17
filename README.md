@@ -468,7 +468,8 @@ To cite our paper, please use following BibTex:
 | [json-schema-for-humans](https://coveooss.github.io/json-schema-for-humans/#/) | [Apache-2.0](https://github.com/coveooss/json-schema-for-humans/blob/main/LICENSE.md) |
 | [CyclicLR](https://github.com/bckenstler/CLR)                                  | [MIT](https://github.com/bckenstler/CLR/blob/master/LICENSE) |
 | [batch-transforms](https://github.com/pratogab/batch-transforms)               | [MIT](https://github.com/pratogab/batch-transforms/blob/master/LICENSE) |
-| [pytorch-msssim]() | |
+| [pytorch-msssim](https://github.com/VainF/pytorch-msssim) | [MIT](https://github.com/VainF/pytorch-msssim/blob/master/LICENSE) |
+| [Streamlit](https://streamlit.io/) | [Apache-2.0](https://github.com/streamlit/streamlit/blob/develop/LICENSE) |
 
 
 <br/>

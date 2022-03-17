@@ -71,7 +71,7 @@ jobs:
       - run: |
           python -m pip install auditwheel
           python setup.py sdist bdist_wheel
-          auditwheel repair -w dist dist/*
+          auditwheel repair -w dist dist/*.whl
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
@@ -98,8 +98,8 @@ jobs:
       - uses: actions/checkout@master
         with:
           ref: r${{ github.event.inputs.release-tag }}
-      - name: Setup conda
-        uses: s-weigand/setup-conda@v1
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
         with:
           python-version: 3.9
       - name: Write entry points
@@ -107,6 +107,11 @@ jobs:
           python ci/pre_build/conda_entry_points.py conda/meta.yaml
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: true
+          activate-environment: ""
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
