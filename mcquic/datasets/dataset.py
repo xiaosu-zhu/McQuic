@@ -2,6 +2,7 @@ from typing import Callable, Optional, Tuple, Callable, List, Union, cast
 import os
 import json
 import sys
+from pathlib import Path
 
 import lmdb
 import torch
@@ -86,7 +87,7 @@ class Basic(VisionDataset):
         self.extensions = IMG_EXTENSIONS
         self.samples = samples
 
-    def __getitem__(self, index: int) -> Tensor:
+    def __getitem__(self, index: int) -> Tuple[Tensor, str]:
         """
         Args:
             index (int): Index
@@ -100,7 +101,7 @@ class Basic(VisionDataset):
         sample = read_image(path, ImageReadMode.RGB)
         if self.transform is not None:
             sample = self.transform(sample)
-        return sample
+        return sample, Path(path).stem
 
     def __len__(self) -> int:
         return len(self.samples)

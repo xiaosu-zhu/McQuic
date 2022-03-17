@@ -70,8 +70,8 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
 
             task = progress.add_task(f"[ Save ]", total=total, progress=f"{0:4d}/{total:4d}", suffix="")
 
-            for now, image in enumerate(allImages):
-                write_png(image, os.path.join(output, f"{now}.png"))
+            for now, (image, stem) in enumerate(allImages):
+                write_png(image, os.path.join(output, f"{stem}.png"))
 
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
             progress.remove_task(task)

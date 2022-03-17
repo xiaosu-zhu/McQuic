@@ -2,6 +2,7 @@ import logging
 import pathlib
 import click
 from vlutils.utils import DefaultGroup
+import mcquic
 
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
@@ -13,7 +14,7 @@ MODELS_HASH = {
 def version(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
-    click.echo('McQuic 0.0.9')
+    click.echo(f'McQuic {mcquic.__version__}')
     ctx.exit()
 
 

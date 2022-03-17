@@ -95,8 +95,8 @@ class ImageCollector(Handler):
     def __call__(self, *args: Any, **kwds: Any):
         self._allImages.extend(self.handle(*args, **kwds))
 
-    def handle(self, *, restored: torch.ByteTensor, **_) -> List[torch.Tensor]:
-        return [x for x in restored.detach().cpu()]
+    def handle(self, *, restored: torch.ByteTensor, stem: List[str], **_) -> List[Tuple[torch.Tensor, str]]:
+        return [x for x in zip(restored.detach().cpu(), stem)]
 
     @property
     def ShowInSummary(self) -> bool:
