@@ -22,22 +22,6 @@ for i, line in enumerate(lines):
             end = i
             break
 
-print(start, end)
-
-response = requests.get("https://api.github.com/repos/xiaosu-zhu/McQuic/releases/tags/generic", headers={"Accept":"application/vnd.github.v3+json"}).json()
-assets = response["assets"]
-
-assets = [{
-    "name": "qp_1_msssim_12345678.mcquic",
-},{
-    "name": "qp_2_msssim_12343678.mcquic",
-},{
-    "name": "qp_3_msssim_123a5678.mcquic",
-},{
-    "name": "qp_4_msssim_123e5678.mcquic",
-},]
-
-
 MODELS_HASH = dict()
 
 for asset in assets:
