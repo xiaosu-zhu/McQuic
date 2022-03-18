@@ -24,13 +24,18 @@ jobs:
         run: ./install.sh
       - name: Test mcquic
         run: |
-          $CONDA/bin/activate mcquic
+          eval "$(conda shell.bash hook)"
+
+          conda activate mcquic
+
           if ! command -v mcquic &> /dev/null
           then
               exit 1
           fi
           mcquic -qp 3 assets/sample.png ./
           mcquic ./sample.mcq ./
+          mcquic train --help
+        shell: bash
       - name: Test complete
         run: echo "All install test completed."
   test-on-windows:
@@ -43,11 +48,12 @@ jobs:
         with:
           python-version: 3.9
       - name: Install mcquic
-        run: ./install.ps1
+        run: ECHO y | ./install.ps1
       - name: Test mcquic
         run: |
           conda activate mcquic
           mcquic -qp 3 assets/sample.png ./
           mcquic ./sample.mcq ./
+          mcquic train --help
       - name: Test complete
         run: echo "All install test completed."
