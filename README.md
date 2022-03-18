@@ -45,7 +45,7 @@
     <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/papertitle-dark.svg#gh-dark-mode-only" alt="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" title="Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression" width="100%"/>
   </a>
 </p>
-  <p align="center"><a href="localhost">CVF Open Access</a> | <a href="localhost">arXiv</a> | <a href="#citation">BibTex</a> | Demo will be online soon</p>
+<p align="center"><a href="localhost" target="_blank">CVF Open Access</a> | <a href="localhost" target="_blank">arXiv</a> | <a href="#citation">BibTex</a> | <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">Demo</a></p>
 
 
 
