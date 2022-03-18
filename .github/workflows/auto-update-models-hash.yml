@@ -1,7 +1,10 @@
 name: Update model hash of releases and update python file
 
 on:
-  release
+  workflow_run:
+    workflows: [Bump version]
+    types:
+      - completed
 
 jobs:
   build:

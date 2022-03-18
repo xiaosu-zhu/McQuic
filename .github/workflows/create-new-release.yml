@@ -90,7 +90,9 @@ jobs:
     env:
       PYPI_BUILDING: SET
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@master
+        with:
+          ref: r${{ github.event.inputs.release-tag }}
       - name: Install dependencies
         run: /opt/python/${{ matrix.python-version }}/bin/python -m pip install build twine
       - name: Build wheel
