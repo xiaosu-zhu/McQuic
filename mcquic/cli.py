@@ -7,11 +7,9 @@ import mcquic
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
 MODELS_HASH = {
-    1: "12345678"
-    2: "12343678"
-    3: "123a5678"
-    4: "123e5678"
+    3: "fcc58b73"
 }
+
 def version(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
