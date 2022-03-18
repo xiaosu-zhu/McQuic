@@ -21,7 +21,7 @@ if (Check-Command -cmdname 'conda')
 {
     Write-Output "Start installation"
 
-    conda create -y -n mcquic cudatoolkit torchvision pytorch -c pytorch
+    conda create -y -n mcquic python=3.9 cudatoolkit torchvision pytorch -c pytorch
 
     conda activate mcquic
 
