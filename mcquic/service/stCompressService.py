@@ -89,7 +89,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 </p>
 
 
-<image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+<img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
 > Due to resources limitation, I only provide compression service with model `qp = 3`.
 
@@ -102,22 +102,22 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 <br/>
 
 <a href="https://github.com/xiaosu-zhu/McQuic">
-  <image src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub-Mark-120px-plus.png" alt="Github"/>
-  <image src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" alt="Github"/>
+  <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub-Mark-120px-plus.png" alt="Github"/>
+  <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" alt="Github"/>
 </a>
 
 """, unsafe_allow_html=True)
 
     if HF_SPACE:
         st.markdown("""
-<image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+<img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
 > Due to resources limitation of HF spaces, the upload image size is restricted to lower than `3000 x 3000`.
 
-<image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+<img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
 > Also, this demo running on HF space is GPU-disabled. So it may be slow.
-""")
+""", unsafe_allow_html=True)
     with st.form("SubmitForm"):
         uploadedFile = st.file_uploader("Try running McQuic to compress or restore images!", type=["png", "jpg", "jpeg", "mcq"], help="Upload your image or compressed `.mcq` file here.")
         cropping = st.checkbox("Cropping image to align grids.", help="If checked, the image is cropped to align feature map grids. This will make compressed file smaller.")
@@ -138,18 +138,18 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
                 a = Image.open(uploadedFile)
             except PIL.UnidentifiedImageError:
                 st.markdown("""
-<image src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
+<img src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
 
 > Image open failed. Please try other images.
-""")
+""", unsafe_allow_html=True)
                 return
             w, h = a.size
             if HF_SPACE and (h > 3000 or w > 3000):
                 st.markdown("""
-<image src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
+<img src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
 
 > Image is too large. Please try other images.
-""")
+""", unsafe_allow_html=True)
                 return
             raw = torch.ByteTensor(torch.ByteStorage.from_buffer(uploadedFile.read())) # type: ignore
             image = decode_image(raw, ImageReadMode.RGB).to(device)
@@ -170,19 +170,19 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
 <p align="center">
   <a href="https://www.python.org/" target="_blank">
-    <image src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"/>
+    <img src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"/>
   </a>
   <a href="https://pytorch.org/" target="_blank">
-    <image src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
+    <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/stargazers" target="_blank">
-    <image src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github stars"/>
+    <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github stars"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/network/members" target="_blank">
-    <image src="https://img.shields.io/github/forks/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github forks"/>
+    <img src="https://img.shields.io/github/forks/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github forks"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/blob/main/LICENSE" target="_blank">
-    <image src="https://img.shields.io/github/license/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github license"/>
+    <img src="https://img.shields.io/github/license/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github license"/>
   </a>
 </p>
 
@@ -192,7 +192,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
 <p align="center"><a href="localhost" target="_blank">CVF Open Access</a> | <a href="localhost" target="_blank">arXiv</a> | <a href="https://github.com/xiaosu-zhu/McQuic#citation" target="_blank">BibTex</a> | <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic">Demo</a></p>
 
-""")
+""", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     with torch.inference_mode():
