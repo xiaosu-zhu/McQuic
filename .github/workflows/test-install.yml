@@ -1,9 +1,11 @@
 name: Test `install.sh` and `install.ps1` functional
 
 on:
-  push:
-    branches:
-      - 'r*'
+  workflow_run:
+    workflows: [Bump version]
+    types:
+      - completed
+
 
 jobs:
   build:

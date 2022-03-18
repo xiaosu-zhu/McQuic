@@ -129,13 +129,13 @@ conda activate [ENV_NAME]
 ```
 
 <a href="#">
-  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > Above command install packages with `CUDA` support. If you just want to run it on CPU, please use `cpuonly` other than `cudatoolkit` in the first command.
 
 <a href="#">
-  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > Since there is no proper version of torchvision now for Apple M1, you need to change channel from `pytorch` to `conda-forge` in the first command.
@@ -198,20 +198,20 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 ```
 
 <a href="#">
-  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > If you are using [Docker images](#docker), this step is not necessary.
 
 <a href="#">
-  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > Please make sure you've installed it in the correct virtual environment.
 
 
 <a href="#">
-  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
