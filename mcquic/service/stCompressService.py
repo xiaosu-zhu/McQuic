@@ -3,7 +3,7 @@ import pathlib
 import torch
 import torch.hub
 from torchvision.transforms.functional import convert_image_dtype, pil_to_tensor
-from torchvision.io.image import ImageReadMode, encode_png, decode_image
+from torchvision.io.image import encode_png
 from PIL import Image
 import PIL
 
@@ -75,7 +75,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
     st.sidebar.markdown("""
 <p align="center">
-  <a href="https://github.com/xiaosu-zhu/McQuic">
+  <a href="https://github.com/xiaosu-zhu/McQuic" target="_blank">
     <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/McQuic-light.svg" alt="McQuic" title="McQuic" width="45%"/>
   </a>
   <br/>
@@ -104,7 +104,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 <br/>
 
 <p align="center">
-<a href="https://github.com/xiaosu-zhu/McQuic">
+<a href="https://github.com/xiaosu-zhu/McQuic" target="_blank">
   <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub_Logo.png" height="16px" alt="Github"/>
   <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" height="20px" alt="Github"/>
 </a>
@@ -209,7 +209,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 <br/>
 <br/>
 
-<p align="center"><a href="localhost" target="_blank">CVF Open Access</a> | <a href="localhost" target="_blank">arXiv</a> | <a href="https://github.com/xiaosu-zhu/McQuic#citation" target="_blank">BibTex</a> | <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic">Demo</a></p>
+<p align="center"><a href="localhost" target="_blank">CVF Open Access</a> | <a href="localhost" target="_blank">arXiv</a> | <a href="https://github.com/xiaosu-zhu/McQuic#citation" target="_blank">BibTex</a> | <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">Demo</a></p>
 
 """, unsafe_allow_html=True)
 
