@@ -10,6 +10,7 @@ MODELS_HASH = {
     3: "fcc58b73"
 }
 
+
 def version(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
