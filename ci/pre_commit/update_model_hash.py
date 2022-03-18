@@ -45,7 +45,6 @@ for asset in assets:
 MODELS_HASH = """MODELS_HASH = {
 %s
 }
-
 """ % (os.linesep.join(f"    {key}: \"{value}\"" for key, value in MODELS_HASH.items()))
 
 result = lines[:start] + [MODELS_HASH] + lines[(end+1):]
