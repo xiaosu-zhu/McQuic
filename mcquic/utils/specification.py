@@ -179,3 +179,6 @@ class File:
         return f"""Header: {self.fileHeader}
 Size  : {self.size(True)}
 BPP   : {self.BPP:.4f}"""
+
+    def __hash__(self) -> int:
+        return hash(self.serialize())

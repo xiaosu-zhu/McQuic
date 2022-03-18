@@ -36,7 +36,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
 
 
 
-@st.cache
+@st.experimental_memo
 def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
     image = convert_image_dtype(image)
 
@@ -52,7 +52,7 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     return File(headers[0], binaries[0])
 
 
-@st.cache
+@st.experimental_memo
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
@@ -103,8 +103,8 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
 <p align="center">
 <a href="https://github.com/xiaosu-zhu/McQuic">
-  <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub_Logo.png" height="30px" alt="Github"/>
-  <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" height="30px" alt="Github"/>
+  <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub_Logo.png" height="24px" alt="Github"/>
+  <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" height="24px" alt="Github"/>
 </a>
 </p>
 """, unsafe_allow_html=True)
