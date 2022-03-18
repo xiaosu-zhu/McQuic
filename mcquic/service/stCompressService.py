@@ -36,7 +36,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
 
 
 
-@st.experimental_memo
+@st.cache
 def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
     image = convert_image_dtype(image)
 
@@ -52,7 +52,7 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     return File(headers[0], binaries[0])
 
 
-@st.experimental_memo
+@st.cache
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
@@ -135,8 +135,14 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
             result = decompressImage(binaryFile, model)
             st.image(result.cpu().permute(1, 2, 0).numpy())
-            st.download_button("Click to download restored image", data=bytes(encode_png(result.cpu()).tolist()), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["png"]), mime="image/png")
-        else:
+
+            downloadButton = st.empty()
+
+            done = downloadButton.download_button("Click to download restored image", data=bytes(encode_png(result.cpu()).tolist()), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["png"]), mime="image/png")
+
+            if done:
+              downloadButton.empty()
+        elif uploadedFile.name.lower().endswith((".png", ".jpg", ".jpeg")):
             try:
                 image = Image.open(uploadedFile)
             except PIL.UnidentifiedImageError:
@@ -160,8 +166,19 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
             st.text(str(result))
 
-            st.download_button("Click to download compressed file", data=result.serialize(), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["mcq"]), mime="image/mcq")
+            downloadButton = st.empty()
 
+            done = st.download_button("Click to download compressed file", data=result.serialize(), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["mcq"]), mime="image/mcq")
+
+            if done:
+              downloadButton.empty()
+        else:
+            st.markdown("""
+<img src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
+
+> Not supported image formate. Please try other images.
+""", unsafe_allow_html=True)
+            return
     st.markdown("""
 <br/>
 <br/>
