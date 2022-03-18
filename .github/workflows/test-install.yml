@@ -24,7 +24,7 @@ jobs:
         run: ./install.sh
       - name: Test mcquic
         run: |
-          eval "$(conda shell.bash hook)"
+          eval "$(conda shell.$(ps -p $$ -ocomm=) hook)"
 
           conda activate mcquic
 
@@ -35,7 +35,6 @@ jobs:
           mcquic -qp 3 assets/sample.png ./
           mcquic ./sample.mcq ./
           mcquic train --help
-        shell: bash
       - name: Test complete
         run: echo "All install test completed."
   test-on-windows:
