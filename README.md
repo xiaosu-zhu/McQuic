@@ -348,7 +348,7 @@ class Quantizer(nn.Module):
     """
     def __init__(self, m: int, k: int, n: int):
         super().__init__()
-        # A codebook, channel `n -> n // m`.
+        # A codebook, feature dim `d = n // m`.
         self._codebook = nn.Parameter(torch.empty(m, k, n // m))
         self._initParameters()
 
@@ -364,7 +364,7 @@ class Quantizer(nn.Module):
         """
         b, _, h, w = x.shape
         # [b, m, d, h, w]
-        x = x.reshape(n, len(self._codebook), -1, h, w)
+        x = x.reshape(b, len(self._codebook), -1, h, w)
         # [b, m, 1, h, w], square of x
         x2 = (x ** 2).sum(2, keepdim=True)
         # [m, k, 1, 1], square of codebook
@@ -374,7 +374,7 @@ class Quantizer(nn.Module):
         # [b, m, k, h, w], pairwise L2-distance
         distance = x2 + c2 - 2 * inter
         # [b, m, k, h, w], distance as logits to sample
-        sample = F.gumbel_softmax(distance, t, hard=True, dim=2)
+        sample = F.gumbel_softmax(-distance, t, hard=True, dim=2)
         # [b, m, d, h, w], use sample to find codewords
         quantized = torch.einsum("bmkhw,mkd->bmdhw", sample, self._codebook)
         # back to [b, n, h, w]
