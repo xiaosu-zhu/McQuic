@@ -101,11 +101,12 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 <br/>
 <br/>
 
+<p align="center">
 <a href="https://github.com/xiaosu-zhu/McQuic">
-  <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub-Mark-120px-plus.png" alt="Github"/>
-  <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" alt="Github"/>
+  <img src="https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/assets/GitHub-Mark-120px-plus.png" height="40px" alt="Github"/>
+  <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?style=social" height="40px" alt="Github"/>
 </a>
-
+</p>
 """, unsafe_allow_html=True)
 
     if HF_SPACE:
