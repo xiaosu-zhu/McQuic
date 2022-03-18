@@ -2,7 +2,7 @@ import os
 import pathlib
 import torch
 import torch.hub
-from torchvision.transforms.functional import convert_image_dtype
+from torchvision.transforms.functional import convert_image_dtype, pil_to_tensor
 from torchvision.io.image import ImageReadMode, encode_png, decode_image
 from PIL import Image
 import PIL
@@ -136,7 +136,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
             st.download_button("Click to download restored image", data=bytes(encode_png(result.cpu()).tolist()), file_name=".".join(uploadedFile.name.split(".")[:-1] + ["png"]), mime="image/png")
         else:
             try:
-                a = Image.open(uploadedFile)
+                image = Image.open(uploadedFile)
             except PIL.UnidentifiedImageError:
                 st.markdown("""
 <img src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
@@ -144,7 +144,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 > Image open failed. Please try other images.
 """, unsafe_allow_html=True)
                 return
-            w, h = a.size
+            w, h = image.size
             if HF_SPACE and (h > 3000 or w > 3000):
                 st.markdown("""
 <img src="https://img.shields.io/badge/ERROR-red?style=for-the-badge" alt="ERROR"/>
@@ -152,8 +152,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 > Image is too large. Please try other images.
 """, unsafe_allow_html=True)
                 return
-            raw = torch.ByteTensor(torch.ByteStorage.from_buffer(uploadedFile.read())) # type: ignore
-            image = decode_image(raw, ImageReadMode.RGB).to(device)
+            image = pil_to_tensor(image.convert("RGB")).to(device)
             # st.image(image.cpu().permute(1, 2, 0).numpy())
             result = compressImage(image, model, cropping)
 
