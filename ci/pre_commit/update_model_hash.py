@@ -24,6 +24,10 @@ for i, line in enumerate(lines):
 
 MODELS_HASH = dict()
 
+response = requests.get("https://api.github.com/repos/xiaosu-zhu/McQuic/releases/tags/generic", headers={"Accept":"application/vnd.github.v3+json"}).json()
+assets = response["assets"]
+
+
 for asset in assets:
     name = asset["name"]
     stem = name.split(".")[0]
