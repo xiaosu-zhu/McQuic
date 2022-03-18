@@ -14,19 +14,19 @@
 
 <p align="center">
   <a href="https://www.python.org/" target="_blank">
-    <image src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"/>
+    <img src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"/>
   </a>
   <a href="https://pytorch.org/" target="_blank">
-    <image src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
+    <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white" alt="PyTorch"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/stargazers">
-    <image src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github stars"/>
+    <img src="https://img.shields.io/github/stars/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github stars"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/network/members">
-    <image src="https://img.shields.io/github/forks/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github forks"/>
+    <img src="https://img.shields.io/github/forks/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github forks"/>
   </a>
   <a href="https://github.com/xiaosu-zhu/McQuic/blob/main/LICENSE">
-    <image src="https://img.shields.io/github/license/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github license"/>
+    <img src="https://img.shields.io/github/license/xiaosu-zhu/McQuic?logo=github&style=for-the-badge" alt="Github license"/>
   </a>
 </p>
 
@@ -129,13 +129,13 @@ conda activate [ENV_NAME]
 ```
 
 <a href="#">
-  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > Above command install packages with `CUDA` support. If you just want to run it on CPU, please use `cpuonly` other than `cudatoolkit` in the first command.
 
 <a href="#">
-  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > Since there is no proper version of torchvision now for Apple M1, you need to change channel from `pytorch` to `conda-forge` in the first command.
@@ -198,20 +198,20 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 ```
 
 <a href="#">
-  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > If you are using [Docker images](#docker), this step is not necessary.
 
 <a href="#">
-  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > Please make sure you've installed it in the correct virtual environment.
 
 
 <a href="#">
-  <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
+  <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
 > For more information such as building toolchains, please refer to [their repository](https://github.com/NVIDIA/apex).
