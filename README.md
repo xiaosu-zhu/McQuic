@@ -99,7 +99,7 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Fri Mar 18 09:06:42 UTC 2022 -->
+<!-- Added by: runner, at: Fri Mar 18 15:35:53 UTC 2022 -->
 
 <!--te-->
 
@@ -122,7 +122,7 @@ To run the model, your device needs to meet following requirements.
 Install this package is very easy with a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html). I recommend you to install it to a new virtual environment directly by:
 ```bash
 # Install a clean pytorch with CUDA support
-conda create -n [ENV_NAME] pytorch torchvision cudatoolkit -c pytorch
+conda create -n [ENV_NAME] python=3.9 pytorch torchvision cudatoolkit -c pytorch
 # Install mcquic and other dependencies
 conda install -n [ENV_NAME] mcquic -c xiaosu-zhu -c conda-forge
 conda activate [ENV_NAME]
