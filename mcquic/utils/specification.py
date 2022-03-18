@@ -1,6 +1,7 @@
 import abc
 from dataclasses import dataclass
 from typing import List, Union
+import warnings
 
 import msgpack
 from marshmallow import Schema, fields, post_load, ValidationError
@@ -104,9 +105,12 @@ class FileHeader:
     version: str
     codeSize: CodeSize
     imageSize: ImageSize
-    def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize, strict: bool = True) -> None:
-        if strict and mcquic.__version__ != version:
-            raise ValueError("Version mismatch.")
+    def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize, strict: bool = False) -> None:
+        if mcquic.__version__ != version:
+            if strict:
+                raise ValueError("Version mismatch.")
+            else:
+                warnings.warn("Version mismatch.")
         self.qp = qp
         self.version = version
         self.codeSize = codeSize
