@@ -1,8 +1,14 @@
 import logging
 import pathlib
 import random
-import click
 
+import torch
+import torch.multiprocessing as mp
+import click
+import yaml
+from vlutils.runtime import queryGPU
+
+from mcquic.config import Config
 
 def checkArgs(debug, quiet, resume: pathlib.Path, configPath: pathlib.Path):
     if resume is None and configPath is None:
@@ -18,11 +24,6 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
     loggingLevel = checkArgs(debug, quiet, resume, configPath)
 
     from .ddp import ddpSpawnTraining, registerForTrain
-    import torch.multiprocessing as mp
-    from vlutils.runtime import queryGPU
-    from mcquic.config import Config
-    import yaml
-    import torch
 
     logging.getLogger().setLevel(loggingLevel)
 
