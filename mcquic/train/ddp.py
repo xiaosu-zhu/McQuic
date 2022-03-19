@@ -21,9 +21,12 @@ from .trainer import getTrainer
 
 def registerForTrain():
     import mcquic.train.lrSchedulers
-    import apex
+    try:
+        import apex
+        OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
+    except:
+        raise ImportError("`import apex` failed. Apex not installed, LAMB optimizer is disabled.")
     OptimizerRegistry.register("Adam")(torch.optim.Adam)
-    OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
 
     LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
     LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)

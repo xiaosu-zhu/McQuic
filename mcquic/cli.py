@@ -1,9 +1,20 @@
 import logging
 import pathlib
+
 import click
+import torch
+import torch.hub
+from torchvision.io.image import read_image, ImageReadMode, write_png
+from torchvision.transforms.functional import convert_image_dtype
 from vlutils.utils import DefaultGroup
+from vlutils.logger import configLogging
+
 import mcquic
+from mcquic import Config
+from mcquic.validate.cli import main
+from mcquic.modules.compressor import Compressor
 from mcquic.utils import versionCheck
+from mcquic.utils.specification import File
 
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
@@ -28,14 +39,6 @@ def checkArgs(debug, quiet):
 
 def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bool, mse: bool, crop: bool, input: pathlib.Path, output: pathlib.Path):
     loggingLevel = checkArgs(debug, quiet)
-
-
-    from vlutils.logger import configLogging
-    import torch
-    import torch.hub
-    from torchvision.io.image import read_image, ImageReadMode, write_png
-
-    from mcquic.utils.specification import File
 
     if disable_gpu or not torch.cuda.is_available():
         device = torch.device("cpu")
@@ -98,8 +101,6 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
         raise ValueError("Invalid input file.")
 
 def compressImage(image, model, crop):
-    from torchvision.transforms.functional import convert_image_dtype
-
     image = convert_image_dtype(image)
 
     if crop:
@@ -110,7 +111,7 @@ def compressImage(image, model, crop):
     image = (image - 0.5) * 2
 
     with model._quantizer.readyForCoding() as cdfs:
-        codes, binaries, headers = model.compress(image[None, ...], cdfs)
+        _, binaries, headers = model.compress(image[None, ...], cdfs)
 
     # List of each level binary, FileHeader
     return binaries[0], headers[0]
@@ -130,11 +131,6 @@ def decompressImage(sourceFile, model):
 
 
 def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger):
-    import torch
-    from mcquic import Config
-    from mcquic.modules.compressor import Compressor
-    import mcquic
-
     if local is not None:
         logger.warning("By passing `--local`, `-qp` arg will be ignored and model from %s will be loaded. Please ensure you obtain this local model from a trusted source.", local)
         ckpt = torch.load(local, device)
@@ -146,8 +142,9 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
 
         logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
 
-    if not "version" in ckpt or not versionCheck(ckpt["version"]):
-        v = ckpt.get("version", None)
+    if not "version" in ckpt:
+        raise RuntimeError("You are using a too old ckpt where `version` not in it.")
+    versionCheck(ckpt["version"])
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)
@@ -221,8 +218,6 @@ Args:
 
     output (str): File path or dir to publish this model.
     """
-    from mcquic.validate.cli import main
-    import torch
     with torch.inference_mode():
         main(debug, quiet, path, images, output)
 
