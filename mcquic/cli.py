@@ -3,6 +3,7 @@ import pathlib
 import click
 from vlutils.utils import DefaultGroup
 import mcquic
+from mcquic.utils import versionCheck
 
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
@@ -145,9 +146,8 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
 
         logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
 
-    if not "version" in ckpt or (ckpt["version"] != mcquic.__version__):
+    if not "version" in ckpt or not versionCheck(ckpt["version"]):
         v = ckpt.get("version", None)
-        logger.warning(f"Version mismatch: It seems this ckpt has a version {v} but mcquic now is {mcquic.__version__}.")
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)

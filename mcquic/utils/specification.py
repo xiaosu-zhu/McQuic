@@ -1,4 +1,3 @@
-import abc
 from dataclasses import dataclass
 from typing import List, Union
 import warnings
@@ -8,6 +7,7 @@ from marshmallow import Schema, fields, post_load, ValidationError
 import vlutils.logger
 
 import mcquic
+from mcquic.utils import versionCheck
 
 
 # TODO: goto marshmallow
@@ -105,16 +105,12 @@ class FileHeader:
     version: str
     codeSize: CodeSize
     imageSize: ImageSize
-    def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize, strict: bool = False) -> None:
-        if mcquic.__version__ != version:
-            if strict:
-                raise ValueError("Version mismatch.")
-            else:
-                warnings.warn("Version mismatch.")
-        self.qp = qp
-        self.version = version
-        self.codeSize = codeSize
-        self.imageSize = imageSize
+    def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize) -> None:
+        if versionCheck(version):
+            self.qp = qp
+            self.version = version
+            self.codeSize = codeSize
+            self.imageSize = imageSize
 
     @property
     def QuantizationParameter(self) -> str:

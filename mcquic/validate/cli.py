@@ -4,6 +4,7 @@ import pathlib
 import logging
 
 import mcquic
+from mcquic.utils import versionCheck
 
 
 def checkArgs(debug: bool, quiet: bool):
@@ -44,9 +45,9 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
         modelStateDict = checkpoint["model"]
         if export is not None:
             logger.warning("I got an already-converted ckpt. The `--export` will be ignored. If you still want to export this ckpt, please copy it directly.")
-        if not "version" in checkpoint or (checkpoint["version"] != mcquic.__version__):
-            v = checkpoint.get("version", None)
-            logger.warning(f"Version mismatch: It seems this ckpt has a version {v} but mcquic now is {mcquic.__version__}.")
+        if not "version" in checkpoint:
+            raise RuntimeError("You are using a too old version of ckpt, since there is no `version` in it.")
+        versionCheck(checkpoint["version"])
         export = None
 
     model.load_state_dict(modelStateDict) # type: ignore
