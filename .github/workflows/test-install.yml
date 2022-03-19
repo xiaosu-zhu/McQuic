@@ -24,7 +24,7 @@ jobs:
         run: ./install.sh
       - name: Test mcquic
         run: |
-          eval "$(conda shell.$(ps -p $$ -ocomm=) hook)"
+          eval "$(conda shell.$(ps -p $$ | grep -i -o '[a-z]*sh$') hook)"
 
           conda activate mcquic
 
