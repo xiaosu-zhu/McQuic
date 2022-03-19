@@ -14,13 +14,13 @@ from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.loss import CompressionLossBig
 from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry
+import mcquic.train.lrSchedulers
 
 from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
 
 
 def registerForTrain():
-    import mcquic.train.lrSchedulers
     try:
         import apex
         OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
