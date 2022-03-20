@@ -170,12 +170,12 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.group(cls=DefaultGroup, context_settings=CONTEXT_SETTINGS)
+@click.option("-v", "--version", is_flag=True, callback=version, expose_value=False, is_eager=True, help="Print version info.")
 def entryPoint():
     pass
 
 
 @entryPoint.command(default=True)
-@click.option("-v", "--version", is_flag=True, callback=version, expose_value=False, is_eager=True, help="Print version info.")
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
 @click.option("-qp", type=click.IntRange(1, 13), default=3, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
