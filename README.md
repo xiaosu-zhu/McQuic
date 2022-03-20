@@ -218,7 +218,7 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 
 
 # Reference Models
-I've released one pretrained model (Sorry, currently I don't have much free GPUs). You could fetch them by specifying `-qp [Model_NO]`. Following is the pretrained model list (Others ***TBA***):
+I've released one pretrained model (Sorry, currently I don't have much free GPUs to train models). You could fetch them by specifying `-qp [Model_NO]`. Following is the pretrained model list (Others ***TBA***):
 
 
 | Model No. 	| Channel 	| M 	|        K        	| Throughput (Encode/Decode) 	| Avg.BPP 	|
@@ -227,7 +227,7 @@ I've released one pretrained model (Sorry, currently I don't have much free GPUs
 |         3 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 
-The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading and other operations are not included in the test.
+The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading, *etc.* are not included in the test.
 - **`Mpps = Mega-pixels per second`**
 - **`BPP = Bits per pixel`**
 
