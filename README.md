@@ -143,7 +143,53 @@ conda activate [ENV_NAME]
 
 * Compress images
 ```bash
+mcquic
+```
+```console
+Usage: mcquic [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  -v, --version  Print version info.
+  -h, --help     Show this message and exit.
+
+Commands:
+  -*        Compress/restore a file.
+  dataset   Create training set from `images` dir to `output` dir.
+  train     Train a model.
+  validate  Validate a trained model from `path` by images from `images`...
+
+```
+```bash
 mcquic --help
+```
+```console
+Usage: mcquic - [OPTIONS] INPUT [OUTPUT]
+
+  Compress/restore a file.
+
+  Args:
+
+      input (str): Input file path. If input is an image, compress it. If
+      input is a `.mcq` file, restore it.
+
+      output (optional, str): Output file path or dir. If not provided, this
+      program will only print compressor information of input file.
+
+Options:
+  -D, --debug        Set logging level to DEBUG to print verbose messages.
+  -q, --quiet        Silence all messages, this option has higher priority to
+                     `-D/--debug`.
+  -qp INTEGER RANGE  Quantization parameter. Higher means better image quality
+                     and larger size.  [default: 3; 1<=x<=13]
+  --local FILE       Use a local model path instead of download by `qp`.
+  --disable-gpu      Use pure CPU to perform compression. This will be slow.
+  --mse              Use model optimized for PSNR other than MsSSIM.
+  --crop             Crop the image to align feature patches. Edges of image
+                     are cutted though, compressed binary will be smaller.
+  -h, --help         Show this message and exit.
+
+```
+```bash
 mcquic -qp 3 path/to/an/image path/to/output.mcq
 ```
 * Decompress images
@@ -251,7 +297,26 @@ Before training models, you need to prepare an image dataset. It is free to pick
 * To build a training dataset, please put all images in a folder (allow for sub-folders), then run
 ```bash
 mcquic dataset --help
-# mcquic dataset [PATH_OF_YOUR_IMAGE_FOLDER] [PATH_OF_OUTPUT_DATASET]
+```
+```console
+Usage: mcquic dataset [OPTIONS] IMAGES OUTPUT
+
+  Create training set from `images` dir to `output` dir.
+
+  Args:
+
+      images (str): All training images folder, allow sub-folders.
+
+      output (str): Output dir to create training set.
+
+Options:
+  -D, --debug  Set logging level to DEBUG to print verbose messages.
+  -q, --quiet  Silence all messages, this option has higher priority to
+               `-D/--debug`.
+  -h, --help   Show this message and exit.
+
+```
+```bash
 mcquic dataset train_images mcquic_dataset
 ```
 to build a `lmdb` dataset for `mcquic` to read.
@@ -300,7 +365,27 @@ In this example, the final folder structure is shown below:
 * To train a new model, run
 ```bash
 mcquic train --help
-# mcquic train [PATH_TO_CONFIG]
+```
+```console
+Usage: mcquic train [OPTIONS] [CONFIG]
+
+  Train a model.
+
+  Args:
+
+      config (str): Config file (yaml) path. If `-r/--resume` is present but
+      config is still given, then this config will be used to update the
+      resumed training.
+
+Options:
+  -D, --debug        Set logging level to DEBUG to print verbose messages.
+  -q, --quiet        Silence all messages, this option has higher priority to
+                     `-D/--debug`.
+  -r, --resume FILE  `.ckpt` file path to resume training.
+  -h, --help         Show this message and exit.
+
+```
+```bash
 mcquic train configs/train.yaml
 ```
 and saved model is located in `saved/mcquic_dataset/latest`.
@@ -319,12 +404,37 @@ if you want to use an updated config (e.g. tuned learning rate, modified hyper-p
 You could use any save checkpoints (usually located in above `savePath`) to validate the performance. For example
 ```bash
 mcquic validate --help
-mcquic validate path/to/a/checkpoint path/to/images/folder path/to/final/model
+```
+```console
+Usage: python -m mcquic.validate [OPTIONS] PATH IMAGES [OUTPUT]
+
+  Validate a trained model from `path` by images from `images` dir, and
+  publish a final state_dict to `output` path.
+
+  Args:
+
+      path (str): Saved checkpoint path.
+
+      images (str): Validation images folder.
+
+      output (str): Dir to save all restored images.
+
+Options:
+  -D, --debug        Set logging level to DEBUG to print verbose messages.
+  -q, --quiet        Silence all messages, this option has higher priority to
+                     `-D/--debug`.
+  -e, --export PATH  Path to export the final model that is compatible with
+                     main program.
+  -h, --help         Show this message and exit.
+
+```
+```bash
+mcquic validate -e path/to/final/model path/to/a/checkpoint path/to/images/folder path/to/output/folder
 ```
 
-And the output "final model" is compatible with the main program `mcquic`, you could directly use this local model to perform compression. Try:
+And the output "final/model" is compatible with the main program `mcquic`, you could directly use this local model to perform compression. Try:
 ```bash
-mcquic --local assets/sample.png assets/compressed.mcq
+mcquic --local path/to/final/model assets/sample.png assets/compressed.mcq
 # `--local` is not necessary. Since this arg is written to `output.mcq`.
 mcquic assets/compressed.mcq assets/restored.png
 ```
