@@ -13,7 +13,7 @@ fi
 
 conda create -y -n mcquic python=3.9 cudatoolkit torchvision pytorch -c pytorch
 
-eval "$(conda shell.$(ps -p $$ | grep -i -o '[a-z]*sh$') hook)"
+eval "$(conda shell.bash hook)"
 
 conda activate mcquic
 
