@@ -102,7 +102,7 @@ jobs:
       - name: Write entry points and remove PEP 518 `pyproject.toml`
         run: |
           python ci/pre_build/conda_entry_points.py conda/meta.yaml
-          rm -rf pyproject.toml
+          rm pyproject.toml
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       - name: Setup conda
@@ -142,7 +142,7 @@ jobs:
       - name: Write entry points and remove PEP 518 `pyproject.toml`
         run: |
           python ci/pre_build/conda_entry_points.py conda/meta.yaml
-          rm -rf pyproject.toml
+          rm pyproject.toml
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
