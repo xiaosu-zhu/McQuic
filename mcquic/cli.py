@@ -178,7 +178,7 @@ def entryPoint():
 @entryPoint.command(default=True)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
-@click.option("-qp", type=click.IntRange(1, 13), default=3, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
+@click.option("-qp", type=click.IntRange(0, 13), default=3, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
 @click.option("--local", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), help="Use a local model path instead of download by `qp`.")
 @click.option("--disable-gpu", is_flag=True, help="Use pure CPU to perform compression. This will be slow.")
 @click.option("--mse", is_flag=True, help="Use model optimized for PSNR other than MsSSIM.")
