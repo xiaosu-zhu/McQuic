@@ -1,4 +1,4 @@
-name: Test `install.sh` and `install.ps1` functional
+name: All tests
 
 on:
   workflow_run:
@@ -10,12 +10,14 @@ on:
 
 
 jobs:
-  test-on-posix:
+  test-install-on-posix:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        shell: [bash, zsh, fish]
     # The type of runner that the job will run on
     runs-on: ${{ matrix.os }}
+    shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v2
       - name: Setup conda
@@ -39,7 +41,7 @@ jobs:
           mcquic train --help
       - name: Test complete
         run: echo "All install test completed."
-  test-on-windows:
+  test-install-on-windows:
     # The type of runner that the job will run on
     runs-on: windows-latest
     steps:
@@ -50,12 +52,32 @@ jobs:
           python-version: 3.9
       - name: Install mcquic
         run: |
-          'y' | powershell -noprofile -file "./install.ps1"
+          'y' | powershell -ExecutionPolicy ByPass -NoExit -noprofile -Command "& 'C:\Miniconda\condabin\conda-hook.ps1'; conda activate 'C:\Miniconda\'; './install.ps1'"
       - name: Test mcquic
         run: |
+          C:\Miniconda\condabin\conda-hook.ps1
+          conda activate 'C:\Miniconda\'
           conda activate mcquic
           mcquic -qp 3 assets/sample.png ./
           mcquic ./sample.mcq ./
           mcquic train --help
+      - name: Test complete
+        run: echo "All install test completed."
+  test-conda-installation:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    # The type of runner that the job will run on
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup conda
+        uses: s-weigand/setup-conda@v1
+        with:
+          python-version: 3.9
+      - name: Install mcquic
+        run: |
+          conda create -n mcquic python=3.9 pytorch torchvision cudatoolkit -c pytorch
+          conda install -n mcquic mcquic -c xiaosu-zhu -c conda-forge
       - name: Test complete
         run: echo "All install test completed."

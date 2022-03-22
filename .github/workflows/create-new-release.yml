@@ -49,37 +49,6 @@ jobs:
         with:
           github_token: ${{ secrets.PUSH_TO_RELEASE }}
           branch: r${{ github.event.inputs.release-tag }}
-  # package-PyPI:
-  #   needs: [check-version-and-create-branch]
-  #   # The type of runner that the job will run on
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     PYPI_BUILDING: SET
-  #   # Steps represent a sequence of tasks that will be executed as part of the job
-  #   steps:
-  #     - uses: actions/checkout@master
-  #       with:
-  #         ref: r${{ github.event.inputs.release-tag }}
-  #     - name: Setup conda
-  #       uses: s-weigand/setup-conda@v1
-  #       with:
-  #         python-version: 3.9
-  #     - name: Generate package
-  #       run: |
-  #         conda install python pip pybind11 setuptools wheel gcc gxx -c conda-forge
-  #     - run: |
-  #         python setup.py sdist
-  #     - name: Publish distribution 📦 to PyPI
-  #       uses: pypa/gh-action-pypi-publish@master
-  #       with:
-  #         password: ${{ secrets.PYPI_API_TOKEN }}
-  #     - name: Release
-  #       uses: softprops/action-gh-release@v1
-  #       with:
-  #         files: |
-  #           dist/*.tar.gz
-  #         tag_name: r${{ github.event.inputs.release-tag }}
-  #         name: Release ${{ github.event.inputs.release-tag }}
   linux-wheels:
     needs: [check-version-and-create-branch]
     runs-on: ubuntu-latest
@@ -130,9 +99,10 @@ jobs:
         uses: actions/setup-python@v1
         with:
           python-version: 3.9
-      - name: Write entry points
+      - name: Write entry points and remove PEP 518 `pyproject.toml`
         run: |
           python ci/pre_build/conda_entry_points.py conda/meta.yaml
+          rm -rf pyproject.toml
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       - name: Setup conda
@@ -169,9 +139,10 @@ jobs:
         uses: s-weigand/setup-conda@v1
         with:
           python-version: 3.9
-      - name: Write entry points
+      - name: Write entry points and remove PEP 518 `pyproject.toml`
         run: |
           python ci/pre_build/conda_entry_points.py conda/meta.yaml
+          rm -rf pyproject.toml
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify

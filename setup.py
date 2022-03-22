@@ -45,10 +45,10 @@ setupArgs = {
 
 if "PYPI_BUILDING" in os.environ:
     install_requires = [
-        "torch<2",
-        "torchvision",
-        "tqdm",
-        "tensorboard<3",
+        "torch>=1.9,<2",
+        "torchvision>=0.11,<1",
+        "tqdm<5",
+        "tensorboard>=2.3,<3",
         "rich<11",
         "lmdb<2",
         "pyyaml<7",
