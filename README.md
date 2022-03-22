@@ -199,7 +199,7 @@ Options:
   -q, --quiet        Silence all messages, this option has higher priority to
                      `-D/--debug`.
   -qp INTEGER RANGE  Quantization parameter. Higher means better image quality
-                     and larger size.  [default: 3; 1<=x<=13]
+                     and larger size.  [default: 2; 1<=x<=13]
   --local FILE       Use a local model path instead of download by `qp`.
   --disable-gpu      Use pure CPU to perform compression. This will be slow.
   --mse              Use model optimized for PSNR other than MsSSIM.
@@ -209,7 +209,7 @@ Options:
 
 ```
 ```bash
-mcquic -qp 3 path/to/an/image path/to/output.mcq
+mcquic -qp 2 path/to/an/image path/to/output.mcq
 ```
 * Decompress images
 ```bash
@@ -245,7 +245,7 @@ Now you should in the `mcquic` virtual environment. If not, please activate it b
 * Compress images
 ```bash
 mcquic --help
-mcquic -qp 3 assets/sample.png assets/compressed.mcq
+mcquic -qp 2 assets/sample.png assets/compressed.mcq
 ```
 * Decompress images
 ```bash
@@ -289,7 +289,7 @@ I've released one pretrained model (Sorry, currently I don't have much free GPUs
 | Model No. 	| Channel 	| M 	|        K        	| Throughput (Encode/Decode) 	| Avg.BPP 	|
 |:---------:	|:-------:	|:-:	|:---------------:	|:--------------------------:	|:-------:	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
-|         3 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
+|         2 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 
 The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading, *etc.* are not included in the test.
