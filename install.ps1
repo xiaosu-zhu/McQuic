@@ -25,7 +25,7 @@ if (Check-Command -cmdname 'conda')
 
     conda activate mcquic
 
-    conda install tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" -c xiaosu-zhu -c conda-forge
+    conda install tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" packaging -c xiaosu-zhu -c conda-forge
 
     if ($env:CONDA_DEFAULT_ENV -ine "mcquic")
     {
@@ -33,7 +33,7 @@ if (Check-Command -cmdname 'conda')
         exit 1
     }
 
-    $env:PYPI_BUILDING = "SET"
+    $env:ADD_ENTRY = "SET"
 
     pip install -e .
 
@@ -42,6 +42,7 @@ if (Check-Command -cmdname 'conda')
     Write-Output "Installation done!"
 
     Write-Output "If you want to train models, please install NVIDIA/Apex manually."
+    Write-Output "If you want to use streamlit service, please install streamlit via pip."
 }
 else
 {

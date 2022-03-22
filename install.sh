@@ -17,7 +17,7 @@ eval "$(conda shell.bash hook)"
 
 conda activate mcquic
 
-conda install -y -n mcquic tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" -c xiaosu-zhu -c conda-forge
+conda install -y -n mcquic tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" packaging -c xiaosu-zhu -c conda-forge
 
 
 if [ "$CONDA_DEFAULT_ENV" != "mcquic"]
@@ -27,7 +27,7 @@ then
 fi
 
 
-PYPI_BUILDING=SET pip install -e .
+ADD_ENTRY=SET pip install -e .
 
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -41,3 +41,4 @@ fi
 echo "Installation done!"
 
 echo "If you want to train models, please install NVIDIA/Apex manually."
+echo "If you want to use streamlit service, please install streamlit via pip."
