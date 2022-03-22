@@ -19,7 +19,7 @@ from mcquic.utils.specification import File
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
 MODELS_HASH = {
-    qp_2_msssim: "fcc58b73"
+    "qp_2_msssim": "fcc58b73"
 }
 
 
