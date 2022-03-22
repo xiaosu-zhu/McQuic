@@ -19,7 +19,7 @@ from mcquic.utils.specification import File
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
 MODELS_HASH = {
-    3: "fcc58b73"
+    "qp_2_msssim": "fcc58b73"
 }
 
 
@@ -152,9 +152,12 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
         logger.info("Use local model.")
     else:
         suffix = "mse" if mse else "msssim"
-        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}_{MODELS_HASH[qp]}.mcquic", map_location=device, check_hash=True)
+        key = f"qp_{qp}_{suffix}"
+        if key not in MODELS_HASH:
+            raise ValueError(f"The provided {key} combination not found in pretrained models.")
+        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}_{MODELS_HASH[key]}.mcquic", map_location=device, check_hash=True)
 
-        logger.info("Use model `--qp %d` targeted `%s`.", qp, suffix)
+        logger.info("Use model `-qp %d` targeted `%s`.", qp, suffix)
 
     if not "version" in ckpt:
         raise RuntimeError("You are using a too old ckpt where `version` not in it.")
@@ -162,7 +165,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)
-    model.QuantizationParameter = str(local) if local is not None else str(qp)
+    model.QuantizationParameter = str(local) if local is not None else key
     model.load_state_dict(ckpt["model"])
     logger.info(f"Model loaded, params: {config.Model.Params}.")
     return model
@@ -178,7 +181,7 @@ def entryPoint():
 @entryPoint.command(default=True)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
-@click.option("-qp", type=click.IntRange(0, 13), default=3, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
+@click.option("-qp", type=click.IntRange(0, 13), default=2, show_default=True, help="Quantization parameter. Higher means better image quality and larger size.")
 @click.option("--local", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), help="Use a local model path instead of download by `qp`.")
 @click.option("--disable-gpu", is_flag=True, help="Use pure CPU to perform compression. This will be slow.")
 @click.option("--mse", is_flag=True, help="Use model optimized for PSNR other than MsSSIM.")

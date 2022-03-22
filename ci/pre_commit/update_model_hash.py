@@ -33,14 +33,15 @@ for asset in assets:
     stem = name.split(".")[0]
     component = stem.split("_")
     qp = component[1]
+    target = component[2]
     hashStr = component[-1]
-    print(qp, hashStr)
+    print(qp, target, hashStr)
     if len(hashStr) == 8:
         try:
             int(hashStr, 16)
         except ValueError:
             continue
-        MODELS_HASH[int(qp)] = hashStr
+        MODELS_HASH[f"qp_{qp}_{target}"] = hashStr
 
 MODELS_HASH = """MODELS_HASH = {
 %s

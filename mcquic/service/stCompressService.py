@@ -19,7 +19,7 @@ except:
     raise ImportError("To run `mcquic service`, please install Streamlit by `pip install streamlit` firstly.")
 
 
-MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/qp_3_msssim_fcc58b73.mcquic"
+MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/qp_2_msssim_fcc58b73.mcquic"
 
 HF_SPACE = "HF_SPACE" in os.environ
 
@@ -30,7 +30,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)
-    model.QuantizationParameter = str(local) if local is not None else str(qp)
+    model.QuantizationParameter = str(local) if local is not None else "qp_2_msssim"
     model.load_state_dict(ckpt["model"])
     return model
 
@@ -91,7 +91,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
 <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
-> Due to resources limitation, I only provide compression service with model `qp = 3`.
+> Due to resources limitation, I only provide compression service with model `qp = 2`.
 
 <br/>
 <br/>

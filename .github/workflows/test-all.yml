@@ -35,7 +35,7 @@ jobs:
           then
               exit 1
           fi
-          mcquic -qp 3 assets/sample.png ./
+          mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
           mcquic train --help
       - name: Test complete
@@ -57,7 +57,7 @@ jobs:
           C:\Miniconda\condabin\conda-hook.ps1
           conda activate 'C:\Miniconda\'
           conda activate mcquic
-          mcquic -qp 3 assets/sample.png ./
+          mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
           mcquic train --help
       - name: Test complete
