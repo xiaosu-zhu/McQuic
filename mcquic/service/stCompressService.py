@@ -209,7 +209,7 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 <br/>
 <br/>
 
-<p align="center"><a href="localhost" target="_blank">CVF Open Access</a> | <a href="localhost" target="_blank">arXiv</a> | <a href="https://github.com/xiaosu-zhu/McQuic#citation" target="_blank">BibTex</a> | <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">Demo</a></p>
+<p align="center"><a href="localhost" target="_blank">CVF Open Access</a> | <a href="https://arxiv.org/abs/2203.10897" target="_blank">arXiv</a> | <a href="https://github.com/xiaosu-zhu/McQuic#citation" target="_blank">BibTex</a> | <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">Demo</a></p>
 
 """, unsafe_allow_html=True)
 
