@@ -14,7 +14,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        shell: [bash, zsh]
     # The type of runner that the job will run on
     runs-on: ${{ matrix.os }}
     steps:
@@ -24,7 +23,6 @@ jobs:
         with:
           python-version: 3.9
       - name: Install and test mcquic
-        shell: ${{ matrix.shell }}
         run: |
           ./install.sh
           eval "$(conda shell.bash hook)"
