@@ -31,6 +31,25 @@
 </p>
 
 
+<p align="center">
+  <a href="https://github.com/xiaosu-zhu/McQuic/actions/workflows/test-all.yml">
+    <img src="https://github.com/xiaosu-zhu/McQuic/actions/workflows/test-all.yml/badge.svg" alt="All tests"/>
+  </a>
+  <a href="https://anaconda.org/xiaosu-zhu/mcquic" target="_blank">
+    <img src="https://img.shields.io/conda/v/xiaosu-zhu/mcquic?label=mcquic" alt="Conda package"/>
+  </a>
+  <a href="https://anaconda.org/xiaosu-zhu/mcquic" target="_blank">
+    <img src="https://img.shields.io/conda/pn/xiaosu-zhu/mcquic" alt="Platforms"/>
+  </a>
+  <a href="https://anaconda.org/xiaosu-zhu/mcquic" target="_blank">
+    <img src="https://img.shields.io/conda/dn/xiaosu-zhu/mcquic" alt="Downloads"/>
+  </a>
+  <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">
+    <img src="https://img.shields.io/badge/dynamic/json?label=%F0%9F%A4%97%20Hugging%20Face%20Space&query=stage&url=https%3A%2F%2Fhuggingface.co%2Fapi%2Fspaces%2Fxiaosu-zhu%2FMcQuic%2Fstage" alt="Demo"/>
+  </a>
+</p>
+
+
 <br/>
 
 <p align="center">
