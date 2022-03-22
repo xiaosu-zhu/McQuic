@@ -25,7 +25,7 @@ def registerForTrain():
         import apex
         OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
     except:
-        raise ImportError("`import apex` failed. Apex not installed, LAMB optimizer is disabled.")
+        raise ImportError("`import apex` failed. Apex not installed.")
     OptimizerRegistry.register("Adam")(torch.optim.Adam)
 
     LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)

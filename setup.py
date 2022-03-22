@@ -56,8 +56,15 @@ if "PYPI_BUILDING" in os.environ:
         "click<9",
         "vlutils",
         "msgpack-python<2",
-        "streamlit<2"
-    ],
+        "streamlit<2",
+        "packaging"
+    ]
+
+    setupArgs.update({
+        "install_requires": install_requires
+    })
+
+if "ADD_ENTRY" in os.environ:
     console_scripts = [
         "mcquic = mcquic.cli:entryPoint",
         "mcquic-train = mcquic.train.cli:entryPoint",
@@ -65,7 +72,6 @@ if "PYPI_BUILDING" in os.environ:
         "mcquic-validate = mcquic.validate.cli:entryPoint"
     ]
     setupArgs.update({
-        "install_requires": install_requires,
         "entry_points": {
             'console_scripts': console_scripts
         }
