@@ -50,7 +50,7 @@ jobs:
       - name: Install mcquic
         run: |
           C:\Miniconda\shell\condabin\conda-hook.ps1
-          'y' | ./install.ps1
+          'y' | powershell -ExecutionPolicy ByPass -noprofile -Command "& 'C:\Miniconda\shell\condabin\conda-hook.ps1'; './install.ps1'"
       - name: Test mcquic
         run: |
           C:\Miniconda\shell\condabin\conda-hook.ps1
