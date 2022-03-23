@@ -25,7 +25,7 @@ if (Check-Command -cmdname 'conda')
 
     conda activate mcquic
 
-    conda install tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" packaging -c xiaosu-zhu -c conda-forge
+    conda install -y tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" packaging -c xiaosu-zhu -c conda-forge
 
     if ($env:CONDA_DEFAULT_ENV -ine "mcquic")
     {
