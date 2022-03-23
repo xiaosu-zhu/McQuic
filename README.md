@@ -481,6 +481,9 @@ class Quantizer(nn.Module):
         self._codebook = nn.Parameter(torch.empty(m, k, n // m))
         self._initParameters()
 
+    def _initParameters(self):
+        nn.init.normal_(self._codebook, std=math.sqrt(2 / (5 * n / m)))
+
     def forward(self, x: Tensor, t: float = 1.0) -> (Tensor, Tensor):
         """
         Module forward.

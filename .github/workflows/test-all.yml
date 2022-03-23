@@ -50,6 +50,8 @@ jobs:
       - name: Install mcquic
         run: |
           C:\Miniconda\shell\condabin\conda-hook.ps1
+          conda init powershell
+          "if (test-path $PROFILE.CurrentUserAllHosts) { & $PROFILE.CurrentUserAllHosts}"
           'y' | powershell -ExecutionPolicy ByPass -noprofile -file "./install.ps1"
       - name: Test mcquic
         run: |
