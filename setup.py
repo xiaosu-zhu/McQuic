@@ -56,7 +56,7 @@ if "PYPI_BUILDING" in os.environ:
         "click<9",
         "vlutils",
         "msgpack-python<2",
-        "streamlit<2",
+        # "streamlit<2",
         "packaging"
     ]
 
