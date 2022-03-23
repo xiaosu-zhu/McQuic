@@ -49,11 +49,11 @@ jobs:
           python-version: 3.9
       - name: Install mcquic
         run: |
-          C:\Miniconda\condabin\conda-hook.ps1
+          C:\Miniconda\shell\condabin\conda-hook.ps1
           'y' | ./install.ps1
       - name: Test mcquic
         run: |
-          C:\Miniconda\condabin\conda-hook.ps1
+          C:\Miniconda\shell\condabin\conda-hook.ps1
           conda activate mcquic
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
