@@ -152,7 +152,7 @@ class BasicLMDB(VisionDataset):
             self._env.close()
 
     def _initEnv(self):
-        self._env = lmdb.open(self.root, map_size=1024*1024*1024*8, subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=self._maxTxns, lock=False)
+        self._env = lmdb.open(self.root, map_size=int(1024 ** 4), subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=self._maxTxns, lock=False)
         self._txn = self._env.begin(write=False, buffers=True)
 
     def __getitem__(self, index: int) -> Tensor:

@@ -255,7 +255,7 @@ class MainTrainer(_baseTrainer):
         signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
-        if self.bestRate / self.bestDistortion > 1e4:
+        if abs(self.bestRate / self.bestDistortion) > 1e4:
             self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: N/A.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
         else:
             self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
