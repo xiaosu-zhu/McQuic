@@ -23,7 +23,7 @@ from .trainer import getTrainer
 def registerForTrain():
     try:
         import apex
-        OptimizerRegistry.register("Lamb")(functools.partial(apex.optimizers.FusedLAMB, set_grad_none=True))
+        OptimizerRegistry.register("Lamb")(apex.optimizers.FusedLAMB)
     except:
         raise ImportError("`import apex` failed. Apex not installed.")
     OptimizerRegistry.register("Adam")(torch.optim.Adam)
