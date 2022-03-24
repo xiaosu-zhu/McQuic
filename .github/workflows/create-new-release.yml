@@ -83,6 +83,7 @@ jobs:
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   macos-wheels:
+    needs: [check-version-and-create-branch]
     runs-on: macos-latest
     strategy:
       matrix:
@@ -92,6 +93,8 @@ jobs:
       ADD_ENTRY: SET
     steps:
       - uses: actions/checkout@v2
+        with:
+          ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
@@ -115,6 +118,7 @@ jobs:
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   windows-wheels:
+    needs: [check-version-and-create-branch]
     runs-on: windows-latest
     strategy:
       matrix:
@@ -124,6 +128,8 @@ jobs:
       ADD_ENTRY: SET
     steps:
       - uses: actions/checkout@v2
+        with:
+          ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
@@ -147,12 +153,15 @@ jobs:
           tag_name: r${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   pypi-sdist:
+    needs: [check-version-and-create-branch]
     runs-on: ubuntu-latest
     env:
       PYPI_BUILDING: SET
       ADD_ENTRY: SET
     steps:
       - uses: actions/checkout@v2
+        with:
+          ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
