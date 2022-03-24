@@ -1,4 +1,5 @@
-from typing import List, Union
+import os
+from typing import List, Optional, Union
 from pathlib import Path
 from distutils.version import StrictVersion
 import warnings
@@ -6,6 +7,7 @@ import hashlib
 
 from torch import nn
 from rich import filesize
+from rich.progress import Progress
 
 import mcquic
 
@@ -46,8 +48,15 @@ def versionCheck(versionStr: str):
     return True
 
 
-def hashOfFile(path: StrPath):
+def hashOfFile(path: StrPath, progress: Optional[Progress] = None):
     sha256 = hashlib.sha256()
+
+    fileSize = os.path.getsize(path)
+
+    if progress is not None:
+        task = progress.add_task(f"[ Hash ]", total=fileSize, progress="0.00%", suffix="")
+
+    now = 0
 
     with open(path, 'rb') as fp:
         while True:
@@ -56,6 +65,12 @@ def hashOfFile(path: StrPath):
             if not chunk:
                 break
             sha256.update(chunk)
+            now += 65536
+            if progress is not None:
+                progress.update(task, advance=65536, progress=f"{now / fileSize * 100 :.2f}%")
+
+    if progress is not None:
+        progress.remove_task(task)
 
     hashResult = sha256.hexdigest()
     return hashResult
