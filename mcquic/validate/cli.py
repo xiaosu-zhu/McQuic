@@ -95,7 +95,8 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
     logger.info(f"Saved at `{export}`.")
     logger.info("Add hash to file...")
 
-    hashResult = hashOfFile(export)
+    with progress:
+        hashResult = hashOfFile(export, progress)
 
     newName = f"{export.stem}-{hashResult[:8]}.{export.suffix}"
 

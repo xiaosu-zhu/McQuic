@@ -167,6 +167,7 @@ class BasicLMDB(VisionDataset):
         if self._env is None or self._txn is None:
             self._initEnv()
         sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, sys.byteorder))))) # type: ignore
+        # UNCHANGED --- Slightly speedup
         sample = decode_image(sample, ImageReadMode.UNCHANGED)
         if sample.shape[0] == 1:
             sample = sample.repeat((3, 1, 1))

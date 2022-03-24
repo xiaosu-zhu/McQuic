@@ -335,7 +335,9 @@ class MainTrainer(_baseTrainer):
 
         rate, distortion = results["BPP"], results[self.config.Train.Target]
 
-        if (distortion / rate) > (self.bestDistortion / self.bestRate):
+        # TODO: Why d/r continously decrease?
+        # if (distortion / rate) > (self.bestDistortion / self.bestRate):
+        if distortion > self.bestDistortion:
             self.bestDistortion = distortion
             self.bestRate = rate
             self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
