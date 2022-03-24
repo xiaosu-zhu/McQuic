@@ -214,7 +214,6 @@ class MainTrainer(_baseTrainer):
 
         self.validator = Validator(self.config, self.rank)
 
-        self.formatter = Decibel(1.0).to(self.rank)
         self.diffTracker = EMATracker(()).to(self.rank)
 
         # Call function at every X epoches.
@@ -287,7 +286,7 @@ class MainTrainer(_baseTrainer):
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
-        distortionDB = self.formatter(distortion)
+        distortionDB = self._model.Compressor.formatDistortion(distortion)
         moment = self.diffTracker(distortionDB)
 
         task = self.progress.get_task(self.trainingBar)

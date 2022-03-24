@@ -1,13 +1,18 @@
+from typing import List, Union
+from pathlib import Path
 from distutils.version import StrictVersion
 import warnings
+import hashlib
 
-from typing import List
 from torch import nn
 from rich import filesize
 
 import mcquic
 
 from .registry import *
+
+StrPath = Union[str, Path]
+
 
 def nop(*_, **__):
     pass
@@ -39,3 +44,18 @@ def versionCheck(versionStr: str):
     if minor != bMinor:
         warnings.warn(f"Minor version mismatch. Given {version}, but I'm {builtInVersion} now.")
     return True
+
+
+def hashOfFile(path: StrPath):
+    sha256 = hashlib.sha256()
+
+    with open(path, 'rb') as fp:
+        while True:
+            # Reading is buffered, so we can read smaller chunks.
+            chunk = fp.read(65536)
+            if not chunk:
+                break
+            sha256.update(chunk)
+
+    hashResult = sha256.hexdigest()
+    return hashResult
