@@ -5,16 +5,18 @@ import shutil
 import sys
 import pathlib
 
-import tqdm
 import lmdb
 from PIL import Image
 import PIL
 import click
+from mcquic.train.utils import getRichProgress
+
+from mcquic.utils import hashOfFile
+
 _EXT = [".png", ".jpg", ".jpeg"]
 
 
 def write(txn, i: bytes, path: str):
-    # fileName = os.path.basename(path)
     with open(path, "rb") as fp:
         txn.put(i, fp.read())
 
@@ -31,19 +33,32 @@ def findAllWithSize(dirPath, ext):
     return files
 
 
-def getFilesFromDir(root, strict: bool = False):
+def getFilesFromDir(root, progress, strict: bool = False):
     files = findAllWithSize(root, _EXT)
     newFile = list()
-    for f in tqdm.tqdm(files, ncols=60, bar_format="{l_bar}{bar}| Search in %d images" % len(files)):
+
+    total = len(files)
+
+    task = progress.add_task(f"[ Check ]", total=total, progress="0.00%", suffix=f"Scanning {total} images")
+
+    for i, f in enumerate(files):
         try:
             a = Image.open(f[0])
         except PIL.UnidentifiedImageError:
             continue
         w, h = a.size
-        if strict and (h < 512 or w < 512):
-            continue
+        if strict:
+            # force images size > 512.
+            if h < 512 or w < 512:
+                continue
         newFile.append(f)
-    print(f"{len(newFile)} images meets requirement.")
+
+        progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
+
+    print(f"{len(newFile)} images meets requirement.")\
+
+    progress.remove_task(task)
+
     return [x[0] for x in newFile]
 
 
@@ -51,22 +66,42 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
 
-    allFiles = getFilesFromDir(imageFolder, True)
+    progress = getRichProgress()
 
-    shuffle(allFiles)
+    with progress:
 
-    env = lmdb.Environment(str(targetDir), subdir=True, map_size=int(1024 ** 4))
+        allFiles = getFilesFromDir(imageFolder, progress, True)
 
-    with env.begin(write=True) as txn:
-        i = -1
-        for i, f in enumerate(tqdm.tqdm(allFiles, ncols=60, bar_format="{l_bar}{bar}| Write %d images..." % len(allFiles))):
-            write(txn, i.to_bytes(32, sys.byteorder), f)
+        shuffle(allFiles)
+
+        env = lmdb.Environment(str(targetDir), subdir=True, map_size=int(1024 ** 4))
+
+        total = len(allFiles)
+
+        task = progress.add_task(f"[ Write ]", total=total, progress="0.00%", suffix=f"Writing {total} images")
+
+        with env.begin(write=True) as txn:
+            i = -1
+            for i, f in enumerate(allFiles):
+                write(txn, i.to_bytes(32, sys.byteorder), f)
+                progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
+        env.close()
+
+        progress.remove_task(task)
+
+
+        dbFile = os.path.join(targetDir, "data.mdb")
+
+        print("Calculate database hash...")
+
+        hashResult = hashOfFile(dbFile, progress)
+
         # Create metadata needed for dataset
         with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
             json.dump({
                 "length": i + 1,
+                "hash": hashResult
             }, fp)
-    env.close()
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])

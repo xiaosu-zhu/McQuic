@@ -214,7 +214,6 @@ class MainTrainer(_baseTrainer):
 
         self.validator = Validator(self.config, self.rank)
 
-        self.formatter = Decibel(1.0).to(self.rank)
         self.diffTracker = EMATracker(()).to(self.rank)
 
         # Call function at every X epoches.
@@ -287,7 +286,7 @@ class MainTrainer(_baseTrainer):
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
-        distortionDB = self.formatter(distortion)
+        distortionDB = self._model.formatDistortion(distortion)
         moment = self.diffTracker(distortionDB)
 
         task = self.progress.get_task(self.trainingBar)
@@ -336,7 +335,9 @@ class MainTrainer(_baseTrainer):
 
         rate, distortion = results["BPP"], results[self.config.Train.Target]
 
-        if (distortion / rate) > (self.bestDistortion / self.bestRate):
+        # TODO: Why d/r continously decrease?
+        # if (distortion / rate) > (self.bestDistortion / self.bestRate):
+        if distortion > self.bestDistortion:
             self.bestDistortion = distortion
             self.bestRate = rate
             self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")

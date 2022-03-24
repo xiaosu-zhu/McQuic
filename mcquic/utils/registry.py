@@ -9,7 +9,8 @@ __all__ = [
     "ValueTunerRegistry",
     "LrSchedulerRegistry",
     "OptimizerRegistry",
-    "EntrypointRegistry"
+    "EntrypointRegistry",
+    "LossRegistry"
 ]
 
 class ModuleRegistry(Registry[Type["torch.nn.Module"]]):
@@ -25,4 +26,7 @@ class OptimizerRegistry(Registry[Type["torch.optim.optimizer.Optimizer"]]):
     pass
 
 class EntrypointRegistry(Registry[Callable[[Tuple[str], ], int]]):
+    pass
+
+class LossRegistry(Registry[Type["torch.nn.Module"]]):
     pass
