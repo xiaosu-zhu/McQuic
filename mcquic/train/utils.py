@@ -24,7 +24,7 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger: Union[lo
     torch.autograd.set_detect_anomaly(False) # type: ignore
     torch.backends.cudnn.benchmark = True # type: ignore
 
-    # TODO: Havn't test on Ampere or newer devices yet.
+    # TODO: Havn't test on A100 or better devices yet.
     #       Disable it to prevent precision error in advance
     #       Until it's possible to validate.
     torch.backends.cuda.matmul.allow_tf32 = False # type: ignore
