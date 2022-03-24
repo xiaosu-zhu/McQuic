@@ -4,7 +4,7 @@ import pathlib
 import logging
 
 import mcquic
-from mcquic.utils import versionCheck
+from mcquic.utils import hashOfFile, versionCheck
 
 
 def checkArgs(debug: bool, quiet: bool):
@@ -94,17 +94,9 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
 
     logger.info(f"Saved at `{export}`.")
     logger.info("Add hash to file...")
-    sha256 = hashlib.sha256()
 
-    with open(export, 'rb') as fp:
-        while True:
-            # Reading is buffered, so we can read smaller chunks.
-            chunk = fp.read(65536)
-            if not chunk:
-                break
-            sha256.update(chunk)
-
-    hashResult = sha256.hexdigest()
+    with progress:
+        hashResult = hashOfFile(export, progress)
 
     newName = f"{export.stem}-{hashResult[:8]}.{export.suffix}"
 

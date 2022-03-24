@@ -11,7 +11,7 @@ from vlutils.config import summary
 
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
-from mcquic.loss import CompressionLossBig
+from mcquic.loss import Distortion
 from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry
 import mcquic.train.lrSchedulers
@@ -36,7 +36,7 @@ def registerForTrain():
 
 def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
     compressor = Compressor(**modelParams)
-    criterion = CompressionLossBig(lossTarget)
+    criterion = Distortion(lossTarget)
 
     return compressor, criterion
 
