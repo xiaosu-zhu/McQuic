@@ -65,6 +65,8 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
         with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
             json.dump({
                 "length": i + 1,
+                # TODO: Add file hash in metadata
+                # "hash": hashOfFile(os.path.join(targetDir, "data.mdb"))
             }, fp)
     env.close()
 
