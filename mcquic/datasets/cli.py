@@ -10,6 +10,7 @@ import lmdb
 from PIL import Image
 import PIL
 import click
+from torchvision.io.image import read_image, encode_png, ImageReadMode
 
 from mcquic.utils import hashOfFile
 
@@ -17,9 +18,12 @@ _EXT = [".png", ".jpg", ".jpeg"]
 
 
 def write(txn, i: bytes, path: str):
-    # fileName = os.path.basename(path)
-    with open(path, "rb") as fp:
-        txn.put(i, fp.read())
+    # force images to be RGB and write to png compression level 9
+    image = read_image(path, ImageReadMode.RGB)
+
+    encoded = encode_png(image, 9)
+
+    txn.put(i, bytes(encoded.tolist()))
 
 
 def findAllWithSize(dirPath, ext):
