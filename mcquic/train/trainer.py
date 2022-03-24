@@ -286,7 +286,7 @@ class MainTrainer(_baseTrainer):
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
-        distortionDB = self._model.Compressor.formatDistortion(distortion)
+        distortionDB = self._model.formatDistortion(distortion)
         moment = self.diffTracker(distortionDB)
 
         task = self.progress.get_task(self.trainingBar)
