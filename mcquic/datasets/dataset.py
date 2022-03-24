@@ -96,9 +96,8 @@ class Basic(VisionDataset):
             Tensor: sample at index.
         """
         path = self.samples[index]
-        # sample = readImage(path)
-        # sample = self.loader(path)
-        sample = read_image(path, ImageReadMode.RGB)
+        # No need to force RGB. Transforms will handle it.
+        sample = read_image(path, ImageReadMode.UNCHANGED)
         if self.transform is not None:
             sample = self.transform(sample)
         return sample, Path(path).stem
@@ -168,6 +167,7 @@ class BasicLMDB(VisionDataset):
             self._initEnv()
         sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(self._txn.get(index.to_bytes(32, sys.byteorder))))) # type: ignore
         # UNCHANGED --- Slightly speedup
+        # No need to force RGB. Transforms will handle it.
         sample = decode_image(sample, ImageReadMode.UNCHANGED)
         if sample.shape[0] == 1:
             sample = sample.repeat((3, 1, 1))
