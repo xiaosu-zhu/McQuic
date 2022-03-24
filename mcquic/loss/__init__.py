@@ -1,15 +1,9 @@
-from difflib import restore
-import math
-import torch
 from torch import nn
 import torch.nn.functional as F
 
-from mcquic.validate.metrics import MsSSIM
-
-
-class L1L2Loss(nn.MSELoss):
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return (F.mse_loss(input, target, reduction=self.reduction) + F.l1_loss(input, target, reduction=self.reduction)) / 2
+from mcquic.validate.metrics import MsSSIM as _m
+from mcquic.validate.utils import Decibel
+from mcquic.utils.registry import LossRegistry
 
 
 class Distortion(nn.Module):
@@ -18,7 +12,7 @@ class Distortion(nn.Module):
         if target not in ["MsSSIM", "PSNR"]:
             raise ValueError(f"The argument `target` not in (\"MsSSIM\", \"PSNR\"), got \"{target}\".")
         if target == "MsSSIM":
-            self._ssim = MsSSIM(data_range=2.0, sizeAverage=True)
+            self._ssim = _m(data_range=2.0, sizeAverage=True)
             self._distortion = self._dSsim
         else:
             self._distortion = self._dPsnr
@@ -37,3 +31,13 @@ class Distortion(nn.Module):
 
     def formatDistortion(self, loss):
         return self._formatter(loss)
+
+
+@LossRegistry.register
+class MsSSIM(Distortion):
+    pass
+
+
+@LossRegistry.register
+class PSNR(Distortion):
+    pass
