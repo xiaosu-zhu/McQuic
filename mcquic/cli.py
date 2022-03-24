@@ -85,21 +85,26 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
 
             newLocal = None
             newQP = -1
+            newMSE = False
 
             try:
-                newQP = int(source.FileHeader.QuantizationParameter)
+                # qp_x_[mse/msssim]
+                parsed = source.FileHeader.QuantizationParameter.split("_")
+                newQP = int(parsed[1])
+                newMSE = parsed[2] == "mse"
                 newLocal = None
-            except ValueError:
+            except:
                 newLocal = pathlib.Path(source.FileHeader.QuantizationParameter)
                 newQP = -1
             finally:
                 if newLocal is None and newQP < 0:
-                    logger.warning("The compressed binary is using a pre-release model since `qp` in file is -1, fallback to use current args.")
+                    logger.warning("The compressed binary is produced by a pre-release model since `qp` in file is -1, fallback to use current args.")
                 elif isinstance(newLocal, pathlib.Path) and not(newLocal.exists() and newLocal.is_file()):
                     logger.warning("The compressed binary is compressed by a local model located in `%s`. Unfortunately, we can't find it. Fallback to use current args or you could try again later.", newLocal)
                 else:
                     qp = newQP
                     local = newLocal
+                    mse = newMSE
 
             model = loadModel(qp, local, device, mse, logger).eval()
 
