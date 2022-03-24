@@ -31,9 +31,6 @@ class _composed(Module):
     def Freq(self):
         return self._compressor._quantizer._entropyCoder.Freq
 
-    def formatDistortion(self, loss: torch.Tensor):
-        return self._criterion.formatDistortion(loss)
-
 class Composed(DistributedDataParallel):
     def __init__(self, compressor: BaseCompressor, criterion: Distortion, device_ids: Optional[_devices_t] = None, output_device: Optional[_device_t] = None, dim: int = 0, broadcast_buffers: bool = True, process_group: Optional[Any] = None, bucket_cap_mb: float = 25, find_unused_parameters: bool = False, **kwargs):
         module = _composed(compressor, criterion)
@@ -51,3 +48,6 @@ class Composed(DistributedDataParallel):
             proportion = torch.zeros(())
         self.Compressor.syncCodebook()
         return proportion
+
+    def formatDistortion(self, loss: torch.Tensor):
+        return self.module._criterion.formatDistortion(loss)
