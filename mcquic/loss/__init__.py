@@ -12,7 +12,7 @@ class L1L2Loss(nn.MSELoss):
         return (F.mse_loss(input, target, reduction=self.reduction) + F.l1_loss(input, target, reduction=self.reduction)) / 2
 
 
-class CompressionLossBig(nn.Module):
+class Distortion(nn.Module):
     def __init__(self, target):
         super().__init__()
         if target not in ["MsSSIM", "PSNR"]:
@@ -23,6 +23,8 @@ class CompressionLossBig(nn.Module):
         else:
             self._distortion = self._dPsnr
 
+        self._formatter = Decibel(1.0 if target == "MsSSIM" else 2.0)
+
     def _dPsnr(self, restored, image):
         return F.mse_loss(restored, image)
 
@@ -32,3 +34,6 @@ class CompressionLossBig(nn.Module):
     def forward(self, restored, image, *_):
         dLoss = self._distortion(restored, image)
         return 0.0, dLoss
+
+    def formatDistortion(self, loss):
+        return self._formatter(loss)

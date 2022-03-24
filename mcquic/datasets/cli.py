@@ -10,6 +10,9 @@ import lmdb
 from PIL import Image
 import PIL
 import click
+
+from mcquic.utils import hashOfFile
+
 _EXT = [".png", ".jpg", ".jpeg"]
 
 
@@ -61,14 +64,20 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
         i = -1
         for i, f in enumerate(tqdm.tqdm(allFiles, ncols=60, bar_format="{l_bar}{bar}| Write %d images..." % len(allFiles))):
             write(txn, i.to_bytes(32, sys.byteorder), f)
-        # Create metadata needed for dataset
-        with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
-            json.dump({
-                "length": i + 1,
-                # TODO: Add file hash in metadata
-                # "hash": hashOfFile(os.path.join(targetDir, "data.mdb"))
-            }, fp)
     env.close()
+
+
+    dbFile = os.path.join(targetDir, "data.mdb")
+
+    fileSize = os.path.getsize(dbFile)
+
+    # Create metadata needed for dataset
+    with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
+        json.dump({
+            "length": i + 1,
+            # TODO: Add file hash in metadata
+            # "hash": hashOfFile(os.path.join(targetDir, "data.mdb"))
+        }, fp)
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
