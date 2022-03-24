@@ -9,7 +9,6 @@ import lmdb
 from PIL import Image
 import PIL
 import click
-from torchvision.io.image import read_image, encode_png, ImageReadMode
 from mcquic.train.utils import getRichProgress
 
 from mcquic.utils import hashOfFile
@@ -18,12 +17,8 @@ _EXT = [".png", ".jpg", ".jpeg"]
 
 
 def write(txn, i: bytes, path: str):
-    # force images to be RGB and write to png compression level 9
-    image = read_image(path, ImageReadMode.RGB)
-
-    encoded = encode_png(image, 9)
-
-    txn.put(i, bytes(encoded.tolist()))
+    with open(path, "rb") as fp:
+        txn.put(i, fp.read())
 
 
 def findAllWithSize(dirPath, ext):
@@ -52,8 +47,10 @@ def getFilesFromDir(root, progress, strict: bool = False):
         except PIL.UnidentifiedImageError:
             continue
         w, h = a.size
-        if strict and (h < 512 or w < 512):
-            continue
+        if strict:
+            # force images size > 512.
+            if h < 512 or w < 512:
+                continue
         newFile.append(f)
 
         progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
@@ -97,14 +94,13 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
 
         print("Calculate database hash...")
 
-        hashOfFile(dbFile, progress)
+        hashResult = hashOfFile(dbFile, progress)
 
         # Create metadata needed for dataset
         with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
             json.dump({
                 "length": i + 1,
-                # TODO: Add file hash in metadata
-                # "hash": hashOfFile(os.path.join(targetDir, "data.mdb"))
+                "hash": hashResult
             }, fp)
 
 
