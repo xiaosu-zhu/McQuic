@@ -462,7 +462,7 @@ If you think your model is awesome, please don't hasitate to [Contribute to this
 
 
 # Implement MCQ by yourself
-A minimal implementation of the multi-codebook quantizer comes up with:
+A minimal implementation of the multi-codebook quantizer comes up with (please refer to [quantizer.py](./mcquic/modules/quantizer.py#L61) for notes):
 
 ```python
 class Quantizer(nn.Module):
@@ -521,10 +521,8 @@ It will be very nice if you want to check your new ideas or add new functions �
 
 
 # To-do List
-* Docker file and bash script
-* execute pattern: `mcquic service`
-* reference model: 1,2,4~4+
-* change compressor args
+* `mcquic service`
+* Moew pretrained model
 
 # Detailed framework
 Thanks for your attention!❤️ Here are details in the paper.
