@@ -601,6 +601,7 @@ To cite our paper, please use following BibTex:
 | [batch-transforms](https://github.com/pratogab/batch-transforms)               | [MIT](https://github.com/pratogab/batch-transforms/blob/master/LICENSE) |
 | [pytorch-msssim](https://github.com/VainF/pytorch-msssim) | [MIT](https://github.com/VainF/pytorch-msssim/blob/master/LICENSE) |
 | [Streamlit](https://streamlit.io/) | [Apache-2.0](https://github.com/streamlit/streamlit/blob/develop/LICENSE) |
+| [conda](https://docs.conda.io/projects/conda/en/latest/) | [BSD 3-Clause](https://docs.conda.io/en/latest/license.html) |
 
 
 <br/>
