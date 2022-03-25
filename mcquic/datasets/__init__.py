@@ -28,13 +28,13 @@ class DummyLoader(DataLoader):
         return
 
 def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    trainDataset = BasicLMDB(datasetPath, maxTxns=(batchSize + 4) * worldSize, transform=getTrainingPreprocess())
+    trainDataset = BasicLMDB(datasetPath, maxTxns=(2 * batchSize) * worldSize, transform=getTrainingPreprocess())
     logger.debug("Create training set: %s", trainDataset)
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
-    trainLoader = DataLoader(trainDataset, sampler=trainSampler, batch_size=min(batchSize, len(trainDataset)), num_workers=batchSize + 4, pin_memory=True, persistent_workers=True)
-    prefetcher = Prefetcher(trainLoader, rank, getTrainingTransform())
-    logger.debug("Create training prefetcher: %s", prefetcher)
-    return prefetcher, trainSampler
+    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), shuffle=True, sampler=trainSampler, num_workers=2 * batchSize, pin_memory=True, prefetch_factor=4, persistent_workers=True)
+    # prefetcher = Prefetcher(trainLoader, rank, getTrainingTransform())
+    # logger.debug("Create training prefetcher: %s", prefetcher)
+    return trainLoader, trainSampler
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
     if disable:

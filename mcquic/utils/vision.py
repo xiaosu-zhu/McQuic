@@ -1,3 +1,4 @@
+import random
 import torch
 from torch import nn
 from torchvision import transforms as T
@@ -15,7 +16,7 @@ __all__ = [
 ]
 
 
-class RandomGamma(nn.Module):
+class BatchRandomGamma(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         randomChoice = torch.randint(0, 4, (len(x), ))
         x[randomChoice == 0] = srgbToLinear(x[randomChoice == 0])
@@ -23,15 +24,29 @@ class RandomGamma(nn.Module):
         x[randomChoice == 2] = randomGamma(x[randomChoice == 2], torch.rand((x[randomChoice == 2].shape[0], ), device=x.device) * 1.95 + 0.05)
         return x
 
-
 def srgbToLinear(x: torch.Tensor):
     return torch.where(x < 0.0031308, 12.92 * x, (1.055 * torch.pow(torch.abs(x), 1 / 2.4) - 0.055))
+
 def linearToSrgb(x: torch.Tensor):
     return torch.where(x < 0.04045, x / 12.92, torch.pow(torch.abs(x + 0.055) / 1.055, 2.4))
 
 def randomGamma(x: torch.Tensor, randomGammas: torch.Tensor):
-    x = torch.pow(torch.max(x, torch.zeros_like(x)), randomGammas[:, None, None, None])
+    x = torch.pow(x.clamp_(0), randomGammas)
     return x.clamp_(0.0, 1.0)
+
+def identity(x: torch.Tensor):
+    return x
+
+class RandomGamma(nn.Module):
+    _fns = [
+        srgbToLinear,
+        linearToSrgb,
+        lambda x: randomGamma(x, torch.rand((), device=x.device) * 1.95 + 0.05),
+        identity
+    ]
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        choice = random.randint(0, 3)
+        return self._fns[choice](x)
 
 
 class DeTransform(nn.Module):
