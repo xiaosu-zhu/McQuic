@@ -1,7 +1,7 @@
 # Tested under this image, try newer images at your own risk
 FROM nvcr.io/nvidia/pytorch:22.02-py3
 
-RUN conda install tqdm "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" -c xiaosu-zhu -c conda-forge -c pytorch
+RUN conda install -y "pybind11>=2.6,<3" "pip>=22" "tensorboard>=2.3,<3" "rich>=10,<11" "python-lmdb>=1.2,<2" "pyyaml>=5.4,<7" "marshmallow>=3.14,<4" "click>=8,<9" "vlutils" "msgpack-python>=1,<2" packaging -c xiaosu-zhu -c conda-forge -c pytorch
 
 WORKDIR /workspace
 
