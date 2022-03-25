@@ -20,7 +20,6 @@ from vlutils.config import serialize
 from rich import filesize
 
 from mcquic.consts import Consts
-from mcquic.datasets.prefetcher import Prefetcher
 from mcquic.validate.utils import Decibel, EMATracker
 from mcquic.modules.composed import Composed
 from mcquic import Config

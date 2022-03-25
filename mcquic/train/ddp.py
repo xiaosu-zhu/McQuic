@@ -2,7 +2,6 @@ import pathlib
 from shutil import copy2
 from typing import Tuple
 import os
-import functools
 
 import torch
 from torch import nn
@@ -11,10 +10,10 @@ from vlutils.config import summary
 
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
-from mcquic.loss import Distortion
 from mcquic.datasets import getTrainLoader, getValLoader
-from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry
-import mcquic.train.lrSchedulers
+from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry, LossRegistry
+import mcquic.train.lrSchedulers as _
+import mcquic.loss as _
 
 from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
@@ -36,7 +35,7 @@ def registerForTrain():
 
 def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
     compressor = Compressor(**modelParams)
-    criterion = Distortion(lossTarget)
+    criterion = LossRegistry.get(lossTarget)()
 
     return compressor, criterion
 

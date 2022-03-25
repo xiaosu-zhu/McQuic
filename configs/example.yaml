@@ -16,7 +16,7 @@ train:
     optim:
         key: Lamb
         params:
-            lr: 2.e-4
+            lr: 1.e-3
             # weight_decay: 0.0
             # use_nvlamb: true
     schdr:
@@ -26,6 +26,6 @@ train:
             warmup_steps: 2
             gamma: 0.9
     gpu:
-        gpus: 4
-        vRam: 20000
+        gpus: 1
+        vRam: -1
         wantsMore: false
