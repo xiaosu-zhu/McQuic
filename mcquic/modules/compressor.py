@@ -14,7 +14,7 @@ from .quantizer import BaseQuantizer, UMGMQuantizer
 
 
 class BaseCompressor(nn.Module):
-    def __init__(self, encoder: nn.Module, decoder: nn.Module, quantizer: BaseQuantizer):
+    def __init__(self, encoder: nn.Module, quantizer: BaseQuantizer, decoder: nn.Module):
         super().__init__()
         self._encoder = encoder
         self._decoder = decoder
@@ -148,4 +148,4 @@ class Compressor(BaseCompressor):
                 ResidualBlock(channel, channel, groups=1),
             ),
         })
-        super().__init__(encoder, decoder, quantizer)
+        super().__init__(encoder, quantizer, decoder)
