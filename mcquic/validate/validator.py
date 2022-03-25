@@ -85,6 +85,7 @@ class Validator:
             for _ in range(50):
                 codes, binaries, headers = model.compress(tensor, cdfs)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
+                now += 1
             endEvent.record()
             torch.cuda.synchronize()
             encoderMs = startEvent.elapsed_time(endEvent)
@@ -93,6 +94,7 @@ class Validator:
             for _ in range(50):
                 restored = model.decompress(binaries, cdfs, headers)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
+                now += 1
             endEvent.record()
             torch.cuda.synchronize()
             decoderMs = startEvent.elapsed_time(endEvent)
