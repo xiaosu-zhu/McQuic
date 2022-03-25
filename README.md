@@ -522,7 +522,7 @@ It will be very nice if you want to check your new ideas or add new functions �
 
 # To-do List
 * `mcquic service`
-* Moew pretrained model
+* More pretrained model
 
 # Detailed framework
 Thanks for your attention!❤️ Here are details in the paper.

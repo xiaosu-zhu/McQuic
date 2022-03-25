@@ -11,7 +11,6 @@ from vlutils.logger import configLogging
 
 import mcquic
 from mcquic import Config
-from mcquic.validate.cli import main
 from mcquic.modules.compressor import Compressor
 from mcquic.utils import versionCheck
 from mcquic.utils.specification import File
@@ -202,7 +201,6 @@ Args:
 
     output (optional, str): Output file path or dir. If not provided, this program will only print compressor information of input file.
     """
-    import torch
     with torch.inference_mode():
         main(debug, quiet, qp, local, disable_gpu, mse, crop, input, output)
 
