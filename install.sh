@@ -11,13 +11,13 @@ then
 fi
 
 
-conda create -y -n mcquic python=3.9 cudatoolkit torchvision pytorch -c pytorch
+conda create -y -n mcquic python=3.9 cudatoolkit "torchvision>=0.11,<1" "pytorch>=1.10,<2" -c pytorch
 
 eval "$(conda shell.bash hook)"
 
 conda activate mcquic
 
-conda install -y -n mcquic tqdm pybind11 pip "tensorboard<3" "rich<11" "python-lmdb<2" "pyyaml<7" "marshmallow<4" "click<9" "vlutils" "msgpack-python<2" packaging -c xiaosu-zhu -c conda-forge
+conda install -y -n mcquic "pybind11>=2.6,<3" "pip>=22" "tensorboard>=2.3,<3" "rich>=10,<11" "python-lmdb>=1.2,<2" "pyyaml>=5.4,<7" "marshmallow>=3.14,<4" "click>=8,<9" "vlutils" "msgpack-python>=1,<2" packaging -c xiaosu-zhu -c conda-forge
 
 
 if [ "$CONDA_DEFAULT_ENV" != "mcquic"]
