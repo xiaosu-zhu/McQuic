@@ -226,10 +226,11 @@ Args:
 @entryPoint.command()
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-e", "--export", type=click.Path(exists=False, resolve_path=True, path_type=pathlib.Path), required=False, help="Path to export the final model that is compatible with main program.")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
-@click.argument("output", type=click.Path(exists=False, dir_okay=True, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
-def validate(debug, quiet, path, images, output):
+@click.argument("output", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
+def validate(debug, quiet, export, path, images, output):
     """Validate a trained model from `path` by images from `images` dir, and publish a final state_dict to `output` path.
 
 Args:
@@ -238,10 +239,11 @@ Args:
 
     images (str): Validation images folder.
 
-    output (str): File path or dir to publish this model.
+    output (str): Dir to save all restored images.
     """
+    from mcquic.validate.cli import main
     with torch.inference_mode():
-        main(debug, quiet, path, images, output)
+        main(debug, quiet, export, path, images, output)
 
 
 @entryPoint.command()
