@@ -31,7 +31,7 @@ def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: i
     trainDataset = BasicLMDB(datasetPath, maxTxns=(2 * batchSize) * worldSize, transform=getTrainingPreprocess())
     logger.debug("Create training set: %s", trainDataset)
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
-    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), shuffle=True, sampler=trainSampler, num_workers=2 * batchSize, pin_memory=True, prefetch_factor=4, persistent_workers=True)
+    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), sampler=trainSampler, num_workers=2 * batchSize, pin_memory=True, prefetch_factor=4, persistent_workers=True)
     # prefetcher = Prefetcher(trainLoader, rank, getTrainingTransform())
     # logger.debug("Create training prefetcher: %s", prefetcher)
     return trainLoader, trainSampler
