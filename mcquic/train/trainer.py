@@ -185,6 +185,8 @@ class _baseTrainer(Restorable):
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
             for images in trainLoader:
+                images = images.to(self.rank, non_blocking=True)
+
                 self._stepStart(stepStartHook)
 
                 self._optimizer.zero_grad()
