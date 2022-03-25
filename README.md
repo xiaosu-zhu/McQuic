@@ -301,7 +301,7 @@ Please ensure you've installed [`NVIDIA/Apex`](#optional-install-nvidiaapex). To
 
 ## Requirements
 * Minimal
-  * `RAM ≥ 16GiB`
+  * `RAM ≥ 64GiB`
   * `VRAM ≥ 12GiB`
 * Recommended
   * `VRAM ≥ 24GiB`
