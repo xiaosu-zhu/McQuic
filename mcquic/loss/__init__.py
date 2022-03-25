@@ -7,27 +7,9 @@ from mcquic.utils.registry import LossRegistry
 
 
 class Distortion(nn.Module):
-    def __init__(self, target):
+    def __init__(self, formatter: nn.Module):
         super().__init__()
-        if target not in ["MsSSIM", "PSNR"]:
-            raise ValueError(f"The argument `target` not in (\"MsSSIM\", \"PSNR\"), got \"{target}\".")
-        if target == "MsSSIM":
-            self._ssim = _m(data_range=2.0, sizeAverage=True)
-            self._distortion = self._dSsim
-        else:
-            self._distortion = self._dPsnr
-
-        self._formatter = Decibel(1.0 if target == "MsSSIM" else 2.0)
-
-    def _dPsnr(self, restored, image):
-        return F.mse_loss(restored, image)
-
-    def _dSsim(self, restored, image):
-        return self._ssim(restored + 1, image + 1)
-
-    def forward(self, restored, image, *_):
-        dLoss = self._distortion(restored, image)
-        return 0.0, dLoss
+        self._formatter = formatter
 
     def formatDistortion(self, loss):
         return self._formatter(loss)
@@ -35,9 +17,17 @@ class Distortion(nn.Module):
 
 @LossRegistry.register
 class MsSSIM(Distortion):
-    pass
+    def __init__(self):
+        super().__init__(Decibel(1.0))
+        self._ssim = _m(data_range=2.0, sizeAverage=True)
 
+    def forward(self, restored, image, *_):
+        return 0.0, self._ssim(restored + 1, image + 1)
 
 @LossRegistry.register
 class PSNR(Distortion):
-    pass
+    def __init__(self):
+        super().__init__(Decibel(2.0))
+
+    def forward(self, restored, image, *_):
+        return 0.0, F.mse_loss(restored, image)
