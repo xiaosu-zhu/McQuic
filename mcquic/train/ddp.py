@@ -30,7 +30,7 @@ def registerForTrain():
     LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
     LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
     LrSchedulerRegistry.register("MultiStep")(torch.optim.lr_scheduler.MultiStepLR)
-    LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR) # type: ignore
+    LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR)
 
 
 def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, nn.Module]:

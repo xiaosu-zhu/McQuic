@@ -50,7 +50,7 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
         versionCheck(checkpoint["version"])
         export = None
 
-    model.load_state_dict(modelStateDict) # type: ignore
+    model.load_state_dict(modelStateDict)
 
     validator = Validator(config, "cuda")
 

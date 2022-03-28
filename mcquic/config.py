@@ -163,9 +163,9 @@ class Config:
             self.Train.Optim.Params["lr"] /= (2 ** scale)
 
     def serialize(self) -> dict:
-        return ConfigSchema().dump(self) # type: ignore
+        return ConfigSchema().dump(self)
 
     @staticmethod
     def deserialize(data: dict) -> "Config":
         data = { key: value for key, value in data.items() if "$" not in key }
-        return ConfigSchema().load(data) # type: ignore
+        return ConfigSchema().load(data)

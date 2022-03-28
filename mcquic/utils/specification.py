@@ -149,13 +149,13 @@ class File:
         return self.contents
 
     def serialize(self) -> bytes:
-        thisFile: dict = FileSchema().dump(self) # type: ignore
-        return msgpack.packb(thisFile, use_bin_type=True) # type: ignore
+        thisFile: dict = FileSchema().dump(self)
+        return msgpack.packb(thisFile, use_bin_type=True)
 
     @staticmethod
     def deserialize(data: bytes) -> "File":
         thisFile = msgpack.unpackb(data, use_list=False, raw=False)
-        return FileSchema().load(thisFile) # type: ignore
+        return FileSchema().load(thisFile)
 
     @property
     def BPP(self) -> float:

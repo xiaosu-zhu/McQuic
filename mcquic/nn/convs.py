@@ -65,9 +65,9 @@ class MaskedConv2d(nn.Conv2d):
             raise ValueError(f'Invalid `maskType` value "{maskType}"')
 
         self.register_buffer("mask", torch.ones_like(self.weight.data))
-        _, _, h, w = self.mask.shape # type: ignore
-        self.mask[:, :, h // 2, w // 2 + (maskType == "B") :] = 0 # type: ignore
-        self.mask[:, :, h // 2 + 1 :] = 0 # type: ignore
+        _, _, h, w = self.mask.shape
+        self.mask[:, :, h // 2, w // 2 + (maskType == "B") :] = 0
+        self.mask[:, :, h // 2 + 1 :] = 0
 
     def forward(self, x: Tensor) -> Tensor:
         # TODO(begaintj): weight assigment is not supported by torchscript
@@ -172,13 +172,13 @@ def pixelShuffle5x5(inChannels: int, outChannels: int, r: float = 1) -> nn.Conv2
         return nn.Sequential(
             nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=5, stride=1, padding=5 // 2, padding_mode="reflect"),
             nn.PixelUnshuffle(r)
-        ) # type: ignore
+        )
     else:
         r = int(r ** 2)
         return nn.Sequential(
             nn.Conv2d(inChannels, outChannels * r, kernel_size=5, stride=1, padding=5 // 2, padding_mode="reflect"),
             nn.PixelShuffle(r)
-        ) # type: ignore
+        )
 
 
 def pixelShuffle1x1(inChannels: int, outChannels: int, r: float = 1, groups: int = 1) -> nn.Conv2d:
@@ -207,13 +207,13 @@ def pixelShuffle1x1(inChannels: int, outChannels: int, r: float = 1, groups: int
         return nn.Sequential(
             nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=1, groups=groups),
             nn.PixelUnshuffle(r)
-        ) # type: ignore
+        )
     else:
         r = int(r)
         return nn.Sequential(
             nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=1, groups=groups),
             nn.PixelShuffle(r)
-        ) # type: ignore
+        )
 
 
 def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1, groups: int = 1) -> nn.Conv2d:
@@ -242,13 +242,13 @@ def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1, groups: int
         return nn.Sequential(
             nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode="reflect"),
             nn.PixelUnshuffle(r)
-        ) # type: ignore
+        )
     else:
         r = int(r)
         return nn.Sequential(
             nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode="reflect"),
             nn.PixelShuffle(r)
-        ) # type: ignore
+        )
 
 def conv1x1(inChannels: int, outChannels: int, stride: int = 1, bias: bool = True, groups: int = 1) -> nn.Conv2d:
     """A wrapper of 1x1 convolution.

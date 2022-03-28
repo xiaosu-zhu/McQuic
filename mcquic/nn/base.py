@@ -41,13 +41,13 @@ class LowerBound(nn.Module):
         super().__init__()
         self.register_buffer("bound", torch.Tensor([float(bound)]))
 
-    @torch.jit.unused # type: ignore
+    @torch.jit.unused
     def lower_bound(self, x):
         return _lowerBound.apply(x, self.bound)
 
     def forward(self, x):
-        if torch.jit.is_scripting(): # type: ignore
-            return torch.max(x, self.bound) # type: ignore
+        if torch.jit.is_scripting():
+            return torch.max(x, self.bound)
         return self.lower_bound(x)
 
 
@@ -73,7 +73,7 @@ class NonNegativeParametrizer(nn.Module):
         self.lowerBound = LowerBound(bound)
 
     def init(self, x):
-        return torch.sqrt(torch.max(x + self.eps, self.eps)) # type: ignore
+        return torch.sqrt(torch.max(x + self.eps, self.eps))
 
     def forward(self, x):
         out = self.lowerBound(x)
