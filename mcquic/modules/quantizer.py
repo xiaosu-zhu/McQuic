@@ -23,7 +23,6 @@ class BaseQuantizer(nn.Module):
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         raise NotImplementedError
 
-
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
 
@@ -40,24 +39,18 @@ class BaseQuantizer(nn.Module):
     def Freq(self):
         return self._entropyCoder.Freq
 
-    @torch.jit.ignore
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
-        codes = self.encode(x)
-
+    def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[CodeSize]]:
         # List of binary, len = n, len(binaries[0]) = level
         binaries, codeSize = self._entropyCoder.compress(codes, cdfs)
-        return codes, binaries, codeSize
+        return binaries, codeSize
 
     def _validateCode(self, refCodes: List[torch.Tensor], decompressed: List[torch.Tensor]):
         for code, restored in zip(refCodes, decompressed):
             if torch.any(code != restored):
                 raise RuntimeError("Got wrong decompressed result from entropy coder.")
 
-    @torch.jit.ignore
-    def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> torch.Tensor:
-        decompressed = self._entropyCoder.decompress(binaries, codeSize, cdfs)
-        # self._validateCode(codes, decompressed)
-        return self.decode(decompressed)
+    def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
+        return self._entropyCoder.decompress(binaries, codeSize, cdfs)
 
 
 # NOTE: You may notice the quantizer implemented here is different with README.md
@@ -74,7 +67,6 @@ class _multiCodebookQuantization(nn.Module):
         self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
 
-    @torch.jit.ignore
     def reAssignCodebook(self, freq: torch.Tensor)-> torch.Tensor:
         codebook = self._codebook.clone().detach()
         freq = freq.to(self._codebook.device).clone().detach()
@@ -101,7 +93,7 @@ class _multiCodebookQuantization(nn.Module):
         # codebook = self._codebook.clone().detach()
         dist.broadcast(self._codebook, 0)
 
-    def encode(self, x: torch.Tensor):
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
         # [n, m, h, w, k]
         distance = self._distance(x)
         # [n, m, h, w, k] -> [n, m, h, w]
@@ -158,6 +150,7 @@ class _multiCodebookQuantization(nn.Module):
         # sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
         return sampled, logit
 
+    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
         sample, logit = self._sample(x, 1.0)
         # [n, m, h, w, 1]
@@ -174,7 +167,7 @@ class _multiCodebookDeQuantization(nn.Module):
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
 
-    def decode(self, code: torch.Tensor):
+    def decode(self, code: torch.Tensor) -> torch.Tensor:
         # codes: [n, m, h, w]
         n, _, h, w = code.shape
         # [n, h, w, m]
@@ -187,6 +180,7 @@ class _multiCodebookDeQuantization(nn.Module):
         return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
+    @torch.jit.ignore
     def forward(self, sample: torch.Tensor):
         n, m, h, w, k = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
@@ -222,6 +216,7 @@ class _quantizerEncoder(nn.Module):
     def reAssignCodebook(self, freq: torch.Tensor) -> torch.Tensor:
         return self._quantizer.reAssignCodebook(freq)
 
+    @torch.jit.export
     def encode(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
@@ -232,6 +227,7 @@ class _quantizerEncoder(nn.Module):
         #      ↓ residual,                         [n, m, h, w]
         return z - self._dequantizer.decode(code), code
 
+    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
@@ -263,6 +259,7 @@ class _quantizerDecoder(nn.Module):
         self._restoreHead =  restoreHead
 
     #                [n, m, h, w]
+    @torch.jit.export
     def decode(self, code: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
         q = self._dequantizationHead(self._dequantizer.decode(code))
         if self._sideHead is not None:
@@ -271,6 +268,7 @@ class _quantizerDecoder(nn.Module):
             xHat = q
         return self._restoreHead(xHat)
 
+    @torch.jit.ignore
     def forward(self, q: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
         q = self._dequantizationHead(self._dequantizer(q))
         if self._sideHead is not None:
@@ -312,8 +310,8 @@ class UMGMQuantizer(BaseQuantizer):
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
 
-        self._encoders: Iterable[_quantizerEncoder] = nn.ModuleList(encoders)
-        self._decoders: Iterable[_quantizerDecoder] = nn.ModuleList(decoders)
+        self._encoders: nn.ModuleList[QuantizerEncoder] = nn.ModuleList(encoders)
+        self._decoders: nn.ModuleList[QuantizerDecoder] = nn.ModuleList(decoders)
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
@@ -324,9 +322,10 @@ class UMGMQuantizer(BaseQuantizer):
         # lv * [n, m, h, w]
         return codes
 
-    def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
+    def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         formerLevel = None
-        for decoder, code in zip(self._decoders[::-1], codes[::-1]):
+        for i, decoder in enumerate(self._decoders[::-1]):
+            code = codes[len(self._k) - i]
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
@@ -343,6 +342,7 @@ class UMGMQuantizer(BaseQuantizer):
         for encoder in self._encoders:
             encoder.syncCodebook()
 
+    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
         quantizeds = list()
         codes = list()

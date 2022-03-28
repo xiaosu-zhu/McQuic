@@ -1,5 +1,4 @@
 import os
-import pathlib
 import torch
 import torch.hub
 from torchvision.transforms.functional import convert_image_dtype, pil_to_tensor
@@ -29,11 +28,10 @@ def loadModel(device):
     ckpt = torch.hub.load_state_dict_from_url(MODELS_URL, map_location=device, check_hash=True)
 
     config = Config.deserialize(ckpt["config"])
-    model = Compressor(**config.Model.Params).to(device)
+    model = Compressor(**config.Model.Params).to(device).eval()
     model.QuantizationParameter = "qp_2_msssim"
     model.load_state_dict(ckpt["model"])
-    return model
-
+    return torch.jit.script(model)
 
 
 @st.cache
@@ -46,8 +44,9 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     # [c, h, w]
     image = (image - 0.5) * 2
 
-    with model._quantizer.readyForCoding() as cdfs:
-        codes, binaries, headers = model.compress(image[None, ...], cdfs)
+    with model.readyForCoding() as cdfs:
+        codes, size = model.encode(image[None, ...])
+        binaries, headers = model.compress(codes, size, cdfs)
 
     return File(headers[0], binaries[0])
 
@@ -56,9 +55,10 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
-    with model._quantizer.readyForCoding() as cdfs:
+    with model.readyForCoding() as cdfs:
+        codes, imageSize = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
         # [1, c, h, w]
-        restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
+        restored = model.decode(codes, imageSize)
 
     # [c, h, w]
     return DeTransform()(restored[0])
@@ -71,7 +71,7 @@ def main():
     else:
         device = torch.device("cuda")
 
-    model = loadModel(device).eval()
+    model = loadModel(device)
 
     st.sidebar.markdown("""
 <p align="center">

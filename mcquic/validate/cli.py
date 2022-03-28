@@ -3,8 +3,18 @@ import click
 import pathlib
 import logging
 
+import torch
+from vlutils.logger import configLogging
+from torchvision.io.image import write_png
+
 import mcquic
+from mcquic.config import Config
+from mcquic.modules.compressor import Compressor
+from mcquic.train.utils import getRichProgress
+from mcquic.datasets import getValLoader
 from mcquic.utils import hashOfFile, versionCheck
+
+from .validator import Validator
 
 
 def checkArgs(debug: bool, quiet: bool):
@@ -17,19 +27,6 @@ def checkArgs(debug: bool, quiet: bool):
 
 def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path) -> int:
     loggingLevel = checkArgs(debug, quiet)
-
-    import hashlib
-
-    import torch
-    from vlutils.logger import configLogging
-    from torchvision.io.image import write_png
-
-    from mcquic.config import Config
-    from mcquic.modules.compressor import Compressor
-    from mcquic.train.utils import getRichProgress
-    from mcquic.datasets import getValLoader
-
-    from .validator import Validator
 
     logger = configLogging(None, "root", loggingLevel)
 
@@ -51,6 +48,8 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
         export = None
 
     model.load_state_dict(modelStateDict)
+
+    model = torch.jit.script(model)
 
     validator = Validator(config, "cuda")
 

@@ -30,6 +30,7 @@ class BaseCompressor(nn.Module):
     def QuantizationParameter(self, qp: str):
         self._qp = qp
 
+    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
         y = self._encoder(x)
         # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
@@ -51,30 +52,41 @@ class BaseCompressor(nn.Module):
         return self._quantizer.Freq
 
     @property
+    @torch.jit.unused
     def CodeUsage(self):
         return torch.cat(list((freq > 0).flatten() for freq in self._quantizer.Freq)).float().mean()
 
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
-        n, c, h, w = x.shape
-
+    @torch.jit.export
+    def encode(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], Tuple[int, int, int]]:
+        _, c, h, w = x.shape
         x = self._padding(x)
-
         y = self._encoder(x)
         # codes: lv * [n, m, h, w]
+        codes = self._quantizer.encode(y)
+        return codes, (c, h, w)
+
+    @torch.jit.ignore
+    def compress(self, codes: List[torch.Tensor], size: Tuple[int, int, int], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[FileHeader]]:
         # binaries: List of binary, len = n, len(binaries[0]) = level
-        codes, binaries, codeSizes = self._quantizer.compress(y, cdfs)
+        binaries, codeSizes = self._quantizer.compress(codes, cdfs)
+        c, h, w = size
         header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
-        return codes, binaries, header
+        return binaries, header
 
-    def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> torch.Tensor:
-        yHat = self._quantizer.decompress(binaries, [header.CodeSize for header in headers], cdfs)
+    @torch.jit.ignore
+    def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> Tuple[List[torch.Tensor], Tuple[int, int]]:
+        codes = self._quantizer.decompress(binaries, [header.CodeSize for header in headers], cdfs)
+        imageSize = (headers[0].ImageSize.height, headers[0].ImageSize.width)
+        return codes, imageSize
+
+    @torch.jit.export
+    def decode(self, codes: List[torch.Tensor], imageSize: Tuple[int, int]) -> torch.Tensor:
+        yHat = self._quantizer.decode(codes)
         restored = self._decoder(yHat)
-
-        imageSize = headers[0].ImageSize
 
         H, W = restored.shape[-2], restored.shape[-1]
 
-        h, w = imageSize.height, imageSize.width
+        h, w = imageSize
 
         hCrop = H - h
         wCrop = W - w
