@@ -91,7 +91,7 @@ def main():
 
 <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
-> Due to resources limitation, I only provide compression service with model `qp = 2`.
+> Due to resources limitation, I only provide compression service with model `qp = 2` targeted `ms-ssim`.
 
 <br/>
 <br/>
