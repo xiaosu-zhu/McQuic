@@ -38,10 +38,6 @@ class Validator:
 
     @torch.inference_mode()
     def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
-        isTraining = model.training
-
-        model.eval()
-
         self._meter.reset()
         total = len(valLoader)
         now = 0
@@ -50,24 +46,20 @@ class Validator:
             task = progress.add_task(f"[ Test ]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
         else:
             task = progress.add_task(f"[ Val@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
-        with model._quantizer.readyForCoding() as cdfs:
+        with model.readyForCoding() as cdfs:
             for now, (images, stem) in enumerate(valLoader):
                 images = images.to(self._rank, non_blocking=True)
-                codes, binaries, headers = model.compress(images, cdfs)
-                restored = model.decompress(binaries, cdfs, headers)
+                codes, size = model.encode(images)
+                binaries, headers = model.compress(codes, size, cdfs)
+                codes, imageSize = model.decompress(binaries, cdfs, headers)
+                restored = model.decode(codes, imageSize)
                 self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes, stem=stem)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
         progress.remove_task(task)
-
-        model.train(isTraining)
         return self._meter.results(), self._meter.summary()
 
     @torch.inference_mode()
     def speed(self, epoch: int, model: BaseCompressor, progress: Progress):
-        isTraining = model.training
-
-        model.eval()
-
         now = 0
         if epoch is None:
             # test mode
@@ -75,7 +67,7 @@ class Validator:
         else:
             task = progress.add_task(f"[ Spd@{epoch:4d}]", total=100, progress=f"{now:4d}/{100:4d}", suffix="")
 
-        with model._quantizer.readyForCoding() as cdfs:
+        with model.readyForCoding() as cdfs:
             tensor = torch.rand(10, 3, 768, 512).to(self._rank)
 
             startEvent = torch.cuda.Event(enable_timing=True)
@@ -83,16 +75,20 @@ class Validator:
 
             startEvent.record()
             for _ in range(50):
-                codes, binaries, headers = model.compress(tensor, cdfs)
+                codes, size = model.encode(tensor)
+                # binaries, headers = model.compress(codes, size, cdfs)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
                 now += 1
             endEvent.record()
             torch.cuda.synchronize()
             encoderMs = startEvent.elapsed_time(endEvent)
 
+            size = size[1:]
+
             startEvent.record()
             for _ in range(50):
-                restored = model.decompress(binaries, cdfs, headers)
+                # codes, imageSize = model.decompress(binaries, cdfs, headers)
+                restored = model.decode(codes, size)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
                 now += 1
             endEvent.record()
@@ -100,7 +96,4 @@ class Validator:
             decoderMs = startEvent.elapsed_time(endEvent)
 
         result = ((50 * 10 * 768 * 512 / 1000) / encoderMs, (50 * 10 * 768 * 512 / 1000) / decoderMs)
-
-        model.train(isTraining)
-
         return result, f"Coding rate: encoder: {result[0]:.2f} Mpps, decoder: {result[1]:.2f} Mpps"

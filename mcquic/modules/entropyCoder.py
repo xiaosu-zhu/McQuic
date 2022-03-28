@@ -23,6 +23,7 @@ class EntropyCoder(nn.Module):
         self._decay = 1 - ema
 
     @torch.no_grad()
+    @torch.jit.ignore
     def forward(self, oneHotCodes: List[torch.Tensor]):
         # Update freq by EMA
         # [n, m, h, w, k]
@@ -41,6 +42,7 @@ class EntropyCoder(nn.Module):
             self._freqEMA[lv].copy_(totalCount * rmsMask + ema * ~rmsMask)
 
     @contextmanager
+    @torch.jit.ignore
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
         cdfs = list()
         for freq in self.Freq:
@@ -61,6 +63,10 @@ class EntropyCoder(nn.Module):
 
     @property
     def Freq(self):
+        return self.getFreq()
+
+    @torch.jit.ignore
+    def getFreq(self):
         """Yields list of `[m, k]` tensors.
 
         Yields:
@@ -70,6 +76,7 @@ class EntropyCoder(nn.Module):
             # normalize with precision 16bits.
             yield (freqEMA / freqEMA.sum(-1, keepdim=True) * 65536).round().long()
 
+    @torch.jit.unused
     def _checkShape(self, codes: List[torch.Tensor]):
         info = "Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...], which is a `level` length list. each code has shape [n, m, h, w]. "
         if len(codes) < 1:
