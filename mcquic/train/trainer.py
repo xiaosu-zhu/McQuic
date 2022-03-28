@@ -104,7 +104,7 @@ class _baseTrainer(Restorable):
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
 
-        self.resetScheduler(self._scheduler.last_epoch) # type: ignore
+        self.resetScheduler(self._scheduler.last_epoch)
 
     def resetOptimizer(self):
         del self._optimizer
@@ -196,7 +196,7 @@ class _baseTrainer(Restorable):
                 self._optimizer.step()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
-            self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader.dataset) # type: ignore
+            self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader.dataset)
         self._afterRun(afterRunHook)
 
 

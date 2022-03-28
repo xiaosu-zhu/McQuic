@@ -151,5 +151,5 @@ class Masking(nn.Module):
         n, _, h, w = images.shape
         zeros = torch.zeros_like(images)
         # [n, 1, h, w]
-        mask = self._categorical.sample((n, 1, h, w)).byte().to(images.device) # type: ignore
+        mask = self._categorical.sample((n, 1, h, w)).byte().to(images.device)
         return (mask == 0) * images + (mask == 1) * zeros

@@ -52,14 +52,14 @@ class GenDivNorm(nn.Module):
         self.beta_reparam = NonNegativeParametrizer(minimum=biasBound)
         beta = torch.ones(inChannels)
         beta = self.beta_reparam.init(beta)
-        self.beta = nn.Parameter(beta) # type: ignore
+        self.beta = nn.Parameter(beta)
 
         self.gamma_reparam = NonNegativeParametrizer()
         # m * [cOut // m, cIn // m] -> [cOut, cIn // m]
         gamma = [weightInit * torch.eye(inChannels // self._groups) for _ in range(self._groups)]
         gamma = torch.cat(gamma, 0)
         gamma = self.gamma_reparam.init(gamma)
-        self.gamma = nn.Parameter(gamma) # type: ignore
+        self.gamma = nn.Parameter(gamma)
 
     def forward(self, x):
         # C = x.shape[-3]

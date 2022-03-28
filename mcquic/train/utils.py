@@ -21,8 +21,8 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger: Union[lo
     os.environ["MASTER_PORT"] = port
     logger.debug("DDP master addr: `%s`", "127.0.0.1")
     logger.debug("DDP master port: `%s`", port)
-    torch.autograd.set_detect_anomaly(False) # type: ignore
-    torch.backends.cudnn.benchmark = True # type: ignore
+    torch.autograd.set_detect_anomaly(False)
+    torch.backends.cudnn.benchmark = True
 
     logger.debug("Autograd detect anomaly = `%s`", False)
     logger.debug("         CuDNN bechmark = `%s`", True)

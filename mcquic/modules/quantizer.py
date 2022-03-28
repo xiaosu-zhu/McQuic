@@ -40,6 +40,7 @@ class BaseQuantizer(nn.Module):
     def Freq(self):
         return self._entropyCoder.Freq
 
+    @torch.jit.ignore
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
         codes = self.encode(x)
 
@@ -52,6 +53,7 @@ class BaseQuantizer(nn.Module):
             if torch.any(code != restored):
                 raise RuntimeError("Got wrong decompressed result from entropy coder.")
 
+    @torch.jit.ignore
     def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> torch.Tensor:
         decompressed = self._entropyCoder.decompress(binaries, codeSize, cdfs)
         # self._validateCode(codes, decompressed)
@@ -63,15 +65,16 @@ class BaseQuantizer(nn.Module):
 #       Generally, although code is neat and output is same as here,
 #         training with README's implementation will cause loss become suddenly NAN after a few epoches.
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15): # type: ignore
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
         self._scale = math.sqrt(self._k)
-        self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1))) # type: ignore
+        self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1)))
         self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
 
+    @torch.jit.ignore
     def reAssignCodebook(self, freq: torch.Tensor)-> torch.Tensor:
         codebook = self._codebook.clone().detach()
         freq = freq.to(self._codebook.device).clone().detach()
@@ -166,7 +169,7 @@ class _multiCodebookQuantization(nn.Module):
 
 
 class _multiCodebookDeQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter): # type: ignore
+    def __init__(self, codebook: nn.Parameter):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
@@ -303,19 +306,19 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizationHead = dequantizationHeadFn()
             sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
-            codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m)))) # type: ignore
+            codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m))))
             quantizer = _multiCodebookQuantization(codebook)
             dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
 
-        self._encoders: Iterable[_quantizerEncoder] = nn.ModuleList(encoders) # type: ignore
-        self._decoders: Iterable[_quantizerDecoder] = nn.ModuleList(decoders) # type: ignore
+        self._encoders: Iterable[_quantizerEncoder] = nn.ModuleList(encoders)
+        self._decoders: Iterable[_quantizerDecoder] = nn.ModuleList(decoders)
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
         for encoder in self._encoders:
-            x, code = encoder.encode(x) # type: ignore
+            x, code = encoder.encode(x)
             #            [n, m, h, w]
             codes.append(code)
         # lv * [n, m, h, w]
@@ -323,7 +326,7 @@ class UMGMQuantizer(BaseQuantizer):
 
     def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
         formerLevel = None
-        for decoder, code in zip(self._decoders[::-1], codes[::-1]): # type: ignore
+        for decoder, code in zip(self._decoders[::-1], codes[::-1]):
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
@@ -357,7 +360,7 @@ class UMGMQuantizer(BaseQuantizer):
             # [n, m, h, w, k]
             logits.append(logit)
         formerLevel = None
-        for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]): # type: ignore
+        for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
 
