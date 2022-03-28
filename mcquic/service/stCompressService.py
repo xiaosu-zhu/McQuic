@@ -115,11 +115,11 @@ def main():
         st.markdown("""
 <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
-> Due to resources limitation of HF spaces, the upload image size is restricted to lower than `3000 x 3000`.
+> Due to resources limitation of HF spaces, upload image size is restricted to smaller than `3000 x 3000`. Also, this demo is CPU-only and may be slow.
 
 <img src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 
-> Also, this demo running on HF space is GPU-disabled. So it may be slow.
+> This demo is synced with main branch of `McQuic`. Some features may be unstable and changed frequently.
 """, unsafe_allow_html=True)
     with st.form("SubmitForm"):
         uploadedFile = st.file_uploader("Try running McQuic to compress or restore images!", type=["png", "jpg", "jpeg", "mcq"], help="Upload your image or compressed `.mcq` file here.")
