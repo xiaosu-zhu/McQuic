@@ -144,6 +144,9 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Epoch %4d started.", self.PrettyStep, self._epoch + 1)
 
+        gc.collect()
+        gc.collect()
+
     def _epochFinish(self, hook, *args, trainSet, **kwArgs):
         self._epoch += 1
 
@@ -156,9 +159,6 @@ class _baseTrainer(Restorable):
 
         if self._epoch % (self.config.Train.ValFreq) == 0:
             self.refresh()
-
-        gc.collect()
-        gc.collect()
 
     @torch.inference_mode()
     def refresh(self, *_, **__):
@@ -215,16 +215,17 @@ class MainTrainer(_baseTrainer):
 
         self.validator = Validator(self.config, self.rank)
 
-        self.diffTracker = EMATracker(()).to(self.rank)
+        self.diffTracker = EMATracker((), 0.99).to(self.rank)
 
         # Call function at every X epoches.
-        hooks = EpochFrequencyHook(
+        self.epochFinishCalls = EpochFrequencyHook(
             (1, self.log),
+            logger=self.saver
+        )
+        self.epochStartCalls = EpochFrequencyHook(
             (self.config.Train.ValFreq, self.validate),
             logger=self.saver
         )
-
-        self.epochFinishCalls = hooks
 
         self.bestRate = 1e10
         self.bestDistortion = -1
@@ -265,9 +266,11 @@ class MainTrainer(_baseTrainer):
         return super().train(trainLoader, trainSampler,
             beforeRunHook=beforeRunHook,
             afterRunHook=afterRunHook,
-            epochStartHook=epochStartHook,
+            epochStartHook=ChainHook(
+                functools.partial(self.epochStartCalls, valLoader=valLoader),
+                epochStartHook)
             epochFinishHook=ChainHook(
-                functools.partial(self.epochFinishCalls, valLoader=valLoader),
+                self.epochFinishCalls,
                 epochFinishHook),
             stepStartHook=stepStartHook,
             stepFinishHook=ChainHook(self._stepFinishHook, stepFinishHook))
@@ -322,6 +325,8 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
     def validate(self, *_, valLoader: DataLoader, **__):
+        torch.cuda.empty_cache()
+
         self.saver.debug("[%s] Start validation at epoch %4d.", self.PrettyStep, self._epoch)
 
         self._model.eval()

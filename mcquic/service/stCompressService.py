@@ -25,7 +25,7 @@ HF_SPACE = "HF_SPACE" in os.environ
 
 
 @st.experimental_singleton
-def loadModel(qp: int, local: pathlib.Path, device, mse: bool):
+def loadModel(device):
     ckpt = torch.hub.load_state_dict_from_url(MODELS_URL, map_location=device, check_hash=True)
 
     config = Config.deserialize(ckpt["config"])
@@ -65,13 +65,13 @@ def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor
 
 
 
-def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
-    if disable_gpu or not torch.cuda.is_available():
+def main():
+    if not torch.cuda.is_available():
         device = torch.device("cpu")
     else:
         device = torch.device("cuda")
 
-    model = loadModel(3, None, device, False).eval()
+    model = loadModel(device).eval()
 
     st.sidebar.markdown("""
 <p align="center">
@@ -215,4 +215,4 @@ def main(debug: bool, quiet: bool, qp: int, disable_gpu: bool):
 
 if __name__ == "__main__":
     with torch.inference_mode():
-        main(False, False, 3, False)
+        main()
