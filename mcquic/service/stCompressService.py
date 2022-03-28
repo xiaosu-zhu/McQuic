@@ -30,7 +30,7 @@ def loadModel(device):
 
     config = Config.deserialize(ckpt["config"])
     model = Compressor(**config.Model.Params).to(device)
-    model.QuantizationParameter = str(local) if local is not None else "qp_2_msssim"
+    model.QuantizationParameter = "qp_2_msssim"
     model.load_state_dict(ckpt["model"])
     return model
 
