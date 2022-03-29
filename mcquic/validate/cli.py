@@ -49,7 +49,7 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
 
     model.load_state_dict(modelStateDict)
 
-    model = torch.jit.script(model)
+    scriptModel = torch.jit.script(model)
 
     validator = Validator(config, "cuda")
 
@@ -58,9 +58,9 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
     progress = getRichProgress()
 
     with progress:
-        results, summary = validator.validate(None, model, valLoader, progress)
+        results, summary = validator.validate(None, scriptModel, valLoader, progress)
         logger.info(summary)
-        _, speedSummary = validator.speed(None, model, progress)
+        _, speedSummary = validator.speed(None, scriptModel, progress)
         logger.info(speedSummary)
 
         if output is not None:

@@ -12,6 +12,8 @@ from mcquic.datasets.transforms import AlignedCrop
 from mcquic.utils.specification import File
 from mcquic.utils.vision import DeTransform
 
+from mcquic.rans import RansEncoder, RansDecoder
+
 try:
     import streamlit as st
 except:
@@ -31,11 +33,11 @@ def loadModel(device):
     model = Compressor(**config.Model.Params).to(device).eval()
     model.QuantizationParameter = "qp_2_msssim"
     model.load_state_dict(ckpt["model"])
-    return model
+    return torch.jit.script(model), RansEncoder(), RansDecoder()
 
 
 @st.cache
-def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
+def compressImage(encoder: RansEncoder, image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
     image = convert_image_dtype(image)
 
     if crop:
@@ -46,17 +48,17 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
 
     with model.readyForCoding() as cdfs:
         codes, size = model.encode(image[None, ...])
-        binaries, headers = model.compress(codes, size, cdfs)
+        binaries, headers = model.compress(encoder, codes, size, cdfs)
 
     return File(headers[0], binaries[0])
 
 
 @st.cache
-def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
+def decompressImage(decoder: RansDecoder, sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
     with model.readyForCoding() as cdfs:
-        codes, imageSize = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
+        codes, imageSize = model.decompress(decoder, [binaries], cdfs, [sourceFile.FileHeader])
         # [1, c, h, w]
         restored = model.decode(codes, imageSize)
 
@@ -71,7 +73,7 @@ def main():
     else:
         device = torch.device("cuda")
 
-    model = loadModel(device)
+    model, encoder, decoder = loadModel(device)
 
     st.sidebar.markdown("""
 <p align="center">
@@ -133,7 +135,7 @@ def main():
 
             st.text(str(binaryFile))
 
-            result = decompressImage(binaryFile, model)
+            result = decompressImage(encoder, binaryFile, model)
             st.image(result.cpu().permute(1, 2, 0).numpy())
 
             downloadButton = st.empty()
@@ -162,7 +164,7 @@ def main():
                 return
             image = pil_to_tensor(image.convert("RGB")).to(device)
             # st.image(image.cpu().permute(1, 2, 0).numpy())
-            result = compressImage(image, model, cropping)
+            result = compressImage(decoder, image, model, cropping)
 
             st.text(str(result))
 

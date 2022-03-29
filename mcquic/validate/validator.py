@@ -8,6 +8,7 @@ from mcquic.config import Config
 from mcquic.utils.vision import DeTransform
 from mcquic.validate.handlers import MsSSIM, PSNR, BPP, IdealBPP, Visualization, ImageCollector
 from mcquic.modules.compressor import BaseCompressor
+from mcquic.rans import RansEncoder, RansDecoder
 
 
 class Validator:
@@ -22,6 +23,8 @@ class Validator:
             IdealBPP(config.Model.Params["m"], config.Model.Params["k"]).to(rank),
             ImageCollector().to(rank)
         ])
+        self._encoder = RansEncoder()
+        self._decoder = RansDecoder()
 
     def tensorToImage(self, x: torch.Tensor) -> torch.Tensor:
         return self._deTrans(x)
@@ -50,8 +53,8 @@ class Validator:
             for now, (images, stem) in enumerate(valLoader):
                 images = images.to(self._rank, non_blocking=True)
                 codes, size = model.encode(images)
-                binaries, headers = model.compress(codes, size, cdfs)
-                codes, imageSize = model.decompress(binaries, cdfs, headers)
+                binaries, headers = model.compress(self._encoder, codes, size, cdfs)
+                codes, imageSize = model.decompress(self._decoder, binaries, cdfs, headers)
                 restored = model.decode(codes, imageSize)
                 self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes, stem=stem)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
@@ -76,7 +79,7 @@ class Validator:
             startEvent.record()
             for _ in range(50):
                 codes, size = model.encode(tensor)
-                # binaries, headers = model.compress(codes, size, cdfs)
+                # binaries, headers = model.compress(self._encoder, codes, size, cdfs)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
                 now += 1
             endEvent.record()
@@ -87,7 +90,7 @@ class Validator:
 
             startEvent.record()
             for _ in range(50):
-                # codes, imageSize = model.decompress(binaries, cdfs, headers)
+                # codes, imageSize = model.decompress(self._decoder, binaries, cdfs, headers)
                 restored = model.decode(codes, size)
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
                 now += 1
