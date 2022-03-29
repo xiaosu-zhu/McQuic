@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import math
 from typing import Any, Dict
+import json
 
 from marshmallow import Schema, fields, post_load, RAISE
 
@@ -164,6 +165,15 @@ class Config:
 
     def serialize(self) -> dict:
         return ConfigSchema().dump(self)
+
+    def dump(self) -> str:
+        result = ConfigSchema().dump(self)
+        return json.dumps(result)
+
+    @staticmethod
+    def load(data: str) -> "Config":
+        result = json.loads(data)
+        return ConfigSchema().load(result)
 
     @staticmethod
     def deserialize(data: dict) -> "Config":

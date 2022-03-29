@@ -25,7 +25,7 @@ def checkArgs(debug: bool, quiet: bool):
     return logging.INFO
 
 
-def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path) -> int:
+def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, images: pathlib.Path, output: pathlib.Path):
     loggingLevel = checkArgs(debug, quiet)
 
     logger = configLogging(None, "root", loggingLevel)
@@ -49,7 +49,7 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
 
     model.load_state_dict(modelStateDict)
 
-    scriptModel = torch.jit.script(model)
+    scriptModel = model.exportForJIT("cuda", config)
 
     validator = Validator(config, "cuda")
 
@@ -76,14 +76,16 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
                 progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
             progress.remove_task(task)
 
-    if export is None or (export.is_dir() and not export.exists()):
+    if export is None:
         logger.info(f"Skip saving model.")
-        return 0
+        return
 
-    if export.is_dir():
-        modelName = "_".join([f"{key}_{value}" for key, value in config.Model.Params.items()])
-        modelName = modelName.replace(", ", "_").replace("[", "").replace("]", "")
-        export = export.joinpath(f"{modelName}_{config.Train.Target.lower()}.mcquic")
+    del model, scriptModel
+    qp = config.Model.Params["m"]
+    finalName = export.joinpath(f"qp_{qp}_{config.Train.Target.lower()}_{device}.mcquic")
+
+    model = Compressor(**config.Model.Params).to(device).eval()
+    model.load_state_dict(modelStateDict)
 
     torch.save({
         "model": model.state_dict(),
@@ -91,26 +93,24 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
         "version": mcquic.__version__
     }, export)
 
-    logger.info(f"Saved at `{export}`.")
+    logger.info(f"Saved at `{finalName}`.")
     logger.info("Add hash to file...")
 
     with progress:
-        hashResult = hashOfFile(export, progress)
+        hashResult = hashOfFile(finalName, progress)
 
-    newName = f"{export.stem}-{hashResult[:8]}.{export.suffix}"
+    newName = f"{finalName.stem}_{hashResult[:8]}{finalName.suffix}"
 
-    os.rename(export, export.parent.joinpath(newName))
+    os.rename(finalName, finalName.parent.joinpath(newName))
 
     logger.info("Rename file to %s", newName)
-
-    return 0
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
-@click.option("-e", "--export", type=click.Path(exists=False, resolve_path=True, path_type=pathlib.Path), required=False, help="Path to export the final model that is compatible with main program.")
+@click.option("-e", "--export", type=click.Path(exists=False, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, help="Dir to export the final model that is compatible with main program. Model name is generated automatically.")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("output", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)

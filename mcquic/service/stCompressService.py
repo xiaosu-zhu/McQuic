@@ -1,4 +1,5 @@
 import os
+import pathlib
 import torch
 import torch.hub
 from torchvision.transforms.functional import convert_image_dtype, pil_to_tensor
@@ -11,8 +12,6 @@ from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.datasets.transforms import AlignedCrop
 from mcquic.utils.specification import File
 from mcquic.utils.vision import DeTransform
-
-from mcquic.rans import RansEncoder, RansDecoder
 
 try:
     import streamlit as st
@@ -30,14 +29,15 @@ def loadModel(device):
     ckpt = torch.hub.load_state_dict_from_url(MODELS_URL, map_location=device, check_hash=True)
 
     config = Config.deserialize(ckpt["config"])
-    model = Compressor(**config.Model.Params).to(device).eval()
+    model = Compressor(**config.Model.Params).to(device)
     model.QuantizationParameter = "qp_2_msssim"
     model.load_state_dict(ckpt["model"])
-    return torch.jit.script(model), RansEncoder(), RansDecoder()
+    return model
+
 
 
 @st.cache
-def compressImage(encoder: RansEncoder, image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
+def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
     image = convert_image_dtype(image)
 
     if crop:
@@ -47,20 +47,19 @@ def compressImage(encoder: RansEncoder, image: torch.Tensor, model: BaseCompress
     image = (image - 0.5) * 2
 
     with model.readyForCoding() as cdfs:
-        codes, size = model.encode(image[None, ...])
-        binaries, headers = model.compress(encoder, codes, size, cdfs)
+        codes, size = model.encode(images)
+        binaries, headers = model.compress(self._encoder, codes, size, cdfs)
 
     return File(headers[0], binaries[0])
 
 
 @st.cache
-def decompressImage(decoder: RansDecoder, sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
+def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
     with model.readyForCoding() as cdfs:
-        codes, imageSize = model.decompress(decoder, [binaries], cdfs, [sourceFile.FileHeader])
         # [1, c, h, w]
-        restored = model.decode(codes, imageSize)
+        restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
 
     # [c, h, w]
     return DeTransform()(restored[0])
@@ -73,7 +72,7 @@ def main():
     else:
         device = torch.device("cuda")
 
-    model, encoder, decoder = loadModel(device)
+    model = loadModel(device).eval()
 
     st.sidebar.markdown("""
 <p align="center">
@@ -135,7 +134,7 @@ def main():
 
             st.text(str(binaryFile))
 
-            result = decompressImage(encoder, binaryFile, model)
+            result = decompressImage(binaryFile, model)
             st.image(result.cpu().permute(1, 2, 0).numpy())
 
             downloadButton = st.empty()
@@ -164,7 +163,7 @@ def main():
                 return
             image = pil_to_tensor(image.convert("RGB")).to(device)
             # st.image(image.cpu().permute(1, 2, 0).numpy())
-            result = compressImage(decoder, image, model, cropping)
+            result = compressImage(image, model, cropping)
 
             st.text(str(result))
 

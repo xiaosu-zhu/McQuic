@@ -14,7 +14,6 @@ from mcquic.rans import RansEncoder, RansDecoder
 
 
 class BaseQuantizer(nn.Module):
-    _dummyTensor: torch.Tensor
     def __init__(self, m: int, k: List[int]):
         super().__init__()
         self._entropyCoder = EntropyCoder(m, k)
@@ -98,6 +97,7 @@ class _multiCodebookQuantization(nn.Module):
         # codebook = self._codebook.clone().detach()
         dist.broadcast(self._codebook, 0)
 
+    @torch.jit.export
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         # [n, m, h, w, k]
         distance = self._distance(x)
@@ -107,6 +107,7 @@ class _multiCodebookQuantization(nn.Module):
         return code
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
+    @torch.jit.export
     def _distance(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
         # [n, m, d, h, w]
@@ -172,20 +173,23 @@ class _multiCodebookDeQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
+        self.register_buffer("_ix", torch.arange(self._m), persistent=False)
 
+    @torch.jit.export
     def decode(self, code: torch.Tensor) -> torch.Tensor:
         # codes: [n, m, h, w]
         n, _, h, w = code.shape
         # [n, h, w, m]
         code = code.permute(0, 2, 3, 1)
         # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
-        ix = torch.arange(self._m, device=code.device).expand_as(code)
+        ix = self._ix.expand_as(code)
         # [n, h, w, m, d]
         indexed = self._codebook[ix, code]
         # [n, c, h, w]
         return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
+    @torch.jit.export
     def forward(self, sample: torch.Tensor):
         if torch.jit.is_scripting():
             return self.decode(sample)
@@ -323,6 +327,7 @@ class UMGMQuantizer(BaseQuantizer):
         self._encoders: nn.ModuleList[QuantizerEncoder] = nn.ModuleList(encoders)
         self._decoders: nn.ModuleList[QuantizerDecoder] = nn.ModuleList(decoders)
 
+    @torch.jit.export
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
         for encoder in self._encoders:
@@ -332,6 +337,7 @@ class UMGMQuantizer(BaseQuantizer):
         # lv * [n, m, h, w]
         return codes
 
+    @torch.jit.export
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         formerLevel = None
         for i, decoder in enumerate(self._decoders[::-1]):
