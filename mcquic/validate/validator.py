@@ -86,8 +86,6 @@ class Validator:
             torch.cuda.synchronize()
             encoderMs = startEvent.elapsed_time(endEvent)
 
-            size = size[1:]
-
             startEvent.record()
             for _ in range(50):
                 # codes, imageSize = model.decompress(self._decoder, binaries, cdfs, headers)
