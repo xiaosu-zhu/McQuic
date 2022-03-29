@@ -1,5 +1,5 @@
 import math
-from typing import Callable, Dict, Iterable, List, Tuple, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import torch
 from torch import nn
@@ -10,6 +10,7 @@ from mcquic.modules.entropyCoder import EntropyCoder
 from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize
 from mcquic import Consts
+from mcquic.rans import RansEncoder, RansDecoder
 
 
 class BaseQuantizer(nn.Module):
@@ -26,6 +27,7 @@ class BaseQuantizer(nn.Module):
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
 
+    @torch.jit.ignore
     def readyForCoding(self):
         return self._entropyCoder.readyForCoding()
 
@@ -36,12 +38,14 @@ class BaseQuantizer(nn.Module):
         raise NotImplementedError
 
     @property
+    @torch.jit.unused
     def Freq(self):
         return self._entropyCoder.Freq
 
-    def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[CodeSize]]:
+    @torch.jit.ignore
+    def compress(self, encoder: RansEncoder, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[CodeSize]]:
         # List of binary, len = n, len(binaries[0]) = level
-        binaries, codeSize = self._entropyCoder.compress(codes, cdfs)
+        binaries, codeSize = self._entropyCoder.compress(encoder, codes, cdfs)
         return binaries, codeSize
 
     def _validateCode(self, refCodes: List[torch.Tensor], decompressed: List[torch.Tensor]):
@@ -49,8 +53,9 @@ class BaseQuantizer(nn.Module):
             if torch.any(code != restored):
                 raise RuntimeError("Got wrong decompressed result from entropy coder.")
 
-    def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
-        return self._entropyCoder.decompress(binaries, codeSize, cdfs)
+    @torch.jit.ignore
+    def decompress(self, decoder: RansDecoder, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
+        return self._entropyCoder.decompress(decoder, binaries, codeSize, cdfs)
 
 
 # NOTE: You may notice the quantizer implemented here is different with README.md
@@ -150,8 +155,9 @@ class _multiCodebookQuantization(nn.Module):
         # sampled = gumbelArgmaxRandomPerturb(logit, self._permutationRate * rateScale, temperature)
         return sampled, logit
 
-    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
+        if torch.jit.is_scripting():
+            return self.encode(x)
         sample, logit = self._sample(x, 1.0)
         # [n, m, h, w, 1]
         code = logit.argmax(-1, keepdim=True)
@@ -180,9 +186,10 @@ class _multiCodebookDeQuantization(nn.Module):
         return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
-    @torch.jit.ignore
     def forward(self, sample: torch.Tensor):
-        n, m, h, w, k = sample.shape
+        if torch.jit.is_scripting():
+            return self.decode(sample)
+        n, _, h, w, _ = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
         return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
 
@@ -227,8 +234,9 @@ class _quantizerEncoder(nn.Module):
         #      ↓ residual,                         [n, m, h, w]
         return z - self._dequantizer.decode(code), code
 
-    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
+        if torch.jit.is_scripting():
+            return self.encode(x)
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
         q, code, oneHot, logit = self._quantizer(self._quantizationHead(z))
@@ -262,7 +270,7 @@ class _quantizerDecoder(nn.Module):
     @torch.jit.export
     def decode(self, code: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
         q = self._dequantizationHead(self._dequantizer.decode(code))
-        if self._sideHead is not None:
+        if formerLevel is not None and self._sideHead is not None:
             xHat = q + self._sideHead(formerLevel)
         else:
             xHat = q
@@ -270,6 +278,8 @@ class _quantizerDecoder(nn.Module):
 
     @torch.jit.ignore
     def forward(self, q: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
+        if torch.jit.is_scripting():
+            return self.decode(q, formerLevel)
         q = self._dequantizationHead(self._dequantizer(q))
         if self._sideHead is not None:
             xHat = q + self._sideHead(formerLevel)
@@ -325,7 +335,7 @@ class UMGMQuantizer(BaseQuantizer):
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         formerLevel = None
         for i, decoder in enumerate(self._decoders[::-1]):
-            code = codes[len(self._k) - i]
+            code = codes[len(self._k) - i - 1]
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
@@ -342,8 +352,11 @@ class UMGMQuantizer(BaseQuantizer):
         for encoder in self._encoders:
             encoder.syncCodebook()
 
-    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
+        if torch.jit.is_scripting():
+            codes = self.encode(x)
+            restored = self.decode(codes)
+            return restored
         quantizeds = list()
         codes = list()
         oneHots = list()

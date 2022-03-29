@@ -9,6 +9,7 @@ from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStri
 from mcquic.nn.blocks import AttentionBlock
 from mcquic.nn.convs import conv3x3
 from mcquic.utils.specification import FileHeader, ImageSize
+from mcquic.rans import RansEncoder, RansDecoder
 
 from .quantizer import BaseQuantizer, UMGMQuantizer
 
@@ -30,13 +31,17 @@ class BaseCompressor(nn.Module):
     def QuantizationParameter(self, qp: str):
         self._qp = qp
 
-    @torch.jit.ignore
     def forward(self, x: torch.Tensor):
-        y = self._encoder(x)
-        # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-        yHat, codes, logits = self._quantizer(y)
-        xHat = self._decoder(yHat)
-        return xHat, yHat, codes, logits
+        if torch.jit.is_scripting():
+            codes, size = self.encode(x)
+            xHat = self.decode(codes, size)
+            return xHat
+        else:
+            y = self._encoder(x)
+            # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
+            yHat, codes, logits = self._quantizer(y)
+            xHat = self._decoder(yHat)
+            return xHat, yHat, codes, logits
 
     def reAssignCodebook(self) -> torch.Tensor:
         return self._quantizer.reAssignCodebook()
@@ -44,10 +49,12 @@ class BaseCompressor(nn.Module):
     def syncCodebook(self):
         return self._quantizer.syncCodebook()
 
+    @torch.jit.ignore
     def readyForCoding(self):
         return self._quantizer.readyForCoding()
 
     @property
+    @torch.jit.unused
     def Freq(self):
         return self._quantizer.Freq
 
@@ -57,25 +64,25 @@ class BaseCompressor(nn.Module):
         return torch.cat(list((freq > 0).flatten() for freq in self._quantizer.Freq)).float().mean()
 
     @torch.jit.export
-    def encode(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], Tuple[int, int, int]]:
-        _, c, h, w = x.shape
+    def encode(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], Tuple[int, int]]:
+        _, _, h, w = x.shape
         x = self._padding(x)
         y = self._encoder(x)
         # codes: lv * [n, m, h, w]
         codes = self._quantizer.encode(y)
-        return codes, (c, h, w)
+        return codes, (h, w)
 
     @torch.jit.ignore
-    def compress(self, codes: List[torch.Tensor], size: Tuple[int, int, int], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[FileHeader]]:
+    def compress(self, encoder: RansEncoder, codes: List[torch.Tensor], size: Tuple[int, int], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[FileHeader]]:
         # binaries: List of binary, len = n, len(binaries[0]) = level
-        binaries, codeSizes = self._quantizer.compress(codes, cdfs)
-        c, h, w = size
-        header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
+        binaries, codeSizes = self._quantizer.compress(encoder, codes, cdfs)
+        h, w = size
+        header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=3)) for codeSize in codeSizes]
         return binaries, header
 
     @torch.jit.ignore
-    def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> Tuple[List[torch.Tensor], Tuple[int, int]]:
-        codes = self._quantizer.decompress(binaries, [header.CodeSize for header in headers], cdfs)
+    def decompress(self, decoder: RansDecoder, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> Tuple[List[torch.Tensor], Tuple[int, int]]:
+        codes = self._quantizer.decompress(decoder, binaries, [header.CodeSize for header in headers], cdfs)
         imageSize = (headers[0].ImageSize.height, headers[0].ImageSize.width)
         return codes, imageSize
 

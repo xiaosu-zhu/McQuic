@@ -1,6 +1,5 @@
 import logging
 import pathlib
-from typing import List, Tuple
 
 import click
 import torch
@@ -16,6 +15,7 @@ from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.utils import versionCheck
 from mcquic.utils.specification import File
 from mcquic.utils.vision import DeTransform
+from mcquic.rans import RansEncoder, RansDecoder
 
 
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
@@ -129,20 +129,25 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     # [c, h, w]
     image = (image - 0.5) * 2
 
+    encoder = RansEncoder()
+
     with model.readyForCoding() as cdfs:
         codes, size = model.encode(image[None, ...])
-        binaries, headers = model.compress(codes, size, cdfs)
+        binaries, headers = model.compress(encoder, codes, size, cdfs)
 
     # Since there's only one image, we directly pick the first item.
     return File(headers[0], binaries[0])
 
 
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.Tensor:
+
     binaries = sourceFile.Content
+
+    decoder = RansDecoder()
 
     with model.readyForCoding() as cdfs:
         # append it to list to make batch-size = 1.
-        codes, imageSize = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
+        codes, imageSize = model.decompress(decoder, [binaries], cdfs, [sourceFile.FileHeader])
         # [1, c, h, w]
         restored = model.decode(codes, imageSize)
 
@@ -150,9 +155,9 @@ def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.Tensor:
     return DeTransform()(restored[0])
 
 
-def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger):
+def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger) -> BaseCompressor:
     if local is not None:
-        logger.warning("By passing `--local`, `-qp` arg will be ignored. Checkpoint from %s will be loaded. Please ensure you obtain this local model from a trusted source.", local)
+        logger.warning("By passing `--local`, `-qp` arg will be ignored. Checkpoint from `%s` will be loaded. Please ensure you obtain this local model from a trusted source.", local)
         ckpt = torch.load(local, device)
 
         logger.info("Use local model.")
@@ -174,7 +179,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
     model.QuantizationParameter = str(local) if local is not None else key
     model.load_state_dict(ckpt["model"])
     logger.info(f"Model loaded, params: {config.Model.Params}.")
-    return torch.jit.script(model)
+    return model
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
