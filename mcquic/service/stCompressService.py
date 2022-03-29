@@ -31,7 +31,7 @@ def loadModel(device):
     model = Compressor(**config.Model.Params).to(device).eval()
     model.QuantizationParameter = "qp_2_msssim"
     model.load_state_dict(ckpt["model"])
-    return torch.jit.script(model)
+    return model
 
 
 @st.cache
