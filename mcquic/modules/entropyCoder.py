@@ -138,11 +138,6 @@ class EntropyCoder(nn.Module):
                 # [m, h, w]
                 offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
                 binary: bytes = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
-                # restored: List[int] = self.decoder.decode_with_indexes(binary, idx, cdf, cdfSizes, offsets)
-                # if torch.any(code != torch.tensor(restored, device=code.device).reshape(-1, m, h, w)):
-                #     raise RuntimeError("Error")
-                # else:
-                #     print("Check")
                 compressed[i].append(binary)
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 

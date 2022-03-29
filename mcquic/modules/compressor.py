@@ -1,8 +1,11 @@
+from copy import deepcopy
 from typing import List, Tuple
+
 import torch
 from torch import nn
 
 import mcquic
+from mcquic.config import Config
 from mcquic.datasets.transforms import AlignedPadding
 from mcquic.nn import pixelShuffle3x3
 from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
@@ -15,21 +18,26 @@ from .quantizer import BaseQuantizer, UMGMQuantizer
 
 
 class BaseCompressor(nn.Module):
+    cdfs: List[List[List[int]]]
+    qp: str
+    config: str
+    version: str
+    k: List[int]
     def __init__(self, encoder: nn.Module, quantizer: BaseQuantizer, decoder: nn.Module):
         super().__init__()
         self._encoder = encoder
         self._decoder = decoder
         self._quantizer = quantizer
-        self._qp = "-1"
+        self.qp = "-1"
         self._padding = AlignedPadding()
 
     @property
     def QuantizationParameter(self) -> str:
-        return self._qp
+        return self.qp
 
     @QuantizationParameter.setter
     def QuantizationParameter(self, qp: str):
-        self._qp = qp
+        self.qp = qp
 
     def forward(self, x: torch.Tensor):
         if torch.jit.is_scripting():
@@ -52,6 +60,17 @@ class BaseCompressor(nn.Module):
     @torch.jit.ignore
     def readyForCoding(self):
         return self._quantizer.readyForCoding()
+
+    def exportForJIT(self, device, config: Config):
+        self.to(device)
+        self.config = config.dump()
+        self.version = mcquic.__version__
+        qp = config.Model.Params["m"]
+        self.qp = f"qp_{qp}_{config.Train.Target}"
+        self.k = config.Model.Params["k"]
+        with self.readyForCoding() as cdfs:
+            self.cdfs = deepcopy(cdfs)
+        return torch.jit.freeze(torch.jit.script(self), ["encode", "decode", "cdfs", "qp", "_encoder", "_decoder", "_quantizer", "_padding", "config", "version", "k"])
 
     @property
     @torch.jit.unused
@@ -77,7 +96,7 @@ class BaseCompressor(nn.Module):
         # binaries: List of binary, len = n, len(binaries[0]) = level
         binaries, codeSizes = self._quantizer.compress(encoder, codes, cdfs)
         h, w = size
-        header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=3)) for codeSize in codeSizes]
+        header = [FileHeader(mcquic.__version__, self.qp, codeSize, ImageSize(height=h, width=w, channel=3)) for codeSize in codeSizes]
         return binaries, header
 
     @torch.jit.ignore
