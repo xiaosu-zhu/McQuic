@@ -41,7 +41,7 @@ jobs:
       - name: Generate models hash
         run: |
           python -m pip install requests
-          python ci/pre_commit/update_model_hash.py mcquic/cli.py
+          python ci/pre_commit/update_model_hash.py mcquic/demo.py
       - name: Commit changes
         uses: EndBug/add-and-commit@v4
         with:
