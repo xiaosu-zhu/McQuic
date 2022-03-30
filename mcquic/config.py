@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import math
 from typing import Any, Dict
 
-import torch.distributed as dist
 from marshmallow import Schema, fields, post_load, RAISE
 
 
