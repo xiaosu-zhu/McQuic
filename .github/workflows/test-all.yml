@@ -109,7 +109,7 @@ jobs:
           mcquic-validate --help
           mcquic-dataset --help
       - name: Test mcquic
-        if: matrix.os 1= 'windows-latest'
+        if: matrix.os != 'windows-latest'
         run: |
           eval "$(conda shell.bash hook)"
           conda activate
