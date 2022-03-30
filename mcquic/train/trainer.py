@@ -268,7 +268,7 @@ class MainTrainer(_baseTrainer):
             afterRunHook=afterRunHook,
             epochStartHook=ChainHook(
                 functools.partial(self.epochStartCalls, valLoader=valLoader),
-                epochStartHook)
+                epochStartHook),
             epochFinishHook=ChainHook(
                 self.epochFinishCalls,
                 epochFinishHook),

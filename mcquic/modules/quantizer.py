@@ -13,7 +13,6 @@ from mcquic import Consts
 
 
 class BaseQuantizer(nn.Module):
-    _dummyTensor: torch.Tensor
     def __init__(self, m: int, k: List[int]):
         super().__init__()
         self._entropyCoder = EntropyCoder(m, k)
@@ -22,7 +21,6 @@ class BaseQuantizer(nn.Module):
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         raise NotImplementedError
-
 
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
@@ -40,7 +38,6 @@ class BaseQuantizer(nn.Module):
     def Freq(self):
         return self._entropyCoder.Freq
 
-    @torch.jit.ignore
     def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
         codes = self.encode(x)
 
@@ -53,7 +50,6 @@ class BaseQuantizer(nn.Module):
             if torch.any(code != restored):
                 raise RuntimeError("Got wrong decompressed result from entropy coder.")
 
-    @torch.jit.ignore
     def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> torch.Tensor:
         decompressed = self._entropyCoder.decompress(binaries, codeSize, cdfs)
         # self._validateCode(codes, decompressed)
@@ -74,7 +70,6 @@ class _multiCodebookQuantization(nn.Module):
         self._bound = LowerBound(Consts.Eps)
         self._permutationRate = permutationRate
 
-    @torch.jit.ignore
     def reAssignCodebook(self, freq: torch.Tensor)-> torch.Tensor:
         codebook = self._codebook.clone().detach()
         freq = freq.to(self._codebook.device).clone().detach()
@@ -173,6 +168,7 @@ class _multiCodebookDeQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
+        self.register_buffer("_ix", torch.arange(self._m), persistent=False)
 
     def decode(self, code: torch.Tensor):
         # codes: [n, m, h, w]
@@ -180,7 +176,7 @@ class _multiCodebookDeQuantization(nn.Module):
         # [n, h, w, m]
         code = code.permute(0, 2, 3, 1)
         # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
-        ix = torch.arange(self._m, device=code.device).expand_as(code)
+        ix = self._ix.expand_as(code)
         # [n, h, w, m, d]
         indexed = self._codebook[ix, code]
         # [n, c, h, w]
@@ -188,7 +184,7 @@ class _multiCodebookDeQuantization(nn.Module):
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def forward(self, sample: torch.Tensor):
-        n, m, h, w, k = sample.shape
+        n, _, h, w, _ = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
         return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
 
@@ -312,8 +308,8 @@ class UMGMQuantizer(BaseQuantizer):
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
 
-        self._encoders: Iterable[_quantizerEncoder] = nn.ModuleList(encoders)
-        self._decoders: Iterable[_quantizerDecoder] = nn.ModuleList(decoders)
+        self._encoders: nn.ModuleList[_quantizerEncoder] = nn.ModuleList(encoders)
+        self._decoders: nn.ModuleList[_quantizerDecoder] = nn.ModuleList(decoders)
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()

@@ -14,6 +14,7 @@ from mcquic import Config
 from mcquic.modules.compressor import Compressor
 from mcquic.utils import versionCheck
 from mcquic.utils.specification import File
+from mcquic.utils.vision import DeTransform
 
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
@@ -43,7 +44,7 @@ def version(ctx, param, value):
     ctx.exit()
 
 
-def checkArgs(debug, quiet):
+def checkArgs(debug: bool, quiet: bool):
     if quiet:
         return logging.CRITICAL
     if debug:
@@ -65,9 +66,7 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
 
         image = read_image(str(input), ImageReadMode.RGB).to(device)
 
-        binaries, header = compressImage(image, model, crop)
-
-        target = File(header, binaries)
+        target = compressImage(image, model, crop)
 
         logger.info(target)
         if output is not None:
@@ -118,7 +117,7 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
     else:
         raise ValueError("Invalid input file.")
 
-def compressImage(image, model, crop):
+def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
     image = convert_image_dtype(image)
 
     if crop:
@@ -128,21 +127,20 @@ def compressImage(image, model, crop):
     # [c, h, w]
     image = (image - 0.5) * 2
 
-    with model._quantizer.readyForCoding() as cdfs:
+    with model.readyForCoding() as cdfs:
         _, binaries, headers = model.compress(image[None, ...], cdfs)
 
     # List of each level binary, FileHeader
-    return binaries[0], headers[0]
+    return File(binaries[0], headers[0])
 
 
 def decompressImage(sourceFile, model):
     binaries = sourceFile.Content
 
-    with model._quantizer.readyForCoding() as cdfs:
+    with model.readyForCoding() as cdfs:
+        # append it to list to make batch-size = 1.
         # [1, c, h, w]
         restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
-
-    from mcquic.utils.vision import DeTransform
 
     # [c, h, w]
     return DeTransform()(restored[0])
@@ -150,7 +148,7 @@ def decompressImage(sourceFile, model):
 
 def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger):
     if local is not None:
-        logger.warning("By passing `--local`, `-qp` arg will be ignored and model from %s will be loaded. Please ensure you obtain this local model from a trusted source.", local)
+        logger.warning("By passing `--local`, `-qp` arg will be ignored. Checkpoint from `%s` will be loaded. Please ensure you obtain this local model from a trusted source.", local)
         ckpt = torch.load(local, device)
 
         logger.info("Use local model.")
@@ -168,7 +166,7 @@ def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.L
     versionCheck(ckpt["version"])
 
     config = Config.deserialize(ckpt["config"])
-    model = Compressor(**config.Model.Params).to(device)
+    model = Compressor(**config.Model.Params).to(device).eval()
     model.QuantizationParameter = str(local) if local is not None else key
     model.load_state_dict(ckpt["model"])
     logger.info(f"Model loaded, params: {config.Model.Params}.")

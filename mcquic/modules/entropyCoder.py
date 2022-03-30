@@ -103,7 +103,7 @@ class EntropyCoder(nn.Module):
         heights = list()
         widths = list()
         # [n, m, h, w]
-        for lv, (code, ki, cdf) in enumerate(zip(codes, self._k, cdfs)):
+        for code, ki, cdf in zip(codes, self._k, cdfs):
             _, _, h, w = code.shape
             heights.append(h)
             widths.append(w)
@@ -115,11 +115,6 @@ class EntropyCoder(nn.Module):
                 # [m, h, w]
                 offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
                 binary: bytes = self.encooder.encode_with_indexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
-                # restored: List[int] = self.decoder.decode_with_indexes(binary, idx, cdf, cdfSizes, offsets)
-                # if torch.any(code != torch.tensor(restored, device=code.device).reshape(-1, m, h, w)):
-                #     raise RuntimeError("Error")
-                # else:
-                #     print("Check")
                 compressed[i].append(binary)
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 
@@ -139,8 +134,7 @@ class EntropyCoder(nn.Module):
         m = codeSizes[0].m
         codes = list(list() for _ in range(lv))
         indices = torch.arange(m)[:, None, None]
-        for i, (binary, codeSize) in enumerate(zip(binaries, codeSizes)):
-            codePerImage = list()
+        for binary, codeSize in zip(binaries, codeSizes):
             for lv, (binaryAtLv, cdf, ki, h, w) in enumerate(zip(binary, cdfs, self._k, codeSize.heights, codeSize.widths)):
                 idx = indices.expand(codeSize.m, h, w).flatten().int().tolist()
                 cdfSizes = [ki + 2] * codeSize.m
