@@ -166,15 +166,6 @@ class Config:
     def serialize(self) -> dict:
         return ConfigSchema().dump(self)
 
-    def dump(self) -> str:
-        result = ConfigSchema().dump(self)
-        return json.dumps(result)
-
-    @staticmethod
-    def load(data: str) -> "Config":
-        result = json.loads(data)
-        return ConfigSchema().load(result)
-
     @staticmethod
     def deserialize(data: dict) -> "Config":
         data = { key: value for key, value in data.items() if "$" not in key }

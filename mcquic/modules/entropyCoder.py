@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Iterable, List, Tuple, Generator, Dict
+from typing import List, Tuple, Generator
 
 import torch
 from torch import nn
@@ -12,32 +12,18 @@ from mcquic.rans import RansEncoder, RansDecoder
 from mcquic.utils.specification import CodeSize
 
 
-# Work-around to make ParameterList support torch.jit
-class ParamsWrapper(nn.Module):
-    params: Dict[str, nn.Parameter]
-    def __init__(self, params: Iterable[nn.Parameter]):
-        super().__init__()
-        self.params = {}
-        for i, param in enumerate(params):
-            self.register_parameter(str(i), param)
-            self.params[str(i)] = param
-
-    def forward(self, idx: int) -> nn.Parameter:
-        return self.params[str(idx)]
-
-
 class EntropyCoder(nn.Module):
     def __init__(self, m: int, k: List[int], ema: float = 0.9):
         super().__init__()
+        self.encooder = RansEncoder()
+        self.decoder = RansDecoder()
         # initial value is uniform
-        self._freqEMA = ParamsWrapper(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
+        self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
         self._k = k
         self._decay = 1 - ema
 
     @torch.no_grad()
     def forward(self, oneHotCodes: List[torch.Tensor]):
-        if torch.jit.is_scripting():
-            return
         # Update freq by EMA
         # [n, m, h, w, k]
         for lv, code in enumerate(oneHotCodes):
@@ -47,18 +33,17 @@ class EntropyCoder(nn.Module):
             dist.all_reduce(totalCount)
 
             # up trigger don't perform EMA
-            rmsMask = totalCount > self._freqEMA(lv)
+            rmsMask = totalCount > self._freqEMA[lv]
             # otherwise
-            ema = self._decay * totalCount + (1 - self._decay) * self._freqEMA(lv)
+            ema = self._decay * totalCount + (1 - self._decay) * self._freqEMA[lv]
 
             # update
-            self._freqEMA(lv).copy_(totalCount * rmsMask + ema * ~rmsMask)
+            self._freqEMA[lv].copy_(totalCount * rmsMask + ema * ~rmsMask)
 
     @contextmanager
-    @torch.jit.ignore
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
         cdfs = list()
-        for freq in self.getFreq():
+        for freq in self.Freq:
             cdfAtLv = list()
             for freqAtM in freq:
                 total = freqAtM.sum()
@@ -75,23 +60,16 @@ class EntropyCoder(nn.Module):
             del cdfs
 
     @property
-    @torch.jit.unused
     def Freq(self):
-        return self.getFreq()
-
-    @torch.jit.ignore
-    def getFreq(self):
         """Yields list of `[m, k]` tensors.
 
         Yields:
             torch.Tensor: `[m, k]` tensor of level `l`.
         """
-        for lv in range(len(self._k)):
-            freqEMA = self._freqEMA(lv)
+        for freqEMA in self._freqEMA:
             # normalize with precision 16bits.
             yield (freqEMA / freqEMA.sum(-1, keepdim=True) * 65536).round().long()
 
-    @torch.jit.ignore
     def _checkShape(self, codes: List[torch.Tensor]):
         info = "Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...], which is a `level` length list. each code has shape [n, m, h, w]. "
         if len(codes) < 1:
@@ -109,8 +87,7 @@ class EntropyCoder(nn.Module):
         return n, m
 
     @torch.inference_mode()
-    @torch.jit.ignore
-    def compress(self, encoder: RansEncoder, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[CodeSize]]:
+    def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[CodeSize]]:
         """Compress codes to binary.
 
         Args:
@@ -142,8 +119,7 @@ class EntropyCoder(nn.Module):
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 
     @torch.inference_mode()
-    @torch.jit.ignore
-    def decompress(self, decoder: RansDecoder, binaries: List[List[bytes]], codeSizes: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
+    def decompress(self, binaries: List[List[bytes]], codeSizes: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
         """Restore codes from binary
 
         Args:
@@ -163,8 +139,8 @@ class EntropyCoder(nn.Module):
                 idx = indices.expand(codeSize.m, h, w).flatten().int().tolist()
                 cdfSizes = [ki + 2] * codeSize.m
                 offsets = torch.zeros(codeSize.m, h, w, dtype=torch.int).flatten().int().tolist()
-                restored: List[int] = decoder.decode_with_indexes(binaryAtLv, idx, cdf, cdfSizes, offsets)
+                restored: List[int] = self.decoder.decode_with_indexes(binaryAtLv, idx, cdf, cdfSizes, offsets)
                 # [m, h, w]
                 code = torch.tensor(restored).reshape(codeSize.m, h, w)
                 codes[lv].append(code)
-        return [torch.stack(c, 0).to(self._freqEMA(0).device) for c in codes]
+        return [torch.stack(c, 0).to(self._freqEMA[0].device) for c in codes]

@@ -1,5 +1,5 @@
 import math
-from typing import Callable, Dict, List, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Tuple, Union
 
 import torch
 from torch import nn
@@ -10,7 +10,6 @@ from mcquic.modules.entropyCoder import EntropyCoder
 from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize
 from mcquic import Consts
-from mcquic.rans import RansEncoder, RansDecoder
 
 
 class BaseQuantizer(nn.Module):
@@ -26,7 +25,6 @@ class BaseQuantizer(nn.Module):
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
 
-    @torch.jit.ignore
     def readyForCoding(self):
         return self._entropyCoder.readyForCoding()
 
@@ -37,7 +35,6 @@ class BaseQuantizer(nn.Module):
         raise NotImplementedError
 
     @property
-    @torch.jit.unused
     def Freq(self):
         return self._entropyCoder.Freq
 
@@ -45,8 +42,8 @@ class BaseQuantizer(nn.Module):
         codes = self.encode(x)
 
         # List of binary, len = n, len(binaries[0]) = level
-        binaries, codeSize = self._entropyCoder.compress(encoder, codes, cdfs)
-        return binaries, codeSize
+        binaries, codeSize = self._entropyCoder.compress(codes, cdfs)
+        return codes, binaries, codeSize
 
     def _validateCode(self, refCodes: List[torch.Tensor], decompressed: List[torch.Tensor]):
         for code, restored in zip(refCodes, decompressed):
@@ -99,8 +96,7 @@ class _multiCodebookQuantization(nn.Module):
         # codebook = self._codebook.clone().detach()
         dist.broadcast(self._codebook, 0)
 
-    @torch.jit.export
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
+    def encode(self, x: torch.Tensor):
         # [n, m, h, w, k]
         distance = self._distance(x)
         # [n, m, h, w, k] -> [n, m, h, w]
@@ -109,7 +105,6 @@ class _multiCodebookQuantization(nn.Module):
         return code
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
-    @torch.jit.export
     def _distance(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
         # [n, m, d, h, w]
@@ -159,8 +154,6 @@ class _multiCodebookQuantization(nn.Module):
         return sampled, logit
 
     def forward(self, x: torch.Tensor):
-        if torch.jit.is_scripting():
-            return self.encode(x)
         sample, logit = self._sample(x, 1.0)
         # [n, m, h, w, 1]
         code = logit.argmax(-1, keepdim=True)
@@ -177,8 +170,7 @@ class _multiCodebookDeQuantization(nn.Module):
         self._codebook = codebook
         self.register_buffer("_ix", torch.arange(self._m), persistent=False)
 
-    @torch.jit.export
-    def decode(self, code: torch.Tensor) -> torch.Tensor:
+    def decode(self, code: torch.Tensor):
         # codes: [n, m, h, w]
         n, _, h, w = code.shape
         # [n, h, w, m]
@@ -191,7 +183,6 @@ class _multiCodebookDeQuantization(nn.Module):
         return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
-    @torch.jit.export
     def forward(self, sample: torch.Tensor):
         n, _, h, w, _ = sample.shape
         # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
@@ -227,7 +218,6 @@ class _quantizerEncoder(nn.Module):
     def reAssignCodebook(self, freq: torch.Tensor) -> torch.Tensor:
         return self._quantizer.reAssignCodebook(freq)
 
-    @torch.jit.export
     def encode(self, x: torch.Tensor):
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
@@ -239,8 +229,6 @@ class _quantizerEncoder(nn.Module):
         return z - self._dequantizer.decode(code), code
 
     def forward(self, x: torch.Tensor):
-        if torch.jit.is_scripting():
-            return self.encode(x)
         # [h, w] -> [h/2, w/2]
         z = self._latentStageEncoder(x)
         q, code, oneHot, logit = self._quantizer(self._quantizationHead(z))
@@ -271,19 +259,15 @@ class _quantizerDecoder(nn.Module):
         self._restoreHead =  restoreHead
 
     #                [n, m, h, w]
-    @torch.jit.export
     def decode(self, code: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
         q = self._dequantizationHead(self._dequantizer.decode(code))
-        if formerLevel is not None and self._sideHead is not None:
+        if self._sideHead is not None:
             xHat = q + self._sideHead(formerLevel)
         else:
             xHat = q
         return self._restoreHead(xHat)
 
-    @torch.jit.ignore
     def forward(self, q: torch.Tensor, formerLevel: Union[None, torch.Tensor]):
-        if torch.jit.is_scripting():
-            return self.decode(q, formerLevel)
         q = self._dequantizationHead(self._dequantizer(q))
         if self._sideHead is not None:
             xHat = q + self._sideHead(formerLevel)
@@ -327,7 +311,6 @@ class UMGMQuantizer(BaseQuantizer):
         self._encoders: nn.ModuleList[_quantizerEncoder] = nn.ModuleList(encoders)
         self._decoders: nn.ModuleList[_quantizerDecoder] = nn.ModuleList(decoders)
 
-    @torch.jit.export
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
         for encoder in self._encoders:
@@ -337,11 +320,9 @@ class UMGMQuantizer(BaseQuantizer):
         # lv * [n, m, h, w]
         return codes
 
-    @torch.jit.export
-    def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
+    def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
         formerLevel = None
-        for i, decoder in enumerate(self._decoders[::-1]):
-            code = codes[len(self._k) - i - 1]
+        for decoder, code in zip(self._decoders[::-1], codes[::-1]):
             formerLevel = decoder.decode(code, formerLevel)
         return formerLevel
 
@@ -359,10 +340,6 @@ class UMGMQuantizer(BaseQuantizer):
             encoder.syncCodebook()
 
     def forward(self, x: torch.Tensor):
-        if torch.jit.is_scripting():
-            codes = self.encode(x)
-            restored = self.decode(codes)
-            return restored
         quantizeds = list()
         codes = list()
         oneHots = list()

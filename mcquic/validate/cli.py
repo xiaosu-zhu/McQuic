@@ -49,8 +49,6 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
 
     model.load_state_dict(modelStateDict)
 
-    scriptModel = model.exportForJIT("cuda", config)
-
     validator = Validator(config, "cuda")
 
     valLoader = getValLoader(images, False, logger)
@@ -58,9 +56,9 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
     progress = getRichProgress()
 
     with progress:
-        results, summary = validator.validate(None, scriptModel, valLoader, progress)
+        results, summary = validator.validate(None, model, valLoader, progress)
         logger.info(summary)
-        _, speedSummary = validator.speed(None, scriptModel, progress)
+        _, speedSummary = validator.speed(None, model, progress)
         logger.info(speedSummary)
 
         if output is not None:
