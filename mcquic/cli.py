@@ -1,4 +1,6 @@
-import pathlib
+MODELS_HASH = {
+    "qp_2_msssim": "8e954998"
+}
 
 import click
 import torch
