@@ -1,8 +1,9 @@
+from copy import deepcopy
 from dataclasses import dataclass
 import math
 from typing import Any, Dict
-import json
 
+import torch.distributed as dist
 from marshmallow import Schema, fields, post_load, RAISE
 
 
@@ -132,6 +133,13 @@ class Train:
 
     @property
     def Optim(self) -> General:
+        batchSize = self.BatchSize * self.gpu.GPUs
+        exponent = math.log2(batchSize)
+        scale = 3 - exponent / 2
+        if "lr" in self.optim.Params:
+            optim = deepcopy(self.optim)
+            optim.Params["lr"] /= (2 ** scale)
+            return optim
         return self.optim
 
     @property
@@ -155,13 +163,6 @@ class Config:
     @property
     def Train(self) -> Train:
         return self.train
-
-    def scaleByWorldSize(self, worldSize: int):
-        batchSize = self.train.BatchSize * worldSize
-        exponent = math.log2(batchSize)
-        scale = 3 - exponent / 2
-        if "lr" in self.Train.Optim.Params:
-            self.Train.Optim.Params["lr"] /= (2 ** scale)
 
     def serialize(self) -> dict:
         return ConfigSchema().dump(self)
