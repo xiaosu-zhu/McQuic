@@ -9,6 +9,7 @@ import yaml
 from vlutils.runtime import queryGPU
 
 from mcquic.config import Config
+from .ddp import ddpSpawnTraining, registerForTrain
 
 def checkArgs(debug, quiet, resume: pathlib.Path, configPath: pathlib.Path):
     if resume is None and configPath is None:
@@ -23,16 +24,15 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
     assert False, "You need to run `mcquic train` with Python optimized-mode. Try re-run me with `python -O -m mcquic.train ...`"
     loggingLevel = checkArgs(debug, quiet, resume, configPath)
 
-    from .ddp import ddpSpawnTraining, registerForTrain
-
     logging.getLogger().setLevel(loggingLevel)
 
     if configPath is not None:
         config = Config.deserialize(yaml.full_load(configPath.read_text()))
-        config.scaleByWorldSize(worldSize)
+        logging.debug("Use fresh config.")
     elif resume is not None:
         ckpt = torch.load(resume, "cpu")
         config = Config.deserialize(ckpt["config"])
+        logging.debug("Use saved config.")
     else:
         raise ValueError("Both `--resume` and `config` are None.")
 

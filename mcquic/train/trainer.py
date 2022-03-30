@@ -8,7 +8,6 @@ import threading
 import gc
 
 import torch
-from torch import nn
 from torch.utils.data import DataLoader, DistributedSampler
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
@@ -16,11 +15,11 @@ from vlutils.saver import Saver
 from vlutils.logger import trackingFunctionCalls
 from vlutils.base import Restorable
 from vlutils.runtime import relativePath
-from vlutils.config import serialize
 from rich import filesize
 
 from mcquic.consts import Consts
-from mcquic.validate.utils import Decibel, EMATracker
+from mcquic.loss import Distortion
+from mcquic.validate.utils import EMATracker
 from mcquic.modules.composed import Composed
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
@@ -30,7 +29,7 @@ from mcquic.utils import totalParameters
 from .utils import EpochFrequencyHook, checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_) -> None:
         super().__init__()
         self.saver = saver
 
@@ -201,7 +200,7 @@ class _baseTrainer(Restorable):
 
 
 class MainTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> None:
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
@@ -355,7 +354,7 @@ class MainTrainer(_baseTrainer):
 
 
 class PalTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> None:
         if dist.get_rank() == 0:
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, modelFn, optimizer, scheduler, saver)
@@ -364,7 +363,7 @@ class PalTrainer(_baseTrainer):
         return super().train(trainLoader, trainSampler, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
-def getTrainer(rank: int, config: Config, model: Callable[[], Tuple[BaseCompressor, nn.Module]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
+def getTrainer(rank: int, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
     if rank == 0:
-        return MainTrainer(config, model, optimizer, scheduler, saver)
-    return PalTrainer(config, model, optimizer, scheduler, saver)
+        return MainTrainer(config, modelFn, optimizer, scheduler, saver)
+    return PalTrainer(config, modelFn, optimizer, scheduler, saver)

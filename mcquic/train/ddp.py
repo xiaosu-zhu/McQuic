@@ -13,7 +13,7 @@ from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry, LossRegistry
 import mcquic.train.lrSchedulers as _
-import mcquic.loss as _
+import mcquic.loss
 
 from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
@@ -33,7 +33,7 @@ def registerForTrain():
     LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR)
 
 
-def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, nn.Module]:
+def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distortion]:
     compressor = Compressor(**modelParams)
     criterion = LossRegistry.get(lossTarget)()
 
