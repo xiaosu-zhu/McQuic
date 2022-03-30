@@ -29,6 +29,7 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
 
     if configPath is not None:
         config = Config.deserialize(yaml.full_load(configPath.read_text()))
+        config.scaleByWorldSize(worldSize)
     elif resume is not None:
         ckpt = torch.load(resume, "cpu")
         config = Config.deserialize(ckpt["config"])
@@ -37,7 +38,6 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
 
     gpus = queryGPU(needGPUs=config.Train.GPU.GPUs, wantsMore=config.Train.GPU.WantsMore, needVRamEachGPU=(config.Train.GPU.VRam + 256) if config.Train.GPU.VRam > 0 else -1, writeOSEnv=True)
     worldSize = len(gpus)
-    config.scaleByWorldSize(worldSize)
 
     masterPort = str(random.randint(10001, 65535))
 
