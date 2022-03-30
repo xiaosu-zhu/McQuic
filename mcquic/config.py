@@ -10,7 +10,7 @@ class GeneralSchema(Schema):
     class Meta:
         unknown = RAISE
     key = fields.Str(required=True, description="A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.")
-    params = fields.Dict(keys=fields.Str(), values=fields.Raw(), required=True, description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.", additionalProperties=False)
+    params = fields.Dict(required=True, description="Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.")
 
     @post_load
     def _(self, data, **kwargs):
