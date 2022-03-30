@@ -132,7 +132,7 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
         _, binaries, headers = model.compress(image[None, ...], cdfs)
 
     # List of each level binary, FileHeader
-    return File(binaries[0], headers[0])
+    return File(headers[0], binaries[0])
 
 
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.Tensor:
