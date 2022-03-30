@@ -6,7 +6,7 @@ on:
     paths: ['mcquic/config.py']
 
 jobs:
-  build:
+  update-schema:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
