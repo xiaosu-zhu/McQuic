@@ -3,6 +3,7 @@
 - [1. ![badge](https://img.shields.io/badge/Required-blue) Property `model`](#model)
   - [1.1. ![badge](https://img.shields.io/badge/Required-blue) Property `key`](#model_key)
   - [1.2. ![badge](https://img.shields.io/badge/Required-blue) Property `params`](#model_params)
+    - [1.2.1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `additionalProperties`](#model_params_additionalProperties)
 - [2. ![badge](https://img.shields.io/badge/Required-blue) Property `train`](#train)
   - [2.1. ![badge](https://img.shields.io/badge/Required-blue) Property `batchSize`](#train_batchSize)
   - [2.2. ![badge](https://img.shields.io/badge/Required-blue) Property `epoch`](#train_epoch)
@@ -40,11 +41,11 @@
 
 **Description:** Compression model to use. Now we only have one model, so `key` is ignored. Avaliable params are `channel`, `m` and `k`.
 
-| Property                   | Pattern | Type                      | Deprecated | Definition | Title/Description |
-| -------------------------- | ------- | ------------------------- | ---------- | ---------- | ----------------- |
-| + [key](#model_key )       | No      | string                    | No         | -          | key               |
-| + [params](#model_params ) | No      | string, number or boolean | No         | -          | params            |
-|                            |         |                           |            |            |                   |
+| Property                   | Pattern | Type   | Deprecated | Definition | Title/Description |
+| -------------------------- | ------- | ------ | ---------- | ---------- | ----------------- |
+| + [key](#model_key )       | No      | string | No         | -          | key               |
+| + [params](#model_params ) | No      | object | No         | -          | params            |
+|                            |         |        |            |            |                   |
 
 ### <a name="model_key"></a>1.1. ![badge](https://img.shields.io/badge/Required-blue) Property `key`
 
@@ -61,12 +62,26 @@
 
 **Title:** params
 
-| Type                      | `string, number or boolean`                                                                                                                                      |
+| Type                      | `object`                                                                                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Additional properties** | [![badge](https://img.shields.io/badge/Should-conform-blue)](#model_params_additionalProperties "Each additional property must conform to the following schema") |
 |                           |                                                                                                                                                                  |
 
 **Description:** Corresponding funcation call parameters. So the whole call is `registry.get(key)(**params)`.
+
+| Property                                                      | Pattern | Type   | Deprecated | Definition | Title/Description |
+| ------------------------------------------------------------- | ------- | ------ | ---------- | ---------- | ----------------- |
+| - [additionalProperties](#model_params_additionalProperties ) | No      | string | No         | -          | params            |
+|                                                               |         |        |            |            |                   |
+
+#### <a name="model_params_additionalProperties"></a>1.2.1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `additionalProperties`
+
+**Title:** params
+
+| Type                      | `string`                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
+|                           |                                                                                                                     |
 
 ## <a name="train"></a>2. ![badge](https://img.shields.io/badge/Required-blue) Property `train`
 
