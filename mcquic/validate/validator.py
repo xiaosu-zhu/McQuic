@@ -1,3 +1,4 @@
+from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
@@ -8,8 +9,6 @@ from mcquic.config import Config
 from mcquic.utils.vision import DeTransform
 from mcquic.validate.handlers import MsSSIM, PSNR, BPP, IdealBPP, Visualization, ImageCollector
 from mcquic.modules.compressor import BaseCompressor
-from mcquic.rans import RansEncoder, RansDecoder
-from mcquic.nn.base import compress, decompress
 
 
 class Validator:
@@ -24,9 +23,6 @@ class Validator:
             IdealBPP(config.Model.Params["m"], config.Model.Params["k"]).to(rank),
             ImageCollector().to(rank)
         ])
-        self._config = config
-        self._encoder = RansEncoder()
-        self._decoder = RansDecoder()
 
     def tensorToImage(self, x: torch.Tensor) -> torch.Tensor:
         return self._deTrans(x)
@@ -42,7 +38,7 @@ class Validator:
         return code
 
     @torch.inference_mode()
-    def validate(self, epoch: int, model: BaseCompressor, valLoader: DataLoader, progress: Progress):
+    def validate(self, epoch: Optional[int], model: BaseCompressor, valLoader: DataLoader, progress: Progress):
         self._meter.reset()
         total = len(valLoader)
         now = 0
