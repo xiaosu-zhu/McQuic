@@ -1,3 +1,3 @@
-__version__ = "0.1.19"
+__version__ = "0.1.20"
 from mcquic.consts import Consts
 from mcquic.config import Config
