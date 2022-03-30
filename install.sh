@@ -27,8 +27,7 @@ conda activate mcquic
 conda install -y -n mcquic "pybind11>=2.6,<3" "pip>=22" "tensorboard>=2.3,<3" "rich>=10,<11" "python-lmdb>=1.2,<2" "pyyaml>=5.4,<7" "marshmallow>=3.14,<4" "click>=8,<9" "vlutils" "msgpack-python>=1,<2" packaging -c xiaosu-zhu -c conda-forge
 
 
-if [ "$CONDA_DEFAULT_ENV" != "mcquic"]
-then
+if [[ "$CONDA_DEFAULT_ENV" != "mcquic" ]]; then
     echo "Can't activate conda env mcquic, exit."
     exit
 fi
