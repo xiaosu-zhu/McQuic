@@ -19,7 +19,7 @@ except:
     raise ImportError("To run `mcquic service`, please install Streamlit by `pip install streamlit` firstly.")
 
 
-MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/qp_2_msssim_fcc58b73.mcquic"
+MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/qp_2_msssim_8e954998.mcquic"
 
 HF_SPACE = "HF_SPACE" in os.environ
 
