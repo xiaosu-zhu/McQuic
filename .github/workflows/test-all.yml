@@ -88,17 +88,15 @@ jobs:
         uses: s-weigand/setup-conda@v1
         with:
           python-version: 3.9
-      - name: Install mcquic
-        run: |
-          conda install python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
-          conda install mcquic -c xiaosu-zhu -c conda-forge
-      - name: Test mcquic
+      - name: Install and test mcquic (windows)
         if: matrix.os == 'windows-latest'
         run: |
           C:\Miniconda\shell\condabin\conda-hook.ps1
           conda init powershell
           "if (test-path $PROFILE.CurrentUserAllHosts) { & $PROFILE.CurrentUserAllHosts}"
           conda activate
+          conda install -y python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y mcquic -c xiaosu-zhu -c conda-forge
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
           mcquic --help
@@ -108,11 +106,13 @@ jobs:
           mcquic-train --help
           mcquic-validate --help
           mcquic-dataset --help
-      - name: Test mcquic
+      - name: Install and test mcquic (posix)
         if: matrix.os != 'windows-latest'
         run: |
           eval "$(conda shell.bash hook)"
           conda activate
+          conda install -y python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y mcquic -c xiaosu-zhu -c conda-forge
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
           mcquic --help
