@@ -1,5 +1,6 @@
 #!/bin/bash
-set -ex
+set -e
+set -o pipefail
 
 
 echo "Start installation"
