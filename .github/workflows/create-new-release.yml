@@ -38,6 +38,9 @@ jobs:
       - uses: actions/checkout@master
       - name: Update version
         run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py && python ci/pre_commit/finalize.py conda/meta.yaml ${{ github.event.inputs.release-tag }}
+      - name: Generate models hash
+        run: |
+          python ci/pre_commit/update_model_hash.py mcquic/cli.py
       - name: Commit changes
         uses: EndBug/add-and-commit@v4
         with:
