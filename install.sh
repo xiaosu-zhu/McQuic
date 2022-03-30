@@ -11,7 +11,13 @@ then
 fi
 
 
-conda create -y -n mcquic python=3.9 cudatoolkit "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    conda create -y -n mcquic python=3.9 cudatoolkit "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    conda create -y -n mcquic python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+else
+    conda create -y -n mcquic python=3.9 cudatoolkit "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+fi
 
 eval "$(conda shell.bash hook)"
 

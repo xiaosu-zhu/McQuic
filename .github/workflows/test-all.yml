@@ -90,7 +90,7 @@ jobs:
           python-version: 3.9
       - name: Install mcquic
         run: |
-          conda install python=3.9 pytorch torchvision cudatoolkit -c pytorch
+          conda install python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
           conda install mcquic -c xiaosu-zhu -c conda-forge
       - name: Test mcquic
         run: |
