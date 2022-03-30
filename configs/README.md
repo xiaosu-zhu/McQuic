@@ -71,14 +71,12 @@
 
 | Property                                                      | Pattern | Type   | Deprecated | Definition | Title/Description |
 | ------------------------------------------------------------- | ------- | ------ | ---------- | ---------- | ----------------- |
-| - [additionalProperties](#model_params_additionalProperties ) | No      | string | No         | -          | params            |
+| - [additionalProperties](#model_params_additionalProperties ) | No      | object | No         | -          | -                 |
 |                                                               |         |        |            |            |                   |
 
 #### <a name="model_params_additionalProperties"></a>1.2.1. ![badge](https://img.shields.io/badge/Optional-yellow) Property `additionalProperties`
 
-**Title:** params
-
-| Type                      | `string`                                                                                                            |
+| Type                      | `object`                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
 |                           |                                                                                                                     |
