@@ -118,7 +118,8 @@ The **Mc*****Quic*** hold rich multi-codebooks to quantize visual features and r
    * [Citation](#citation)
    * [Copyright](#copyright)
 
-<!-- Added by: runner, at: Fri Mar 25 15:19:15 UTC 2022 -->
+<!-- Created by https://github.com/ekalinin/github-markdown-toc -->
+<!-- Added by: runner, at: Wed Mar 30 03:04:00 UTC 2022 -->
 
 <!--te-->
 
