@@ -35,7 +35,13 @@ jobs:
           fi
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
+          mcquic --help
           mcquic train --help
+          mcquic validate --help
+          mcquic dataset --help
+          mcquic-train --help
+          mcquic-validate --help
+          mcquic-dataset --help
       - name: Test complete
         run: echo "All install test completed."
   test-install-on-windows:
@@ -61,7 +67,13 @@ jobs:
           conda activate mcquic
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
+          mcquic --help
           mcquic train --help
+          mcquic validate --help
+          mcquic dataset --help
+          mcquic-train --help
+          mcquic-validate --help
+          mcquic-dataset --help
       - name: Test complete
         run: echo "All install test completed."
   test-conda-installation:
@@ -78,7 +90,18 @@ jobs:
           python-version: 3.9
       - name: Install mcquic
         run: |
-          conda create -n mcquic python=3.9 pytorch torchvision cudatoolkit -c pytorch
-          conda install -n mcquic mcquic -c xiaosu-zhu -c conda-forge
+          conda install python=3.9 pytorch torchvision cudatoolkit -c pytorch
+          conda install mcquic -c xiaosu-zhu -c conda-forge
+      - name: Test mcquic
+        run: |
+          mcquic -qp 2 assets/sample.png ./
+          mcquic ./sample.mcq ./
+          mcquic --help
+          mcquic train --help
+          mcquic validate --help
+          mcquic dataset --help
+          mcquic-train --help
+          mcquic-validate --help
+          mcquic-dataset --help
       - name: Test complete
         run: echo "All install test completed."
