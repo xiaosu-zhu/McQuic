@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import warnings
 
 import click
 import torch
@@ -96,9 +97,9 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
                 newQP = -1
             finally:
                 if newLocal is None and newQP < 0:
-                    logger.warning("The compressed binary is produced by a pre-release model since `qp` in file is -1, fallback to use current args.")
+                    warnings.warn("The compressed binary is produced by a pre-release model since `qp` in file is -1, fallback to use current args.")
                 elif isinstance(newLocal, pathlib.Path) and not(newLocal.exists() and newLocal.is_file()):
-                    logger.warning("The compressed binary is compressed by a local model located in `%s`. Unfortunately, we can't find it. Fallback to use current args or you could try again later.", newLocal)
+                    warnings.warn(f"The compressed binary is compressed by a local model located in {newLocal}. Unfortunately, we can't find it. Fallback to use current args or you could try again later.", )
                 else:
                     qp = newQP
                     local = newLocal
@@ -149,7 +150,7 @@ def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.Tensor:
 
 def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger) -> BaseCompressor:
     if local is not None:
-        logger.warning("By passing `--local`, `-qp` arg will be ignored. Checkpoint from `%s` will be loaded. Please ensure you obtain this local model from a trusted source.", local)
+        warnings.warn(f"By passing `--local`, `-qp` arg will be ignored. Checkpoint from {local} will be loaded. Please ensure you obtain this local model from a trusted source.")
         ckpt = torch.load(local, device)
 
         logger.info("Use local model.")

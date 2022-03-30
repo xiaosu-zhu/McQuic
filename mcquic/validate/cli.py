@@ -1,4 +1,5 @@
 import os
+import warnings
 import click
 import pathlib
 import logging
@@ -41,11 +42,10 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
     else:
         modelStateDict = checkpoint["model"]
         if export is not None:
-            logger.warning("I got an already-converted ckpt. The `--export` will be ignored. If you still want to export this ckpt, please copy it directly.")
+            warnings.warn("I got an already-converted ckpt.")
         if not "version" in checkpoint:
             raise RuntimeError("You are using a too old version of ckpt, since there is no `version` in it.")
         versionCheck(checkpoint["version"])
-        export = None
 
     model.load_state_dict(modelStateDict)
 
