@@ -137,7 +137,7 @@ class EntropyCoder(nn.Module):
                 cdfSizes = [ki + 2] * m
                 # [m, h, w]
                 offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
-                binary: bytes = encoder.encode_with_indexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
+                binary: bytes = self.encooder.encode_with_indexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
                 compressed[i].append(binary)
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 

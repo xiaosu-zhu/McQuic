@@ -51,17 +51,13 @@ class Validator:
             task = progress.add_task(f"[ Test ]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
         else:
             task = progress.add_task(f"[ Val@{epoch:4d}]", total=total, progress=f"{now:4d}/{total:4d}", suffix="")
-
-        ks = self._config.Model.Params["k"]
-
-        for now, (images, stem) in enumerate(valLoader):
-            images = images.to(self._rank, non_blocking=True)
-            codes, imageSize = model.encode(images)
-            binaries, headers = compress(self._encoder, codes, ks, model.qp, imageSize, model.cdfs)
-            codes = decompress(self._decoder, binaries, headers, model.cdfs, images.device)
-            restored = model.decode(codes, imageSize)
-            self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes, stem=stem)
-            progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
+        with model.readyForCoding() as cdfs:
+            for now, (images, stem) in enumerate(valLoader):
+                images = images.to(self._rank, non_blocking=True)
+                codes, binaries, headers = model.compress(images, cdfs)
+                restored = model.decompress(binaries, cdfs, headers)
+                self._meter(images=self.tensorToImage(images), binaries=binaries, restored=self.tensorToImage(restored), codes=codes, stem=stem)
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{total:4d}")
         progress.remove_task(task)
         return self._meter.results(), self._meter.summary()
 
@@ -74,35 +70,34 @@ class Validator:
         else:
             task = progress.add_task(f"[ Spd@{epoch:4d}]", total=100, progress=f"{now:4d}/{100:4d}", suffix="")
 
-        tensor = torch.rand(10, 3, 768, 512).to(self._rank)
+        with model.readyForCoding() as cdfs:
+            tensor = torch.rand(10, 3, 768, 512).to(self._rank)
 
-        startEvent = torch.cuda.Event(enable_timing=True)
-        endEvent = torch.cuda.Event(enable_timing=True)
+            startEvent = torch.cuda.Event(enable_timing=True)
+            endEvent = torch.cuda.Event(enable_timing=True)
 
-        # warm up
-        for _ in range(10):
-            codes, size = model.encode(tensor)
-            restored = model.decode(codes, size)
+            # warm up
+            for _ in range(10):
+                codes, binaries, headers = model.compress(tensor, cdfs)
+                restored = model.decompress(binaries, cdfs, headers)
 
-        startEvent.record()
-        for _ in range(50):
-            codes, size = model.encode(tensor)
-            # binaries, headers = model.compress(self._encoder, codes, size, model.cdfs)
-            progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
-            now += 1
-        endEvent.record()
-        torch.cuda.synchronize()
-        encoderMs = startEvent.elapsed_time(endEvent)
+            startEvent.record()
+            for _ in range(50):
+                codes, binaries, headers = model.compress(tensor, cdfs)
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
+                now += 1
+            endEvent.record()
+            torch.cuda.synchronize()
+            encoderMs = startEvent.elapsed_time(endEvent)
 
-        startEvent.record()
-        for _ in range(50):
-            # codes, imageSize = model.decompress(self._decoder, binaries, model.cdfs, headers)
-            restored = model.decode(codes, size)
-            progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
-            now += 1
-        endEvent.record()
-        torch.cuda.synchronize()
-        decoderMs = startEvent.elapsed_time(endEvent)
+            startEvent.record()
+            for _ in range(50):
+                restored = model.decompress(binaries, cdfs, headers)
+                progress.update(task, advance=1, progress=f"{(now + 1):4d}/{100:4d}")
+                now += 1
+            endEvent.record()
+            torch.cuda.synchronize()
+            decoderMs = startEvent.elapsed_time(endEvent)
 
         result = ((50 * 10 * 768 * 512 / 1000) / encoderMs, (50 * 10 * 768 * 512 / 1000) / decoderMs)
-        return result, f"Coding rate: encoder: {result[0]:.2f} Mpps, decoder: {result[1]:.2f} Mpps"
+        return result, f"Coding throughput: encoder: {result[0]:.2f} Mpps, decoder: {result[1]:.2f} Mpps"

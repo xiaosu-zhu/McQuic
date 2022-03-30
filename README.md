@@ -141,7 +141,7 @@ To run the model, your device needs to meet following requirements.
 Install this package is very easy with a `conda` environment installed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html). I recommend you to install it to a new virtual environment directly by:
 ```bash
 # Install a clean pytorch with CUDA support
-conda create -n [ENV_NAME] python=3.9 "pytorch>=1.10,<2" "torchvision>=0.11,<1" cudatoolkit -c pytorch
+conda create -n [ENV_NAME] python=3.9 "pytorch>=1.11,<2" "torchvision>=0.12,<1" cudatoolkit -c pytorch
 # Install mcquic and other dependencies
 conda install -n [ENV_NAME] mcquic -c xiaosu-zhu -c conda-forge
 conda activate [ENV_NAME]
@@ -291,8 +291,11 @@ I've released one pretrained model (Sorry, currently I don't have much free GPUs
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 |         2 	|   128   	| 2 	| [8192,2048,512] 	|   25.45 Mpps / 22.03 Mpps  	|  0.1277 	|
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
+|         12 	|   192   	| 12 	| [8192,2048,512] 	|   11.07 Mpps / 10.21 Mpps  	|    -    	|
 
 The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading, *etc.* are not included in the test.
+
+The main slow-down from small models to large models is caused by channel `128 -> 192`.
 - **`Mpps = Mega-pixels per second`**
 - **`BPP = Bits per pixel`**
 

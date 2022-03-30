@@ -15,8 +15,6 @@ from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.utils import versionCheck
 from mcquic.utils.specification import File
 from mcquic.utils.vision import DeTransform
-from mcquic.rans import RansEncoder, RansDecoder
-
 
 MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
 
@@ -129,27 +127,21 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     # [c, h, w]
     image = (image - 0.5) * 2
 
-    encoder = RansEncoder()
-
     with model.readyForCoding() as cdfs:
-        codes, size = model.encode(image[None, ...])
-        binaries, headers = model.compress(encoder, codes, size, cdfs)
+        _, binaries, headers = model.compress(image[None, ...], cdfs)
 
-    # Since there's only one image, we directly pick the first item.
-    return File(headers[0], binaries[0])
+    # List of each level binary, FileHeader
+    return File(binaries[0], headers[0])
 
 
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.Tensor:
 
     binaries = sourceFile.Content
 
-    decoder = RansDecoder()
-
     with model.readyForCoding() as cdfs:
         # append it to list to make batch-size = 1.
-        codes, imageSize = model.decompress(decoder, [binaries], cdfs, [sourceFile.FileHeader])
         # [1, c, h, w]
-        restored = model.decode(codes, imageSize)
+        restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
 
     # [c, h, w]
     return DeTransform()(restored[0])
