@@ -11,7 +11,7 @@ then
 fi
 
 
-conda create -y -n mcquic python=3.9 cudatoolkit "torchvision>=0.11,<1" "pytorch>=1.10,<2" -c pytorch
+conda create -y -n mcquic python=3.9 cudatoolkit "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
 
 eval "$(conda shell.bash hook)"
 

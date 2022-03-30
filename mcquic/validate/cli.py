@@ -80,18 +80,14 @@ def main(debug: bool, quiet: bool, export: pathlib.Path, path: pathlib.Path, ima
         logger.info(f"Skip saving model.")
         return
 
-    del model, scriptModel
     qp = config.Model.Params["m"]
-    finalName = export.joinpath(f"qp_{qp}_{config.Train.Target.lower()}_{device}.mcquic")
-
-    model = Compressor(**config.Model.Params).to(device).eval()
-    model.load_state_dict(modelStateDict)
+    finalName = export.joinpath(f"qp_{qp}_{config.Train.Target.lower()}.mcquic")
 
     torch.save({
         "model": model.state_dict(),
         "config": config.serialize(),
         "version": mcquic.__version__
-    }, export)
+    }, finalName)
 
     logger.info(f"Saved at `{finalName}`.")
     logger.info("Add hash to file...")
