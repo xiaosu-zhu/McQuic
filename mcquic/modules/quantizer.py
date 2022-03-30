@@ -302,6 +302,10 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizationHead = dequantizationHeadFn()
             sideHead = sideHeadFn() if i < len(k) - 1 else None
             restoreHead = restoreHeadFn()
+            # This magic is called SmallInit, from paper
+            # "Transformers without Tears: Improving the Normalization of Self-Attention",
+            # https://arxiv.org/pdf/1910.05895.pdf
+            # I've tried a series of initilizations, but found this works the best.
             codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m))))
             quantizer = _multiCodebookQuantization(codebook)
             dequantizer = _multiCodebookDeQuantization(codebook)
