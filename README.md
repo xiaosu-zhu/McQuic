@@ -39,9 +39,6 @@
     <img src="https://img.shields.io/conda/v/xiaosu-zhu/mcquic?label=mcquic" alt="Conda package"/>
   </a>
   <a href="https://anaconda.org/xiaosu-zhu/mcquic" target="_blank">
-    <img src="https://img.shields.io/conda/pn/xiaosu-zhu/mcquic" alt="Platforms"/>
-  </a>
-  <a href="https://anaconda.org/xiaosu-zhu/mcquic" target="_blank">
     <img src="https://img.shields.io/conda/dn/xiaosu-zhu/mcquic" alt="Downloads"/>
   </a>
   <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">
