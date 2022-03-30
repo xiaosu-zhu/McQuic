@@ -1,1 +1,1 @@
-$PYTHON -m pip install .
+NPY_NUM_BUILD_JOBS=8 $PYTHON setup.py install
