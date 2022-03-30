@@ -25,4 +25,4 @@ class Consts(metaclass=ConstsMetaClass):
     # TempDir = "/tmp/mcquic/"
     Eps = 1e-6
     CDot = "·"
-    TimeOut = 15
+    TimeOut = 30
