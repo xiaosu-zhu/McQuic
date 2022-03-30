@@ -1,12 +1,10 @@
 from dataclasses import dataclass
 from typing import List, Union
-import warnings
 
 import msgpack
 from marshmallow import Schema, fields, post_load, ValidationError
 import vlutils.logger
 
-import mcquic
 from mcquic.utils import versionCheck
 
 
