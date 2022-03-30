@@ -1,30 +1,15 @@
-import logging
 import pathlib
-import warnings
 
 import click
 import torch
 import torch.hub
-from torchvision.io.image import read_image, ImageReadMode, write_png
-from torchvision.transforms.functional import convert_image_dtype
 from vlutils.utils import DefaultGroup
-from vlutils.logger import configLogging
 
 import mcquic
-from mcquic import Config
-from mcquic.modules.compressor import BaseCompressor, Compressor
-from mcquic.utils import versionCheck
-from mcquic.utils.specification import File
-from mcquic.utils.vision import DeTransform
-
-MODELS_URL = "https://github.com/xiaosu-zhu/McQuic/releases/download/generic/"
-
-MODELS_HASH = {
-    "qp_2_msssim": "8e954998"
-}
 
 
-def version(ctx, param, value):
+
+def version(ctx, _, value):
     if not value or ctx.resilient_parsing:
         return
     click.echo(r"""
@@ -43,136 +28,6 @@ def version(ctx, param, value):
                                              :::::.              :##+:
 """ + mcquic.__version__)
     ctx.exit()
-
-
-def checkArgs(debug: bool, quiet: bool):
-    if quiet:
-        return logging.CRITICAL
-    if debug:
-        return logging.DEBUG
-    return logging.INFO
-
-def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bool, mse: bool, crop: bool, input: pathlib.Path, output: pathlib.Path):
-    loggingLevel = checkArgs(debug, quiet)
-
-    if disable_gpu or not torch.cuda.is_available():
-        device = torch.device("cpu")
-    else:
-        device = torch.device("cuda")
-
-    logger = configLogging(None, "root", loggingLevel)
-
-    if input.suffix.lower() in [".png", ".jpg", ".jpeg"]:
-        model = loadModel(qp, local, device, mse, logger)
-
-        image = read_image(str(input), ImageReadMode.RGB).to(device)
-
-        target = compressImage(image, model, crop)
-
-        logger.info(target)
-        if output is not None:
-            if output.is_dir():
-                output = output.joinpath(input.stem + ".mcq")
-            with open(output, "wb") as fp:
-                fp.write(target.serialize())
-            logger.info("Saved at %s", output)
-
-    elif input.suffix.lower() == ".mcq":
-        with open(input, "rb") as fp:
-            binary = fp.read()
-            source = File.deserialize(binary)
-
-            newLocal = None
-            newQP = -1
-            newMSE = False
-
-            try:
-                # qp_x_[mse/msssim]
-                parsed = source.FileHeader.QuantizationParameter.split("_")
-                newQP = int(parsed[1])
-                newMSE = parsed[2] == "mse"
-                newLocal = None
-            except:
-                newLocal = pathlib.Path(source.FileHeader.QuantizationParameter)
-                newQP = -1
-            finally:
-                if newLocal is None and newQP < 0:
-                    warnings.warn("The compressed binary is produced by a pre-release model since `qp` in file is -1, fallback to use current args.")
-                elif isinstance(newLocal, pathlib.Path) and not(newLocal.exists() and newLocal.is_file()):
-                    warnings.warn(f"The compressed binary is compressed by a local model located in {newLocal}. Unfortunately, we can't find it. Fallback to use current args or you could try again later.", )
-                else:
-                    qp = newQP
-                    local = newLocal
-                    mse = newMSE
-
-            model = loadModel(qp, local, device, mse, logger).eval()
-
-            restored = decompressImage(source, model)
-
-            logger.info(source)
-
-            if output is not None:
-                if output.is_dir():
-                    output = output.joinpath(input.stem + ".png")
-                write_png(restored.cpu(), str(output))
-    else:
-        raise ValueError("Invalid input file.")
-
-def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> File:
-    image = convert_image_dtype(image)
-
-    if crop:
-        from mcquic.datasets.transforms import AlignedCrop
-        image = AlignedCrop()(image)
-
-    # [c, h, w]
-    image = (image - 0.5) * 2
-
-    with model.readyForCoding() as cdfs:
-        _, binaries, headers = model.compress(image[None, ...], cdfs)
-
-    # List of each level binary, FileHeader
-    return File(headers[0], binaries[0])
-
-
-def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.Tensor:
-
-    binaries = sourceFile.Content
-
-    with model.readyForCoding() as cdfs:
-        # append it to list to make batch-size = 1.
-        # [1, c, h, w]
-        restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
-
-    # [c, h, w]
-    return DeTransform()(restored[0])
-
-
-def loadModel(qp: int, local: pathlib.Path, device, mse: bool, logger: logging.Logger) -> BaseCompressor:
-    if local is not None:
-        warnings.warn(f"By passing `--local`, `-qp` arg will be ignored. Checkpoint from {local} will be loaded. Please ensure you obtain this local model from a trusted source.")
-        ckpt = torch.load(local, device)
-
-        logger.info("Use local model.")
-    else:
-        suffix = "mse" if mse else "msssim"
-        key = f"qp_{qp}_{suffix}"
-        if key not in MODELS_HASH:
-            raise ValueError(f"The provided {key} combination not found in pretrained models.")
-        ckpt = torch.hub.load_state_dict_from_url(MODELS_URL + f"qp_{qp}_{suffix}_{MODELS_HASH[key]}.mcquic", map_location=device, check_hash=True)
-
-        logger.info("Use model `-qp %d` targeted `%s`.", qp, suffix)
-
-    if not "version" in ckpt:
-        raise RuntimeError("You are using a too old ckpt where `version` not in it.")
-    versionCheck(ckpt["version"])
-
-    config = Config.deserialize(ckpt["config"])
-    model = Compressor(**config.Model.Params).to(device).eval()
-    model.QuantizationParameter = str(local) if local is not None else key
-    model.load_state_dict(ckpt["model"])
-    logger.info(f"Model loaded, params: {config.Model.Params}.")
-    return model
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -201,6 +56,7 @@ Args:
 
     output (optional, str): Output file path or dir. If not provided, this program will only print compressor information of input file.
     """
+    from .demo import main
     with torch.inference_mode():
         main(debug, quiet, qp, local, disable_gpu, mse, crop, input, output)
 
