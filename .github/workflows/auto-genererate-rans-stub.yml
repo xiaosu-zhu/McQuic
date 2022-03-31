@@ -13,7 +13,6 @@ jobs:
       - uses: actions/setup-python@v3
         with:
           python-version: '3.9'
-          cache: 'pip'
       - name: Generate python stubs
         run: |
           pip install pybind11-stubgen
