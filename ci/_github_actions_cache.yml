@@ -1,7 +1,7 @@
 channels:
-  - conda-forge
   - defaults
   - pytorch
+  - conda-forge
   - xiaosu-zhu
 dependencies:
   - setuptools>=58
