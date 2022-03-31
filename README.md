@@ -291,7 +291,7 @@ I've released one pretrained model (Sorry, currently I don't have much free GPUs
 |         - 	|     -   	| - 	|               - 	|              -             	|    -    	|
 |         12 	|   192   	| 12 	| [8192,2048,512] 	|   11.07 Mpps / 10.21 Mpps  	|    -    	|
 
-The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, loading, *etc.* are not included in the test.
+The coding throughput is tested on a NVIDIA RTX 3090. Image file I/O, model loading, *etc.* are not included in the test. Throughput will be further increased by `5%~15%` if you convert models to `TorchScript`. However, it is not trivial since conversion involves entropy coder, which is a cpp extension. So, I'm not going to implement it.
 
 The main slow-down from small models to large models is caused by channel `128 -> 192`.
 - **`Mpps = Mega-pixels per second`**
