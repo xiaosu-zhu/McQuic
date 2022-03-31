@@ -32,9 +32,9 @@ jobs:
         if: steps.regex-match.outputs.match == ''
         run: echo "Given release tag wrong, quit." && exit 1
       - name: Set up Python 3.9
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v3
         with:
-          python-version: 3.9
+          python-version: '3.9'
       - uses: actions/checkout@master
       - name: Update version
         run: sed -i '1s/.*/__version__ = \"${{ github.event.inputs.release-tag }}\"/' mcquic/__init__.py && python ci/pre_commit/finalize.py conda/meta.yaml ${{ github.event.inputs.release-tag }}
@@ -100,7 +100,7 @@ jobs:
         with:
           ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -136,7 +136,7 @@ jobs:
         with:
           ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -169,9 +169,9 @@ jobs:
         with:
           ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python 3.8
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
-          python-version: 3.8
+          python-version: "3.9"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -205,9 +205,9 @@ jobs:
         with:
           ref: r${{ github.event.inputs.release-tag }}
       - name: Set up Python 3.9
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v3
         with:
-          python-version: 3.9
+          python-version: "3.9"
       - name: Write entry points and remove PEP 518 `pyproject.toml`
         run: |
           python ci/pre_build/conda_entry_points.py conda/meta.yaml

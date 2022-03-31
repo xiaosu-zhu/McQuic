@@ -3,17 +3,22 @@ name: Update schema.json and docs based on mcquic.config.ConfigSchema
 on:
   push:
     branches: [main]
-    paths: ['mcquic/config.py']
+    paths: ['third_party/CompressAI/*']
 
 jobs:
   update-schema:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Generate schema.json
+      - uses: actions/setup-python@v3
+        with:
+          python-version: '3.9'
+      - name: Generate python stubs
         run: |
-          pip install marshmallow-jsonschema json-schema-for-humans
-          python ci/pre_commit/generate_schema.py mcquic/config.py configs/schema.json configs/README.md
+          pip install pybind11-stubgen
+          pybind11-stubgen --no-setup-py mcquic.rans
+          mv stubs/mcquic/rans-stubs/*.pyi mcquic/rans.pyi
+          rm -rf stubs
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Auto update config schema and configs/README.md

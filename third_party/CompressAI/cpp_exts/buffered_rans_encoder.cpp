@@ -101,7 +101,7 @@ inline uint32_t Rans64DecGetBits(Rans64State *r, uint32_t **pptr,
 
 }
 
-void BufferedRansEncoder::encode_with_indexes(
+void BufferedRansEncoder::encodeWithIndexes(
     const std::vector<int32_t> &symbols, const std::vector<int32_t> &indexes,
     const std::vector<std::vector<int32_t>> &cdfs,
     const std::vector<int32_t> &cdfs_sizes,
@@ -193,13 +193,4 @@ py::bytes BufferedRansEncoder::flush() {
   std::size_t nbytes =
       std::distance(ptr, output.data() + output.size()) * sizeof(uint32_t);
   return std::string(reinterpret_cast<char *>(ptr), nbytes);
-}
-
-
-
-void init_buffered_coders(py::module_ &m) {
-  py::class_<BufferedRansEncoder>(m, "BufferedRansEncoder")
-      .def(py::init<>())
-      .def("encode_with_indexes", &BufferedRansEncoder::encode_with_indexes)
-      .def("flush", &BufferedRansEncoder::flush);
 }
