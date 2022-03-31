@@ -18,10 +18,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
-      - name: Setup conda
-        uses: s-weigand/setup-conda@v1
+      - name: Cache conda
+        uses: actions/cache@v2
         with:
-          python-version: 3.9
+          path: ~/conda_pkgs_dir
+          key:
+            ${{ runner.os }}-conda-${{
+            hashFiles('ci/_github_actions_cache.yml') }}
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: true
+          activate-environment: ""
+          channel-priority: strict
+          environment-file: ci/_github_actions_cache.yml
+          use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
       - name: Install and test mcquic
         run: |
           ./install.sh
@@ -49,10 +60,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Setup conda
-        uses: s-weigand/setup-conda@v1
+      - name: Cache conda
+        uses: actions/cache@v2
         with:
-          python-version: 3.9
+          path: ~/conda_pkgs_dir
+          key:
+            ${{ runner.os }}-conda-${{
+            hashFiles('ci/_github_actions_cache.yml') }}
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: true
+          activate-environment: ""
+          channel-priority: strict
+          environment-file: ci/_github_actions_cache.yml
+          use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
       - name: Install mcquic
         run: |
           C:\Miniconda\shell\condabin\conda-hook.ps1
@@ -84,10 +106,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
-      - name: Setup conda
-        uses: s-weigand/setup-conda@v1
+      - name: Cache conda
+        uses: actions/cache@v2
         with:
-          python-version: 3.9
+          path: ~/conda_pkgs_dir
+          key:
+            ${{ runner.os }}-conda-${{
+            hashFiles('ci/_github_actions_cache.yml') }}
+      - name: Setup conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: true
+          activate-environment: ""
+          channel-priority: strict
+          environment-file: ci/_github_actions_cache.yml
+          use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
       - name: Install and test mcquic (windows)
         if: matrix.os == 'windows-latest'
         run: |
