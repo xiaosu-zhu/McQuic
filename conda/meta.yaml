@@ -24,7 +24,6 @@ requirements:
     - setuptools>=58
     - pybind11>=2.6,<3
     - pip>=22
-    - pytorch>=1.10,<2
 
   run:
     - python {{ python }}

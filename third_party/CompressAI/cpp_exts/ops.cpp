@@ -111,6 +111,13 @@ std::vector<uint32_t> pmfToQuantizedCDF(const std::vector<float> &pmf,
 }
 
 void init_ops(py::module_ &m) {
-  m.def("pmfToQuantizedCDF", &pmfToQuantizedCDF,
-        "Return quantized CDF for a given PMF");
+  m.def("pmfToQuantizedCDF", &pmfToQuantizedCDF, R"(Return quantized CDF for a given PMF with total quantization level `2 ** precision`.
+
+Args:
+    pmf (List[float]): Probability mass function (normalized occuring frequency) for all symbols.
+    precision (int): Total quantization level for CDF (cdfSize).
+
+return:
+    List[int]: Quantized CDF, length = `2 ** precision`.
+)");
 }

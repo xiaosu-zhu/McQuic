@@ -47,14 +47,14 @@ namespace py = pybind11;
 
 
 py::bytes
-RansEncoder::encode_with_indexes(const std::vector<int32_t> &symbols,
+RansEncoder::encodeWithIndexes(const std::vector<int32_t> &symbols,
                                  const std::vector<int32_t> &indexes,
                                  const std::vector<std::vector<int32_t>> &cdfs,
                                  const std::vector<int32_t> &cdfs_sizes,
                                  const std::vector<int32_t> &offsets) {
 
   BufferedRansEncoder buffered_rans_enc;
-  buffered_rans_enc.encode_with_indexes(symbols, indexes, cdfs, cdfs_sizes,
+  buffered_rans_enc.encodeWithIndexes(symbols, indexes, cdfs, cdfs_sizes,
                                         offsets);
   return buffered_rans_enc.flush();
 }
@@ -62,8 +62,24 @@ RansEncoder::encode_with_indexes(const std::vector<int32_t> &symbols,
 
 void init_encoders(py::module_ &m) {
 
-  py::class_<RansEncoder>(m, "RansEncoder")
+  py::class_<RansEncoder>(m, "RansEncoder", "Encoder to encode list of symbols to string. This class exports only one method `encodeWithIndexes(...)`.")
       .def(py::init<>())
-      .def("encode_with_indexes", &RansEncoder::encode_with_indexes);
+      .def("encodeWithIndexes", &RansEncoder::encodeWithIndexes, R"(Encode list of symbols to string.
 
+This method accepts symbols under mixed distributions. Therefore, symbol from different distribution can be encoded by its corresponding cdf to achieve the best rate.
+
+Args:
+    symbols (List[int]): List of integers ranges in [0, cdfSize[index]] to be encoded.
+    indexes (List[int]): Index of CDF and cdfSize of i-th symbol to be used for encode.
+    cdfs (List[List[int]]): A series of CDFs. Each corresponds to a group with specific PMF.
+    cdfSizes (List[int]): Symbol upper-bound for each group.
+    offsets (List[int]): Offset applied to each symbol.
+
+Returns:
+    str: Encoded byte string.)",
+    py::arg("symbols"),
+    py::arg("indexes"),
+    py::arg("cdfs"),
+    py::arg("cdfSizes"),
+    py::arg("offsets"));
 }

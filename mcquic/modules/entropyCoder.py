@@ -13,7 +13,7 @@ from mcquic.utils.specification import CodeSize
 
 
 class EntropyCoder(nn.Module):
-    def __init__(self, m: int, k: List[int], ema: float = 0.9):
+    def __init__(self, m: int, k: List[int], ema: float = 0.99):
         super().__init__()
         self.encooder = RansEncoder()
         self.decoder = RansDecoder()
@@ -32,13 +32,9 @@ class EntropyCoder(nn.Module):
             # sum over all gpus
             dist.all_reduce(totalCount)
 
-            # up trigger don't perform EMA
-            rmsMask = totalCount > self._freqEMA[lv]
-            # otherwise
+            # ema update
             ema = self._decay * totalCount + (1 - self._decay) * self._freqEMA[lv]
-
-            # update
-            self._freqEMA[lv].copy_(totalCount * rmsMask + ema * ~rmsMask)
+            self._freqEMA[lv].copy_(ema)
 
     @contextmanager
     def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
@@ -114,7 +110,7 @@ class EntropyCoder(nn.Module):
                 cdfSizes = [ki + 2] * m
                 # [m, h, w]
                 offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
-                binary: bytes = self.encooder.encode_with_indexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
+                binary: bytes = self.encooder.encodeWithIndexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
                 compressed[i].append(binary)
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 
@@ -139,7 +135,7 @@ class EntropyCoder(nn.Module):
                 idx = indices.expand(codeSize.m, h, w).flatten().int().tolist()
                 cdfSizes = [ki + 2] * codeSize.m
                 offsets = torch.zeros(codeSize.m, h, w, dtype=torch.int).flatten().int().tolist()
-                restored: List[int] = self.decoder.decode_with_indexes(binaryAtLv, idx, cdf, cdfSizes, offsets)
+                restored: List[int] = self.decoder.decodeWithIndexes(binaryAtLv, idx, cdf, cdfSizes, offsets)
                 # [m, h, w]
                 code = torch.tensor(restored).reshape(codeSize.m, h, w)
                 codes[lv].append(code)

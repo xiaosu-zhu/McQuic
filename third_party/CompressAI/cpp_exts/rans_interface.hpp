@@ -63,7 +63,7 @@ public:
   BufferedRansEncoder &operator=(const BufferedRansEncoder &) = delete;
   BufferedRansEncoder &operator=(BufferedRansEncoder &&) = delete;
 
-  void encode_with_indexes(const std::vector<int32_t> &symbols,
+  void encodeWithIndexes(const std::vector<int32_t> &symbols,
                            const std::vector<int32_t> &indexes,
                            const std::vector<std::vector<int32_t>> &cdfs,
                            const std::vector<int32_t> &cdfs_sizes,
@@ -83,7 +83,7 @@ public:
   RansEncoder &operator=(const RansEncoder &) = delete;
   RansEncoder &operator=(RansEncoder &&) = delete;
 
-  py::bytes encode_with_indexes(const std::vector<int32_t> &symbols,
+  py::bytes encodeWithIndexes(const std::vector<int32_t> &symbols,
                                 const std::vector<int32_t> &indexes,
                                 const std::vector<std::vector<int32_t>> &cdfs,
                                 const std::vector<int32_t> &cdfs_sizes,
@@ -100,7 +100,7 @@ public:
   RansDecoder &operator=(RansDecoder &&) = delete;
 
   std::vector<int32_t>
-  decode_with_indexes(const std::string &encoded,
+  decodeWithIndexes(const std::string &encoded,
                       const std::vector<int32_t> &indexes,
                       const std::vector<std::vector<int32_t>> &cdfs,
                       const std::vector<int32_t> &cdfs_sizes,

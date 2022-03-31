@@ -102,7 +102,7 @@ inline uint32_t Rans64DecGetBits(Rans64State *r, uint32_t **pptr,
 }
 
 std::vector<int32_t>
-RansDecoder::decode_with_indexes(const std::string &encoded,
+RansDecoder::decodeWithIndexes(const std::string &encoded,
                                  const std::vector<int32_t> &indexes,
                                  const std::vector<std::vector<int32_t>> &cdfs,
                                  const std::vector<int32_t> &cdfs_sizes,
@@ -249,10 +249,24 @@ RansDecoder::decode_stream(const std::vector<int32_t> &indexes,
 
 
 void init_decoders(py::module_ &m) {
-  py::class_<RansDecoder>(m, "RansDecoder")
+  py::class_<RansDecoder>(m, "RansDecoder", "Decoder to decode a string to a list of symbols. This class exports only one method `decodeWithIndexes(...)`.")
       .def(py::init<>())
-      .def("set_stream", &RansDecoder::set_stream)
-      .def("decode_stream", &RansDecoder::decode_stream)
-      .def("decode_with_indexes", &RansDecoder::decode_with_indexes,
-           "Decode a string to a list of symbols");
+      .def("decodeWithIndexes", &RansDecoder::decodeWithIndexes, R"(Decode a string to a list of symbols.
+
+This method is the reverse operation of `RansEncoder.encodeWithIndexes(...)` All args are same.
+
+Args:
+    encoded (str): Encode byte string.
+    indexes (List[int]): Index of CDF and cdfSize of i-th symbol to be used for encode.
+    cdfs (List[List[int]]): A series of CDFs. Each corresponds to a group with specific PMF.
+    cdfSizes (List[int]): Symbol upper-bound for each group.
+    offsets (List[int]): Offset applied to each symbol.
+
+Returns:
+    List[int]: Decoded symbol list.)",
+    py::arg("encoded"),
+    py::arg("indexes"),
+    py::arg("cdfs"),
+    py::arg("cdfSizes"),
+    py::arg("offsets"));
 }
