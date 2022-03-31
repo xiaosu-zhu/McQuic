@@ -214,21 +214,11 @@ jobs:
           rm pyproject.toml
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
-      - name: Cache conda
-        uses: actions/cache@v2
-        with:
-          path: ~/conda_pkgs_dir
-          key:
-            ${{ runner.os }}-conda-${{
-            hashFiles('ci/_github_actions_cache.yml') }}
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
           auto-activate-base: true
           activate-environment: ""
-          channel-priority: strict
-          environment-file: ci/_github_actions_cache.yml
-          use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
@@ -262,21 +252,11 @@ jobs:
         run: |
           python ci/pre_build/conda_entry_points.py conda/meta.yaml
           rm pyproject.toml
-      - name: Cache conda
-        uses: actions/cache@v2
-        with:
-          path: ~/conda_pkgs_dir
-          key:
-            ${{ runner.os }}-conda-${{
-            hashFiles('ci/_github_actions_cache.yml') }}
       - name: Setup conda
         uses: conda-incubator/setup-miniconda@v2
         with:
           auto-activate-base: true
           activate-environment: ""
-          channel-priority: strict
-          environment-file: ci/_github_actions_cache.yml
-          use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
