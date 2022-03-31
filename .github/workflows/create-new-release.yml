@@ -254,6 +254,14 @@ jobs:
       - uses: actions/checkout@master
         with:
           ref: r${{ github.event.inputs.release-tag }}
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.9"
+      - name: Write entry points and remove PEP 518 `pyproject.toml`
+        run: |
+          python ci/pre_build/conda_entry_points.py conda/meta.yaml
+          rm pyproject.toml
       - name: Cache conda
         uses: actions/cache@v2
         with:
@@ -269,10 +277,6 @@ jobs:
           channel-priority: strict
           environment-file: ci/_github_actions_cache.yml
           use-only-tar-bz2: true # IMPORTANT: This needs to be set for caching to work properly!
-      - name: Write entry points and remove PEP 518 `pyproject.toml`
-        run: |
-          python ci/pre_build/conda_entry_points.py conda/meta.yaml
-          rm pyproject.toml
       - name: Run conda build and publish 📦
         run: |
           conda install anaconda-client conda-build pybind11 conda-verify
@@ -293,7 +297,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
