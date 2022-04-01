@@ -5,16 +5,6 @@ from torchvision import transforms as T
 
 from mcquic.utils.vision import RandomHorizontalFlip, RandomVerticalFlip, RandomGamma, RandomAutocontrast
 
-def getTrainingTransform():
-    return T.Compose([
-        RandomHorizontalFlip(),
-        RandomVerticalFlip(),
-        RandomAutocontrast(0.25),
-        T.ConvertImageDtype(torch.float32),
-        RandomGamma(),
-        T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-    ])
-
 def getTrainingPreprocess():
     return T.Compose([
         T.RandomCrop(512, pad_if_needed=True),

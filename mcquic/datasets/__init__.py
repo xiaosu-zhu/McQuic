@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from vlutils.logger import LoggerBase
 from vlutils.saver import StrPath
 
-from .transforms import getTrainingTransform, getTrainingPreprocess, getEvalTransform
+from .transforms import getTrainingPreprocess, getEvalTransform
 from .dataset import Basic, BasicLMDB
 
 
