@@ -127,6 +127,15 @@ class _multiCodebookQuantization(nn.Module):
         logit = -1 * self._distance(x)
         return logit / self._scale
 
+    def _permute(self, sample: torch.Tensor) -> torch.Tensor:
+        if self._permutationRate < Consts.Eps:
+            return sample
+        # [n, h, w, m]
+        needPerm = torch.rand_like(sample[..., 0]) < self._permutationRate
+        randomed = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=sample.device), num_classes=self._k).float()
+        sample[needPerm] = randomed
+        return sample
+
     def _sample(self, x: torch.Tensor, temperature: float):
         # [n, m, h, w, k] * [m, 1, 1, 1]
         logit = self._logit(x) * self._bound(self._temperature)
@@ -147,6 +156,8 @@ class _multiCodebookQuantization(nn.Module):
         # sampled = posterior.rsample(())
 
         sampled = F.gumbel_softmax(logit, temperature, True)
+
+        sampled = self._permute(sampled)
 
         # It causes training unstable
         # leave to future tests.
@@ -285,7 +296,7 @@ class UMGMQuantizer(BaseQuantizer):
         "sideHead",
         "restoreHead"
     ]
-    def __init__(self, channel: int, m: int, k: Union[int, List[int]], components: Dict[str, Callable[[], nn.Module]]):
+    def __init__(self, channel: int, m: int, k: Union[int, List[int]], permutationRate: float, components: Dict[str, Callable[[], nn.Module]]):
         if isinstance(k, int):
             k = [k]
         super().__init__(m, k)

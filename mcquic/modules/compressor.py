@@ -92,7 +92,7 @@ class BaseCompressor(nn.Module):
 
 
 class Compressor(BaseCompressor):
-    def __init__(self, channel: int, m: int, k: List[int]):
+    def __init__(self, channel: int, m: int, k: List[int], permutationRate: float = 0.0):
         encoder = nn.Sequential(
             # convs.conv3x3(3, channel),
             conv3x3(3, channel, 2),
@@ -112,7 +112,7 @@ class Compressor(BaseCompressor):
             ResidualBlock(channel, channel, groups=1),
             pixelShuffle3x3(channel, 3, 2)
         )
-        quantizer = UMGMQuantizer(channel, m, k, {
+        quantizer = UMGMQuantizer(channel, m, k, permutationRate, {
             "latentStageEncoder": lambda: nn.Sequential(
                 ResidualBlockWithStride(channel, channel, groups=1),
                 # GroupSwishConv2D(channel, 3, groups=1),
