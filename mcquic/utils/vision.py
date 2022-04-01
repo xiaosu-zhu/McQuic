@@ -16,14 +16,6 @@ __all__ = [
 ]
 
 
-class BatchRandomGamma(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        randomChoice = torch.randint(0, 4, (len(x), ))
-        x[randomChoice == 0] = srgbToLinear(x[randomChoice == 0])
-        x[randomChoice == 1] = linearToSrgb(x[randomChoice == 1])
-        x[randomChoice == 2] = randomGamma(x[randomChoice == 2], torch.rand((x[randomChoice == 2].shape[0], ), device=x.device) * 1.95 + 0.05)
-        return x
-
 def srgbToLinear(x: torch.Tensor):
     return torch.where(x < 0.0031308, 12.92 * x, (1.055 * torch.pow(torch.abs(x), 1 / 2.4) - 0.055))
 
@@ -42,11 +34,9 @@ class RandomGamma(nn.Module):
         srgbToLinear,
         linearToSrgb,
         lambda x: randomGamma(x, torch.rand((), device=x.device) * 1.95 + 0.05),
-        identity
     ]
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        choice = random.randint(0, 3)
-        return self._fns[choice](x)
+        return random.choice(self._fns)(x)
 
 
 class DeTransform(nn.Module):
