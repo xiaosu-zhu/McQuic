@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 class Decibel(nn.Module):
-    def __init__(self, upperBound: float) -> None:
+    def __init__(self, upperBound: float):
         super().__init__()
         self._upperBound = upperBound ** 2
 

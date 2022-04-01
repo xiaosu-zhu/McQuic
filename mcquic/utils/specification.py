@@ -103,7 +103,7 @@ class FileHeader:
     version: str
     codeSize: CodeSize
     imageSize: ImageSize
-    def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize) -> None:
+    def __init__(self, version: str, qp: str, codeSize: CodeSize, imageSize: ImageSize):
         if versionCheck(version):
             self.qp = qp
             self.version = version

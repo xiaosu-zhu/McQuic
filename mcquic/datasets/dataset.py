@@ -57,7 +57,7 @@ def _makeDataset(directory: StrPath, extensions: Optional[Tuple[str, ...]] = Non
 class Basic(VisionDataset):
     """A Basic dataset that reads all images from a directory.
     """
-    def __init__(self, root: StrPath, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
+    def __init__(self, root: StrPath, transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None):
         """A Basic dataset that reads all images from a directory.
 
         Usage:
@@ -112,7 +112,7 @@ class Basic(VisionDataset):
 class BasicLMDB(VisionDataset):
     """A Basic dataset that reads from a LMDB.
     """
-    def __init__(self, root: StrPath, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None) -> None:
+    def __init__(self, root: StrPath, maxTxns: int = 1, repeat: int = 1, transform: Optional[Callable] = None):
         """A Basic dataset that reads from a LMDB.
 
         Usage:
