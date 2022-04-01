@@ -20,7 +20,7 @@ from rich import filesize
 from mcquic.consts import Consts
 from mcquic.loss import Distortion
 from mcquic.validate.utils import EMATracker
-from mcquic.modules.composed import Composed
+from mcquic.modules.compound import Compound
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
 from mcquic.validate import Validator
@@ -29,7 +29,7 @@ from mcquic.utils import totalParameters
 from .utils import EpochFrequencyHook, checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
         super().__init__()
         self.saver = saver
 
@@ -48,7 +48,7 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, criterion = trackingFunctionCalls(modelFn, self.saver)()
-        self._model = Composed(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
+        self._model = Compound(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -180,6 +180,8 @@ class _baseTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, totalBatches=len(trainLoader))
 
+        images, xHat, codes, logits = None, None, None, None
+
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
             for images in trainLoader:
@@ -200,7 +202,7 @@ class _baseTrainer(Restorable):
 
 
 class MainTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
@@ -354,7 +356,7 @@ class MainTrainer(_baseTrainer):
 
 
 class PalTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> None:
+    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         if dist.get_rank() == 0:
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, modelFn, optimizer, scheduler, saver)

@@ -19,8 +19,8 @@ class RansDecoder():
     """
     Decoder to decode a string to a list of symbols. This class exports only one method `decodeWithIndexes(...)`.
     """
-    def __init__(self) -> None: ...
-    def decodeWithIndexes(self, encoded: str, indexes: typing.List[int], cdfs: typing.List[typing.List[int]], cdfSizes: typing.List[int], offsets: typing.List[int]) -> typing.List[int]: 
+    def __init__(self): ...
+    def decodeWithIndexes(self, encoded: str, indexes: typing.List[int], cdfs: typing.List[typing.List[int]], cdfSizes: typing.List[int], offsets: typing.List[int]) -> typing.List[int]:
         """
         Decode a string to a list of symbols.
 
@@ -41,8 +41,8 @@ class RansEncoder():
     """
     Encoder to encode list of symbols to string. This class exports only one method `encodeWithIndexes(...)`.
     """
-    def __init__(self) -> None: ...
-    def encodeWithIndexes(self, symbols: typing.List[int], indexes: typing.List[int], cdfs: typing.List[typing.List[int]], cdfSizes: typing.List[int], offsets: typing.List[int]) -> bytes: 
+    def __init__(self): ...
+    def encodeWithIndexes(self, symbols: typing.List[int], indexes: typing.List[int], cdfs: typing.List[typing.List[int]], cdfSizes: typing.List[int], offsets: typing.List[int]) -> bytes:
         """
         Encode list of symbols to string.
 

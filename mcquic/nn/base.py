@@ -95,7 +95,7 @@ class _logExpMinusOne(torch.autograd.Function):
         return passThroughIf * grad_output + remaining * grad_output * x.exp() / (x.exp() - 1 + Consts.Eps), None
 
 class LogExpMinusOne(nn.Module):
-    def __init__(self, eps: Union[torch.Tensor, float] = Consts.Eps) -> None:
+    def __init__(self, eps: Union[torch.Tensor, float] = Consts.Eps):
         super().__init__()
         eps = torch.tensor(eps, dtype=torch.float)
         self.register_buffer("_bound", ((1 + eps) / eps).log())
