@@ -1,4 +1,3 @@
-from re import I
 from typing import Optional, Any, Union, Sequence
 
 from torch import device, Tensor
