@@ -36,8 +36,8 @@ class BaseQuantizer(nn.Module):
         raise NotImplementedError
 
     @property
-    def Freq(self):
-        return self._entropyCoder.Freq
+    def NormalizedFreq(self):
+        return self._entropyCoder.NormalizedFreq
 
     def compress(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
         codes = self.encode(x)
@@ -343,7 +343,7 @@ class UMGMQuantizer(BaseQuantizer):
         return formerLevel
 
     def reAssignCodebook(self) -> torch.Tensor:
-        freqs = self.Freq
+        freqs = self.NormalizedFreq
         reassigned: List[torch.Tensor] = list()
         for encoder, freq in zip(self._encoders, freqs):
             # freq: [m, ki]

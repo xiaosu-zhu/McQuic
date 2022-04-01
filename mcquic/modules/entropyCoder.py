@@ -12,17 +12,17 @@ from mcquic.utils.specification import CodeSize
 
 
 class EntropyCoder(nn.Module):
-    def __init__(self, m: int, k: List[int], ema: float = 0.99):
+    def __init__(self, m: int, k: List[int], ema: float = 0.9):
         super().__init__()
         self.encooder = RansEncoder()
         self.decoder = RansDecoder()
         # initial value is uniform
-        self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
+        self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki) / ki, requires_grad=False) for ki in k)
         self._k = k
-        self._decay = 1 - ema
-        self.cdfs = None
-        self.freq = None
-        self.needUpdate = True
+        self._ema = ema
+        self._cdfs = None
+        self._normalizedFreq = None
+        self._needUpdate = True
 
     @torch.no_grad()
     def forward(self, oneHotCodes: List[torch.Tensor]):
@@ -34,42 +34,40 @@ class EntropyCoder(nn.Module):
             # sum over all gpus
             dist.all_reduce(totalCount)
 
+            # normalize to probability.
+            normalized = totalCount / totalCount.sum(-1, keepdim=True)
+
             # ema update
-            ema = self._decay * totalCount + (1 - self._decay) * self._freqEMA[lv]
+            ema = (1 - self._ema) * normalized + self._ema * self._freqEMA[lv]
             self._freqEMA[lv].copy_(ema)
-        self.needUpdate = True
+        self._needUpdate = True
 
     @property
     def CDFs(self) -> List[List[List[int]]]:
-        if self.cdfs is not None and not self.needUpdate:
-            return self.cdfs
+        if self._cdfs is not None and not self._needUpdate:
+            return self._cdfs
         cdfs = list()
-        for freq in self.Freq:
+        for freq in self.NormalizedFreq:
             cdfAtLv = list()
             for freqAtM in freq:
-                total = freqAtM.sum()
-                if total < 1:
-                    prob = torch.ones_like(freqAtM, dtype=torch.float) / len(freqAtM)
-                else:
-                    prob = freqAtM.float() / total
-                cdf = pmfToQuantizedCDF(prob.tolist(), 16)
+                cdf = pmfToQuantizedCDF(freqAtM.tolist(), 16)
                 cdfAtLv.append(cdf)
             cdfs.append(cdfAtLv)
-        self.cdfs = cdfs
-        return self.cdfs
+        self._cdfs = cdfs
+        return self._cdfs
 
     @property
-    def Freq(self):
+    def NormalizedFreq(self):
         """Return list of `[m, k]` frequency tensors.
         """
-        if self.freq is not None and not self.needUpdate:
-            return self.freq
+        if self._normalizedFreq is not None and not self._needUpdate:
+            return self._normalizedFreq
         freq = list()
         for freqEMA in self._freqEMA:
-            # normalize with precision 16bits.
-            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True) * 65536).round().long())
-        self.freq = freq
-        return self.freq
+            # normalized probs.
+            freq.append(freqEMA / freqEMA.sum(-1, keepdim=True))
+        self._normalizedFreq = freq
+        return self._normalizedFreq
 
     def _checkShape(self, codes: List[torch.Tensor]):
         info = "Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...], which is a `level` length list. each code has shape [n, m, h, w]. "
