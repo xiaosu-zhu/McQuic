@@ -69,10 +69,10 @@ void init_encoders(py::module_ &m) {
 This method accepts symbols under mixed distributions. Therefore, symbol from different distribution can be encoded by its corresponding cdf to achieve the best rate.
 
 Args:
-    symbols (List[int]): List of integers ranges in [0, cdfSize[index]] to be encoded.
-    indexes (List[int]): Index of CDF and cdfSize of i-th symbol to be used for encode.
-    cdfs (List[List[int]]): A series of CDFs. Each corresponds to a group with specific PMF.
-    cdfSizes (List[int]): Symbol upper-bound for each group.
+    encoded (bytes): Encoded byte string.
+    indexes (List[int]): Index of CDF and cdfSize to pick for i-th symbol.
+    cdfs (List[List[int]]): A series of CDFs. Each corresponds to a different symbol group. Different groups have different CDFs since they are under different distributions.
+    cdfSizes (List[int]): Symbol integer upper-bound for each group.
     offsets (List[int]): Offset applied to each symbol.
 
 Returns:
