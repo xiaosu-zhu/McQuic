@@ -66,7 +66,7 @@ void init_encoders(py::module_ &m) {
       .def(py::init<>())
       .def("encodeWithIndexes", &RansEncoder::encodeWithIndexes, R"(Encode list of symbols to string.
 
-This method accepts symbols under mixed distributions. Therefore, symbol from different distribution can be encoded by its corresponding cdf to achieve the best rate.
+This method accepts symbols under mixed distributions. Therefore, symbol from different distribution can be encoded by its corresponding CDF to achieve the best rate.
 
 Args:
     encoded (bytes): Encoded byte string.
