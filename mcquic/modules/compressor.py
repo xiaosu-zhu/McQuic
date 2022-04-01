@@ -3,6 +3,7 @@ import torch
 from torch import nn
 
 import mcquic
+from mcquic.consts import Consts
 from mcquic.datasets.transforms import AlignedPadding
 from mcquic.nn import pixelShuffle3x3
 from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
@@ -48,12 +49,12 @@ class BaseCompressor(nn.Module):
         return self._quantizer.CDFs
 
     @property
-    def Freq(self):
-        return self._quantizer.Freq
+    def NormalizedFreq(self):
+        return self._quantizer.NormalizedFreq
 
     @property
     def CodeUsage(self):
-        return torch.cat(list((freq > 0).flatten() for freq in self._quantizer.Freq)).float().mean()
+        return torch.cat(list((freq > Consts.Eps).flatten() for freq in self._quantizer.NormalizedFreq)).float().mean()
 
     def compress(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
         n, c, h, w = x.shape

@@ -28,7 +28,7 @@ class _compound(Module):
 
     @property
     def Freq(self):
-        return self._compressor._quantizer._entropyCoder.Freq
+        return self._compressor._quantizer._entropyCoder.NormalizedFreq
 
 class Compound(DistributedDataParallel):
     module: _compound

@@ -316,7 +316,7 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
         self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
-        freq = self._model.Compressor.Freq
+        freq = self._model.Compressor.NormalizedFreq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
             self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
