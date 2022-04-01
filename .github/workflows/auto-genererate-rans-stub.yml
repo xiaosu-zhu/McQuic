@@ -20,10 +20,9 @@ jobs:
           activate-environment: ""
       - name: Install dependencies
         run: |
+          ./install.sh
           eval "$(conda shell.bash hook)"
           conda activate
-          conda install -y python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
-          conda install -y mcquic -c xiaosu-zhu -c conda-forge
           conda install -y pip
           pip install pybind11 pybind11-stubgen
       - name: Generate python stubs
