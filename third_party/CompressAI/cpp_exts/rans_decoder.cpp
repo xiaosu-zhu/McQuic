@@ -253,7 +253,7 @@ void init_decoders(py::module_ &m) {
       .def(py::init<>())
       .def("decodeWithIndexes", &RansDecoder::decodeWithIndexes, R"(Decode a string to a list of symbols.
 
-This method is the reverse operation of `RansEncoder.encodeWithIndexes(...)` All args are same.
+This method is the inverse operation of `RansEncoder.encodeWithIndexes(...)`. All args are same.
 
 Args:
     encoded (bytes): Encoded byte string.
