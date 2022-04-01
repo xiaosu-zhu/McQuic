@@ -6,16 +6,19 @@ on:
     paths: ['third_party/CompressAI/**']
 
 jobs:
-  update-schema:
+  update-stub:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v3
         with:
           python-version: '3.9'
+      - name: Add dependencies
+        run: |
+          pip install pybind11 pybind11-stubgen
+          NPY_NUM_BUILD_JOBS=8 pip install -e .
       - name: Generate python stubs
         run: |
-          pip install pybind11-stubgen
           pybind11-stubgen --no-setup-py mcquic.rans
           mv stubs/mcquic/rans-stubs/*.pyi mcquic/rans.pyi
           sed -i 's/: str/: bytes/g' mcquic/rans.pyi
