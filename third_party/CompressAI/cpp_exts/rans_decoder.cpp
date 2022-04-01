@@ -256,7 +256,7 @@ void init_decoders(py::module_ &m) {
 This method is the reverse operation of `RansEncoder.encodeWithIndexes(...)` All args are same.
 
 Args:
-    encoded (str): Encode byte string.
+    encoded (bytes): Encoded byte string.
     indexes (List[int]): Index of CDF and cdfSize of i-th symbol to be used for encode.
     cdfs (List[List[int]]): A series of CDFs. Each corresponds to a group with specific PMF.
     cdfSizes (List[int]): Symbol upper-bound for each group.

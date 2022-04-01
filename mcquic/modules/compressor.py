@@ -43,8 +43,9 @@ class BaseCompressor(nn.Module):
     def syncCodebook(self):
         return self._quantizer.syncCodebook()
 
-    def readyForCoding(self):
-        return self._quantizer.readyForCoding()
+    @property
+    def CDFs(self):
+        return self._quantizer.CDFs
 
     @property
     def Freq(self):
@@ -54,7 +55,7 @@ class BaseCompressor(nn.Module):
     def CodeUsage(self):
         return torch.cat(list((freq > 0).flatten() for freq in self._quantizer.Freq)).float().mean()
 
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
+    def compress(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[bytes]], List[FileHeader]]:
         n, c, h, w = x.shape
 
         x = self._padding(x)
@@ -62,12 +63,12 @@ class BaseCompressor(nn.Module):
         y = self._encoder(x)
         # codes: lv * [n, m, h, w]
         # binaries: List of binary, len = n, len(binaries[0]) = level
-        codes, binaries, codeSizes = self._quantizer.compress(y, cdfs)
+        codes, binaries, codeSizes = self._quantizer.compress(y)
         header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
         return codes, binaries, header
 
-    def decompress(self, binaries: List[List[bytes]], cdfs: List[List[List[int]]], headers: List[FileHeader]) -> torch.Tensor:
-        yHat = self._quantizer.decompress(binaries, [header.CodeSize for header in headers], cdfs)
+    def decompress(self, binaries: List[List[bytes]], headers: List[FileHeader]) -> torch.Tensor:
+        yHat = self._quantizer.decompress(binaries, [header.CodeSize for header in headers])
         restored = self._decoder(yHat)
 
         imageSize = headers[0].ImageSize

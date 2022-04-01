@@ -76,7 +76,7 @@ Args:
     offsets (List[int]): Offset applied to each symbol.
 
 Returns:
-    str: Encoded byte string.)",
+    bytes: Encoded byte string.)",
     py::arg("symbols"),
     py::arg("indexes"),
     py::arg("cdfs"),

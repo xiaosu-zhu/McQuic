@@ -1,5 +1,4 @@
-from contextlib import contextmanager
-from typing import List, Tuple, Generator
+from typing import List, Tuple
 
 import torch
 from torch import nn
@@ -21,6 +20,9 @@ class EntropyCoder(nn.Module):
         self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki), requires_grad=False) for ki in k)
         self._k = k
         self._decay = 1 - ema
+        self.cdfs = None
+        self.freq = None
+        self.needUpdate = True
 
     @torch.no_grad()
     def forward(self, oneHotCodes: List[torch.Tensor]):
@@ -35,9 +37,12 @@ class EntropyCoder(nn.Module):
             # ema update
             ema = self._decay * totalCount + (1 - self._decay) * self._freqEMA[lv]
             self._freqEMA[lv].copy_(ema)
+        self.needUpdate = True
 
-    @contextmanager
-    def readyForCoding(self) -> Generator[List[List[List[int]]], None, None]:
+    @property
+    def CDFs(self) -> List[List[List[int]]]:
+        if self.cdfs is not None and not self.needUpdate:
+            return self.cdfs
         cdfs = list()
         for freq in self.Freq:
             cdfAtLv = list()
@@ -50,21 +55,21 @@ class EntropyCoder(nn.Module):
                 cdf = pmfToQuantizedCDF(prob.tolist(), 16)
                 cdfAtLv.append(cdf)
             cdfs.append(cdfAtLv)
-        try:
-            yield cdfs
-        finally:
-            del cdfs
+        self.cdfs = cdfs
+        return self.cdfs
 
     @property
     def Freq(self):
-        """Yields list of `[m, k]` tensors.
-
-        Yields:
-            torch.Tensor: `[m, k]` tensor of level `l`.
+        """Return list of `[m, k]` frequency tensors.
         """
+        if self.freq is not None and not self.needUpdate:
+            return self.freq
+        freq = list()
         for freqEMA in self._freqEMA:
             # normalize with precision 16bits.
-            yield (freqEMA / freqEMA.sum(-1, keepdim=True) * 65536).round().long()
+            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True) * 65536).round().long())
+        self.freq = freq
+        return self.freq
 
     def _checkShape(self, codes: List[torch.Tensor]):
         info = "Please give codes with correct shape, for example, [[1, 2, 24, 24], [1, 2, 12, 12], ...], which is a `level` length list. each code has shape [n, m, h, w]. "
@@ -83,7 +88,7 @@ class EntropyCoder(nn.Module):
         return n, m
 
     @torch.inference_mode()
-    def compress(self, codes: List[torch.Tensor], cdfs: List[List[List[int]]]) -> Tuple[List[List[bytes]], List[CodeSize]]:
+    def compress(self, codes: List[torch.Tensor]) -> Tuple[List[List[bytes]], List[CodeSize]]:
         """Compress codes to binary.
 
         Args:
@@ -99,7 +104,7 @@ class EntropyCoder(nn.Module):
         heights = list()
         widths = list()
         # [n, m, h, w]
-        for code, ki, cdf in zip(codes, self._k, cdfs):
+        for code, ki, cdf in zip(codes, self._k, self.CDFs):
             _, _, h, w = code.shape
             heights.append(h)
             widths.append(w)
@@ -115,7 +120,7 @@ class EntropyCoder(nn.Module):
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 
     @torch.inference_mode()
-    def decompress(self, binaries: List[List[bytes]], codeSizes: List[CodeSize], cdfs: List[List[List[int]]]) -> List[torch.Tensor]:
+    def decompress(self, binaries: List[List[bytes]], codeSizes: List[CodeSize]) -> List[torch.Tensor]:
         """Restore codes from binary
 
         Args:
@@ -131,7 +136,7 @@ class EntropyCoder(nn.Module):
         codes = list(list() for _ in range(lv))
         indices = torch.arange(m)[:, None, None]
         for binary, codeSize in zip(binaries, codeSizes):
-            for lv, (binaryAtLv, cdf, ki, h, w) in enumerate(zip(binary, cdfs, self._k, codeSize.heights, codeSize.widths)):
+            for lv, (binaryAtLv, cdf, ki, h, w) in enumerate(zip(binary, self.CDFs, self._k, codeSize.heights, codeSize.widths)):
                 idx = indices.expand(codeSize.m, h, w).flatten().int().tolist()
                 cdfSizes = [ki + 2] * codeSize.m
                 offsets = torch.zeros(codeSize.m, h, w, dtype=torch.int).flatten().int().tolist()

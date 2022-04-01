@@ -25,8 +25,9 @@ class BaseQuantizer(nn.Module):
     def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
         raise NotImplementedError
 
-    def readyForCoding(self):
-        return self._entropyCoder.readyForCoding()
+    @property
+    def CDFs(self):
+        return self._entropyCoder.CDFs
 
     def reAssignCodebook(self) -> torch.Tensor:
         raise NotImplementedError
@@ -38,11 +39,11 @@ class BaseQuantizer(nn.Module):
     def Freq(self):
         return self._entropyCoder.Freq
 
-    def compress(self, x: torch.Tensor, cdfs: List[List[List[int]]]) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
+    def compress(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[bytes]], List[CodeSize]]:
         codes = self.encode(x)
 
         # List of binary, len = n, len(binaries[0]) = level
-        binaries, codeSize = self._entropyCoder.compress(codes, cdfs)
+        binaries, codeSize = self._entropyCoder.compress(codes)
         return codes, binaries, codeSize
 
     def _validateCode(self, refCodes: List[torch.Tensor], decompressed: List[torch.Tensor]):
@@ -50,8 +51,8 @@ class BaseQuantizer(nn.Module):
             if torch.any(code != restored):
                 raise RuntimeError("Got wrong decompressed result from entropy coder.")
 
-    def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize], cdfs: List[List[List[int]]]) -> torch.Tensor:
-        decompressed = self._entropyCoder.decompress(binaries, codeSize, cdfs)
+    def decompress(self, binaries: List[List[bytes]], codeSize: List[CodeSize]) -> torch.Tensor:
+        decompressed = self._entropyCoder.decompress(binaries, codeSize)
         # self._validateCode(codes, decompressed)
         return self.decode(decompressed)
 

@@ -46,8 +46,7 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     # [c, h, w]
     image = (image - 0.5) * 2
 
-    with model.readyForCoding() as cdfs:
-        codes, binaries, headers = model.compress(image[None, ...], cdfs)
+    codes, binaries, headers = model.compress(image[None, ...])
 
     return File(headers[0], binaries[0])
 
@@ -56,9 +55,8 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
 def decompressImage(sourceFile: File, model: BaseCompressor) -> torch.ByteTensor:
     binaries = sourceFile.Content
 
-    with model.readyForCoding() as cdfs:
-        # [1, c, h, w]
-        restored = model.decompress([binaries], cdfs, [sourceFile.FileHeader])
+    # [1, c, h, w]
+    restored = model.decompress([binaries], [sourceFile.FileHeader])
 
     # [c, h, w]
     return DeTransform()(restored[0])

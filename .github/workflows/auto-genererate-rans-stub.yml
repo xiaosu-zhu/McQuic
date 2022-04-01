@@ -18,6 +18,7 @@ jobs:
           pip install pybind11-stubgen
           pybind11-stubgen --no-setup-py mcquic.rans
           mv stubs/mcquic/rans-stubs/*.pyi mcquic/rans.pyi
+          sed -i 's/: str/: bytes/g' mcquic/rans.pyi
           rm -rf stubs
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
