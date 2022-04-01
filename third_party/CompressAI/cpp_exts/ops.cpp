@@ -115,7 +115,7 @@ void init_ops(py::module_ &m) {
 
 Args:
     pmf (List[float]): Probability mass function (normalized symbol frequency).
-    precision (int): Total quantization level for CDF (cdfSize).
+    precision (int): Total quantization level in bits (`log2(cdfSize)`).
 
 return:
     List[int]: Quantized CDF, length = `2 ** precision`.)",
