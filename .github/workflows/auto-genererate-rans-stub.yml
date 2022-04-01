@@ -1,9 +1,9 @@
-name: Update schema.json and docs based on mcquic.config.ConfigSchema
+name: Auto generate stub of RANS cpp module
 
 on:
   push:
     branches: [main]
-    paths: ['third_party/CompressAI/*']
+    paths: ['third_party/CompressAI/**']
 
 jobs:
   update-schema:
