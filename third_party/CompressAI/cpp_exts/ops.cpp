@@ -114,7 +114,7 @@ void init_ops(py::module_ &m) {
     m.def("pmfToQuantizedCDF", &pmfToQuantizedCDF, R"(Return quantized CDF for a given PMF with total quantization level `2 ** precision`.
 
 Args:
-    pmf (List[float]): Probability mass function (normalized occuring frequency) for all symbols.
+    pmf (List[float]): Probability mass function (normalized symbol frequency).
     precision (int): Total quantization level for CDF (cdfSize).
 
 return:
