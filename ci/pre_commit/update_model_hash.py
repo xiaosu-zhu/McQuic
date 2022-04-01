@@ -1,6 +1,7 @@
 import os
 import sys
 import requests
+import re
 
 
 with open(sys.argv[1]) as fp:
@@ -29,19 +30,21 @@ assets = response["assets"]
 
 
 for asset in assets:
-    name = asset["name"]
+    name: str = asset["name"]
+    if not name.endswith("mcquic"):
+        continue
+
+    regex = re.compile(r"^qp_[0-9]*_(mse|msssim)_[0-9a-fA-F]{8,}\.mcquic$")
+    if not regex.match(name):
+        raise ValueError(f"Naming convention broken with `{name}`.")
+
     stem = name.split(".")[0]
     component = stem.split("_")
     qp = component[1]
     target = component[2]
     hashStr = component[-1]
     print(qp, target, hashStr)
-    if len(hashStr) == 8:
-        try:
-            int(hashStr, 16)
-        except ValueError:
-            continue
-        MODELS_HASH[f"qp_{qp}_{target}"] = hashStr
+    MODELS_HASH[f"qp_{qp}_{target}"] = hashStr
 
 MODELS_HASH = """MODELS_HASH = {
 %s
