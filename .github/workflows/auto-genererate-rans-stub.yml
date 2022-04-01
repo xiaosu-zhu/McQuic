@@ -20,11 +20,13 @@ jobs:
           activate-environment: ""
       - name: Install dependencies
         run: |
-          ./install.sh
           eval "$(conda shell.bash hook)"
           conda activate
+          conda install -y python=3.9 cpuonly "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y "pybind11>=2.6,<3" "pip>=22" "tensorboard>=2.3,<3" "rich>=10,<11" "python-lmdb>=1.2,<2" "pyyaml>=5.4,<7" "marshmallow>=3.14,<4" "click>=8,<9" "vlutils" "msgpack-python>=1,<2" packaging -c xiaosu-zhu -c conda-forge
           conda install -y pip
-          pip install pybind11 pybind11-stubgen
+          pip install -e .
+          pip install pybind11-stubgen
       - name: Generate python stubs
         run: |
           eval "$(conda shell.bash hook)"
