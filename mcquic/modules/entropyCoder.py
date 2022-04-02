@@ -14,7 +14,7 @@ from mcquic.utils.specification import CodeSize
 class EntropyCoder(nn.Module):
     def __init__(self, m: int, k: List[int], ema: float = 0.9):
         super().__init__()
-        self.encooder = RansEncoder()
+        self.encoder = RansEncoder()
         self.decoder = RansDecoder()
         # initial value is uniform
         self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(m, ki) / ki, requires_grad=False) for ki in k)
@@ -39,6 +39,9 @@ class EntropyCoder(nn.Module):
             # ema update
             ema = (1 - self._ema) * normalized + self._ema * self._freqEMA[lv]
             self._freqEMA[lv].copy_(ema)
+        self.resetFreqAndCDF()
+
+    def resetFreqAndCDF(self):
         self._normalizedFreq = None
         self._cdfs = None
 
@@ -46,7 +49,7 @@ class EntropyCoder(nn.Module):
         freq = list()
         for freqEMA in self._freqEMA:
             # normalized probs.
-            freq.append(freqEMA / freqEMA.sum(-1, keepdim=True))
+            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).clone().detach())
         cdfs = list()
         for fr in freq:
             cdfAtLv = list()
@@ -115,7 +118,7 @@ class EntropyCoder(nn.Module):
                 cdfSizes = [ki + 2] * m
                 # [m, h, w]
                 offsets = torch.zeros_like(codePerImage).flatten().int().tolist()
-                binary: bytes = self.encooder.encodeWithIndexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
+                binary: bytes = self.encoder.encodeWithIndexes(codePerImage.flatten().int().tolist(), idx, cdf, cdfSizes, offsets)
                 compressed[i].append(binary)
         return compressed, [CodeSize(m, heights, widths, self._k) for _ in range(n)]
 
