@@ -22,7 +22,6 @@ class EntropyCoder(nn.Module):
         self._ema = ema
         self._cdfs = None
         self._normalizedFreq = None
-        self._needUpdate = True
 
     @torch.no_grad()
     def forward(self, oneHotCodes: List[torch.Tensor]):
@@ -40,33 +39,36 @@ class EntropyCoder(nn.Module):
             # ema update
             ema = (1 - self._ema) * normalized + self._ema * self._freqEMA[lv]
             self._freqEMA[lv].copy_(ema)
-        self._needUpdate = True
+        self._normalizedFreq = None
+        self._cdfs = None
 
-    @property
-    def CDFs(self) -> List[List[List[int]]]:
-        if self._cdfs is not None and not self._needUpdate:
-            return self._cdfs
-        cdfs = list()
-        for freq in self.NormalizedFreq:
-            cdfAtLv = list()
-            for freqAtM in freq:
-                cdf = pmfToQuantizedCDF(freqAtM.tolist(), 16)
-                cdfAtLv.append(cdf)
-            cdfs.append(cdfAtLv)
-        self._cdfs = cdfs
-        return self._cdfs
-
-    @property
-    def NormalizedFreq(self):
-        """Return list of `[m, k]` frequency tensors.
-        """
-        if self._normalizedFreq is not None and not self._needUpdate:
-            return self._normalizedFreq
+    def updateFreqAndCDF(self):
         freq = list()
         for freqEMA in self._freqEMA:
             # normalized probs.
             freq.append(freqEMA / freqEMA.sum(-1, keepdim=True))
+        cdfs = list()
+        for fr in freq:
+            cdfAtLv = list()
+            for frAtM in fr:
+                cdf = pmfToQuantizedCDF(frAtM.tolist(), 16)
+                cdfAtLv.append(cdf)
+            cdfs.append(cdfAtLv)
         self._normalizedFreq = freq
+        self._cdfs = cdfs
+
+    @property
+    def CDFs(self) -> List[List[List[int]]]:
+        if self._cdfs is None or self._normalizedFreq is None:
+            self.updateFreqAndCDF()
+        return self._cdfs
+
+    @property
+    def NormalizedFreq(self) -> List[torch.Tensor]:
+        """Return list of `[m, k]` frequency tensors.
+        """
+        if self._cdfs is None or self._normalizedFreq is None:
+            self.updateFreqAndCDF()
         return self._normalizedFreq
 
     def _checkShape(self, codes: List[torch.Tensor]):

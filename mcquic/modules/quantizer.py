@@ -1,5 +1,5 @@
 import math
-from typing import Callable, Dict, Iterable, List, Tuple, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import torch
 from torch import nn
@@ -76,17 +76,22 @@ class _multiCodebookQuantization(nn.Module):
         freq = freq.to(self._codebook.device).clone().detach()
         #       [k, d],        [k]
         for m, (codebookGroup, freqGroup) in enumerate(zip(self._codebook, freq)):
-            neverAssigned = codebookGroup[freqGroup < 1]
-            if len(neverAssigned) > self._k // 2:
-                mask = torch.zeros((len(neverAssigned), ), dtype=torch.long, device=self._codebook.device)
+            neverAssignedLoc = freqGroup < Consts.Eps
+            totalNeverAssigned = int(neverAssignedLoc.sum())
+            # More than half are never assigned
+            if totalNeverAssigned > self._k // 2:
+                mask = torch.zeros((totalNeverAssigned, ), device=self._codebook.device)
                 maskIdx = torch.randperm(len(mask))[self._k // 2:]
-                mask[maskIdx] = 1
-                freqGroup[freqGroup < 1] = mask
-                neverAssigned = codebookGroup[freqGroup < 1]
-            argIdx = torch.argsort(freqGroup, descending=True)[:(self._k - len(neverAssigned))]
-            fullAssigned = codebookGroup[argIdx]
-            selectedIdx = torch.randperm(len(fullAssigned))[:len(neverAssigned)]
-            codebook.data[m, freqGroup < 1] = fullAssigned[selectedIdx]
+                # Random pick some never assigned loc and drop them.
+                mask[maskIdx] = 1.
+                freqGroup[neverAssignedLoc] = mask
+                # Update
+                neverAssignedLoc = freqGroup < Consts.Eps
+                totalNeverAssigned = int(neverAssignedLoc.sum())
+            argIdx = torch.argsort(freqGroup, descending=True)[:(self._k - totalNeverAssigned)]
+            mostAssigned = codebookGroup[argIdx]
+            selectedIdx = torch.randperm(len(mostAssigned))[:totalNeverAssigned]
+            codebook.data[m, neverAssignedLoc] = mostAssigned[selectedIdx]
         # [m, k] bool
         diff = ((codebook - self._codebook) ** 2).sum(-1) > 1e-6
         proportion = diff.flatten()

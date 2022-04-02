@@ -23,6 +23,6 @@ class Consts(metaclass=ConstsMetaClass):
     Name = "mcquic"
     # lazy load
     # TempDir = "/tmp/mcquic/"
-    Eps = 1e-6
+    Eps = 1e-8
     CDot = "·"
     TimeOut = 30
