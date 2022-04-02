@@ -17,6 +17,7 @@ jobs:
         run: |
           git clone https://xiaosu-zhu:$HF_TOKEN@huggingface.co/spaces/xiaosu-zhu/McQuic.git hfSpace
           cp mcquic/service/stCompressService.py hfSpace/
+          python ci/pre_commit/update_hf_space_require.py mcquic/__init__.py hfSpace/requirements.txt
           cd hfSpace
           git add .
           git config --global user.email "xiaosu.zhu@outlook.com"
