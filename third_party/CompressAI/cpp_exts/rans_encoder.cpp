@@ -73,7 +73,7 @@ Args:
     indexes (List[int]): Index of CDF and cdfSize to pick for i-th symbol.
     cdfs (List[List[int]]): A series of CDFs. Each corresponds to a different symbol group. Different groups have different CDFs since they are under different distributions.
     cdfSizes (List[int]): Symbol integer upper-bound for each group.
-    offsets (List[int]): Offset applied to each symbol.
+    offsets (List[int]): Offset applied to each symbol (SUBTRACTION, result = symbol - offset).
 
 Returns:
     bytes: Encoded byte string.)",
