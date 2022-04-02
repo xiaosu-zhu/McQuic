@@ -74,6 +74,7 @@
 **Features**:
 * Solid performance and super-fast coding speed (See [Reference Models](#reference-models)).
 * Cross-platform support (Linux-64, Windows-64 and macOS-64, macOS-arm64).
+* You could try the interactive demo in the [HuggingFace Space](https://huggingface.co/spaces/xiaosu-zhu/McQuic)!
 
 **Techs**:
 
