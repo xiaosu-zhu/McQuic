@@ -8,7 +8,7 @@ from mcquic.utils.vision import RandomHorizontalFlip, RandomVerticalFlip, Random
 def getTrainingPreprocess():
     return T.Compose([
         T.RandomCrop(512, pad_if_needed=True),
-        T.RandomApply([T.RandomChoice([T.ColorJitter(0.4, 0, 0, 0), T.ColorJitter(0, 0.4, 0, 0), T.ColorJitter(0, 0, 0.4, 0), T.ColorJitter(0, 0, 0, 0.2), T.ColorJitter(0.4, 0.4, 0, 0), T.ColorJitter(0.4, 0, 0.4, 0), T.ColorJitter(0.4, 0, 0, 0.2), T.ColorJitter(0, 0.4, 0.4, 0), T.ColorJitter(0, 0.4, 0, 0.2), T.ColorJitter(0, 0, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0), T.ColorJitter(0.4, 0.4, 0, 0.2), T.ColorJitter(0.4, 0, 0.4, 0.2), T.ColorJitter(0, 0.4, 0.4, 0.2), T.ColorJitter(0.4, 0.4, 0.4, 0.2)])], 0.5),
+        T.RandomApply(T.ColorJitter(0.4, 0.4, 0.4, 0.2), 0.5),
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
         T.RandomAutocontrast(),

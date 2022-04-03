@@ -34,6 +34,7 @@ class RandomGamma(nn.Module):
         srgbToLinear,
         linearToSrgb,
         lambda x: randomGamma(x, torch.rand((), device=x.device) * 1.95 + 0.05),
+        lambda x: x
     ]
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return random.choice(self._fns)(x)
