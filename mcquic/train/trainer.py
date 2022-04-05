@@ -25,6 +25,7 @@ from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
 from mcquic.validate import Validator
 from mcquic.utils import totalParameters
+from mcquic.datasets.transforms import getTrainingTransform
 
 from .utils import EpochFrequencyHook, checkHook, getRichProgress
 
@@ -45,6 +46,8 @@ class _baseTrainer(Restorable):
         # Used for self.PrettyStep
         self.lastFormatted = -1
         self.prettyStep = "     "
+
+        self.transform = getTrainingTransform().to(self.rank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, criterion = trackingFunctionCalls(modelFn, self.saver)()
@@ -185,7 +188,7 @@ class _baseTrainer(Restorable):
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
             for images in trainLoader:
-                images = images.to(self.rank, non_blocking=True)
+                images = self.transform(images.to(self.rank, non_blocking=True))
 
                 self._stepStart(stepStartHook)
 

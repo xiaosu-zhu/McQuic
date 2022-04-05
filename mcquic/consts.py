@@ -1,5 +1,3 @@
-
-import logging
 import os
 import shutil
 import tempfile
@@ -23,6 +21,7 @@ class Consts(metaclass=ConstsMetaClass):
     Name = "mcquic"
     # lazy load
     # TempDir = "/tmp/mcquic/"
-    Eps = 1e-8
+    # torch.finfo(torch.float).eps
+    Eps = 1.1920928955078125e-07
     CDot = "·"
-    TimeOut = 30
+    TimeOut = 15

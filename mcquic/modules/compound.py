@@ -6,6 +6,7 @@ from torch.nn import Module
 from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.loss import Distortion
+from mcquic.datasets.transforms import getTraingingPostprocess
 from .compressor import BaseCompressor
 
 _device_t = Union[int, device]
@@ -17,14 +18,13 @@ class _compound(Module):
         super().__init__()
         self._compressor = compressor
         self._criterion = criterion
+        self._postProcess = getTraingingPostprocess()
 
     def forward(self, x: Tensor):
-        xHat, yHat, codes, logits = self._compressor(x)
+        post = self._postProcess(x)
+        xHat, yHat, codes, logits = self._compressor(post)
         rate, distortion = self._criterion(x, xHat, codes, logits)
         return xHat, (rate, distortion), codes, logits
-
-    def readyForCoding(self):
-        return self._compressor.readyForCoding()
 
     @property
     def Freq(self):
