@@ -10,6 +10,7 @@ from mcquic.modules.entropyCoder import EntropyCoder
 from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize
 from mcquic import Consts
+from mcquic.nn.base import gumbelSoftmax
 
 
 class BaseQuantizer(nn.Module):
@@ -161,7 +162,7 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, k, h, w]
         # sampled = posterior.rsample(())
 
-        sampled = F.gumbel_softmax(logit, temperature, True)
+        sampled = gumbelSoftmax(logit, temperature, True)
 
         sampled = self._permute(sampled)
 

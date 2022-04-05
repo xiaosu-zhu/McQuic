@@ -1,7 +1,9 @@
+from typing import Tuple
 import random
+
 import torch
 from torch import nn
-from torchvision import transforms as T
+import torch.nn.functional as tf
 from torchvision.transforms import functional as F
 from torch.distributions import Categorical
 
@@ -14,6 +16,106 @@ __all__ = [
     "RandomAutocontrast",
     "Masking"
 ]
+
+
+
+# BEGIN::: From Kornia
+_planckian_coeffs = {
+    'blackbody': torch.tensor(
+        [
+            [0.6743, 0.4029, 0.0013],
+            [0.6281, 0.4241, 0.1665],
+            [0.5919, 0.4372, 0.2513],
+            [0.5623, 0.4457, 0.3154],
+            [0.5376, 0.4515, 0.3672],
+            [0.5163, 0.4555, 0.4103],
+            [0.4979, 0.4584, 0.4468],
+            [0.4816, 0.4604, 0.4782],
+            [0.4672, 0.4619, 0.5053],
+            [0.4542, 0.4630, 0.5289],
+            [0.4426, 0.4638, 0.5497],
+            [0.4320, 0.4644, 0.5681],
+            [0.4223, 0.4648, 0.5844],
+            [0.4135, 0.4651, 0.5990],
+            [0.4054, 0.4653, 0.6121],
+            [0.3980, 0.4654, 0.6239],
+            [0.3911, 0.4655, 0.6346],
+            [0.3847, 0.4656, 0.6444],
+            [0.3787, 0.4656, 0.6532],
+            [0.3732, 0.4656, 0.6613],
+            [0.3680, 0.4655, 0.6688],
+            [0.3632, 0.4655, 0.6756],
+            [0.3586, 0.4655, 0.6820],
+            [0.3544, 0.4654, 0.6878],
+            [0.3503, 0.4653, 0.6933],
+        ]
+    ),
+    'CIED': torch.tensor(
+        [
+            [0.5829, 0.4421, 0.2288],
+            [0.5510, 0.4514, 0.2948],
+            [0.5246, 0.4576, 0.3488],
+            [0.5021, 0.4618, 0.3941],
+            [0.4826, 0.4646, 0.4325],
+            [0.4654, 0.4667, 0.4654],
+            [0.4502, 0.4681, 0.4938],
+            [0.4364, 0.4692, 0.5186],
+            [0.4240, 0.4700, 0.5403],
+            [0.4127, 0.4705, 0.5594],
+            [0.4023, 0.4709, 0.5763],
+            [0.3928, 0.4713, 0.5914],
+            [0.3839, 0.4715, 0.6049],
+            [0.3757, 0.4716, 0.6171],
+            [0.3681, 0.4717, 0.6281],
+            [0.3609, 0.4718, 0.6380],
+            [0.3543, 0.4719, 0.6472],
+            [0.3480, 0.4719, 0.6555],
+            [0.3421, 0.4719, 0.6631],
+            [0.3365, 0.4719, 0.6702],
+            [0.3313, 0.4719, 0.6766],
+            [0.3263, 0.4719, 0.6826],
+            [0.3217, 0.4719, 0.6882],
+        ]
+    ),
+}
+
+_planckian_coeffs_ratio = {
+    'blackbody': torch.stack(
+        (
+            _planckian_coeffs['blackbody'][:, 0] / _planckian_coeffs['blackbody'][:, 1],
+            _planckian_coeffs['blackbody'][:, 2] / _planckian_coeffs['blackbody'][:, 1],
+        ),
+        1,
+    ),
+    'CIED': torch.stack(
+        (
+            _planckian_coeffs['CIED'][:, 0] / _planckian_coeffs['CIED'][:, 1],
+            _planckian_coeffs['CIED'][:, 2] / _planckian_coeffs['CIED'][:, 1],
+        ),
+        1,
+    ),
+}
+
+class RandomPlanckianJitter(nn.Module):
+    def __init__(self, mode: str = "blackbody", p: float = 0.5) -> None:
+        super().__init__()
+        self.register_buffer('pl', _planckian_coeffs_ratio[mode])
+        self.p = p
+
+    def forward(self, x: torch.Tensor):
+        needsApply = torch.rand(x.shape[0]) < self.p
+        coeffs = self.pl[torch.randint(len(self.pl), (needsApply.sum(), ))]
+
+        r_w = coeffs[:, 0][..., None, None]
+        b_w = coeffs[:, 1][..., None, None]
+
+        willbeApplied = x[needsApply]
+
+        willbeApplied[..., 0, :, :].mul_(r_w)
+        willbeApplied[..., 2, :, :].mul_(b_w)
+
+        return x.clamp_(0.0, 1.0)
+
 
 
 def srgbToLinear(x: torch.Tensor):
@@ -38,6 +140,9 @@ class RandomGamma(nn.Module):
     ]
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return random.choice(self._fns)(x)
+
+
+# END::: From Kornia
 
 
 class DeTransform(nn.Module):
@@ -73,7 +178,7 @@ class RandomHorizontalFlip(nn.Module):
             Tensor: Randomly flipped Tensor.
         """
         flipped = torch.rand(tensor.shape[0]) < self.p
-        tensor[flipped] = F.hflip(tensor[flipped])
+        tensor[flipped].copy_(tensor[flipped].flip(-1))
         return tensor
 
     def __repr__(self):
@@ -98,7 +203,7 @@ class RandomVerticalFlip(nn.Module):
             Tensor: Randomly flipped Tensor.
         """
         flipped = torch.rand(tensor.shape[0]) < self.p
-        tensor[flipped] = F.vflip(tensor[flipped])
+        tensor[flipped].copy_(tensor[flipped].flip(-2))
         return tensor
 
     def __repr__(self):
@@ -126,7 +231,7 @@ class RandomAutocontrast(torch.nn.Module):
             PIL Image or Tensor: Randomly autocontrasted image.
         """
         picked = torch.rand(img.shape[0]) < self.p
-        img[picked] = F.autocontrast(img[picked])
+        img[picked].copy_(F.autocontrast(img[picked]))
         return img
 
     def __repr__(self):
@@ -144,3 +249,19 @@ class Masking(nn.Module):
         # [n, 1, h, w]
         mask = self._categorical.sample((n, 1, h, w)).byte().to(images.device)
         return (mask == 0) * images + (mask == 1) * zeros
+
+
+class PatchWiseErasing(nn.Module):
+    def __init__(self, grids: Tuple[int, int] = (32, 32), p: float = 0.5) -> None:
+        super().__init__()
+        self.p = p
+        self.grids = (1, *grids)
+    def forward(self, x: torch.Tensor):
+        shape = x.shape
+        if len(shape) == 4:
+            randShape = (x.shape[0], *self.grids)
+        else:
+            randShape = self.grids
+        h, w = shape[-2], shape[-1]
+        notEraseArea = tf.interpolate((torch.rand(randShape, device=x.device) > self.p).float(), (h, w))
+        return x * notEraseArea

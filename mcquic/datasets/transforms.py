@@ -3,19 +3,27 @@ from torch import nn
 import torch.nn.functional as F
 from torchvision import transforms as T
 
-from mcquic.utils.vision import RandomHorizontalFlip, RandomVerticalFlip, RandomGamma, RandomAutocontrast
+from mcquic.utils.vision import RandomGamma, RandomPlanckianJitter, RandomAutocontrast, RandomHorizontalFlip, RandomVerticalFlip, PatchWiseErasing
 
 def getTrainingPreprocess():
     return T.Compose([
         T.RandomCrop(512, pad_if_needed=True),
-        T.RandomApply(T.ColorJitter(0.4, 0.4, 0.4, 0.2), 0.5),
-        T.RandomHorizontalFlip(),
-        T.RandomVerticalFlip(),
-        T.RandomAutocontrast(),
         T.ConvertImageDtype(torch.float32),
-        RandomGamma(),
-        T.Normalize(0.5, 0.5, True)
+        RandomGamma()
     ])
+
+def getTrainingTransform():
+    return nn.Sequential(
+        RandomPlanckianJitter("CIED", p=0.5),
+        RandomHorizontalFlip(p=0.5),
+        RandomVerticalFlip(p=0.5),
+        RandomAutocontrast(p=0.5),
+        T.Normalize(0.5, 0.5),
+    )
+
+def getTraingingPostprocess():
+    return PatchWiseErasing()
+
 
 def getEvalTransform():
     return T.Compose([
