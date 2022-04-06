@@ -1,4 +1,5 @@
 import logging
+import os
 import pathlib
 from typing import Optional, Tuple, Union
 import warnings
@@ -7,7 +8,7 @@ import torch
 import torch.hub
 from torchvision.io.image import read_image, ImageReadMode, write_png
 from torchvision.transforms.functional import convert_image_dtype
-from vlutils.logger import configLogging
+from vlutils.logger import configLogging, readableSize
 
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor, Compressor
@@ -49,6 +50,7 @@ def main(debug: bool, quiet: bool, qp: int, local: pathlib.Path, disable_gpu: bo
         target = compressImage(image, model, crop)
 
         logger.info(target)
+        logger.info("%s => %s. Compression ratio: %.2f%%", readableSize(input.stat().st_size), target.size(True), ((input.stat().st_size - target.size(False)) / input.stat().st_size) * 100)
         if output is not None:
             if output.is_dir():
                 output = output.joinpath(input.stem + ".mcq")
