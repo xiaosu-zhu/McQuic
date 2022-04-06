@@ -71,7 +71,7 @@ class ImageSize:
         return self.height * self.width
 
     def __str__(self) -> str:
-        return f"[{self.width}×{self.height}, {self.channel}]"
+        return f"[{self.width}x{self.height}, {self.channel}]"
 
 
 @dataclass
@@ -92,7 +92,7 @@ class CodeSize:
     k: List[int]
 
     def __str__(self) -> str:
-        sequence = ", ".join(f"[{w}×{h}, {k}]" for h, w, k in zip(self.heights, self.widths, self.k))
+        sequence = ", ".join(f"[{w}x{h}, {k}]" for h, w, k in zip(self.heights, self.widths, self.k))
         return f"""
         {self.m} code-groups: {sequence}"""
 
