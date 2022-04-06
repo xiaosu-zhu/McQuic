@@ -183,7 +183,7 @@ class _baseTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, totalBatches=len(trainLoader))
 
-        images, xHat, codes, logits = None, None, None, None
+        images, postProcessed, xHat, codes, logits = None, None, None, None, None
 
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, trainSampler=trainSampler)
@@ -194,13 +194,13 @@ class _baseTrainer(Restorable):
 
                 self._optimizer.zero_grad()
 
-                xHat, (rate, distortion), codes, logits = self._model(images)
+                (postProcessed, xHat), (rate, distortion), codes, logits = self._model(images)
                 (rate + distortion).backward()
 
                 self._optimizer.step()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
-            self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, trainSet=trainLoader.dataset)
+            self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset)
         self._afterRun(afterRunHook)
 
 
@@ -315,7 +315,7 @@ class MainTrainer(_baseTrainer):
         reAssignProportion = super().refresh()
         self.saver.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=self._step)
 
-    def log(self, *_, images, restored, codes, logits, **__):
+    def log(self, *_, images, postProcessed, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
         self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
@@ -325,6 +325,7 @@ class MainTrainer(_baseTrainer):
             self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
+        self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 

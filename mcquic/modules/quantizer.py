@@ -63,7 +63,7 @@ class BaseQuantizer(nn.Module):
 #       Generally, although code is neat and output is same as here,
 #         training with README's implementation will cause loss become suddenly NAN after a few epoches.
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.15):
+    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.0):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
@@ -325,7 +325,7 @@ class UMGMQuantizer(BaseQuantizer):
             # https://arxiv.org/pdf/1910.05895.pdf
             # I've tried a series of initilizations, but found this works the best.
             codebook = nn.Parameter(nn.init.normal_(torch.empty(m, ki, channel // m), std=math.sqrt(2 / (5 * channel / m))))
-            quantizer = _multiCodebookQuantization(codebook)
+            quantizer = _multiCodebookQuantization(codebook, permutationRate)
             dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))

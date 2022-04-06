@@ -585,6 +585,7 @@ To cite our paper, please use following BibTex:
 | [Torchvision](https://pytorch.org/vision/stable/index.html)                    | [BSD-3-Clause](https://github.com/pytorch/vision/blob/main/LICENSE) |
 | [Apex](https://nvidia.github.io/apex/)                                         | [BSD-3-Clause](https://github.com/NVIDIA/apex/blob/master/LICENSE) |
 | [Tensorboard](https://www.tensorflow.org/tensorboard)                          | [Apache-2.0](https://github.com/tensorflow/tensorboard/blob/master/LICENSE) |
+| [Kornia](https://kornia.github.io/)                                            | [Apache-2.0](https://github.com/kornia/kornia/blob/master/LICENSE) |
 | [rich](https://rich.readthedocs.io/en/latest/)                                 | [MIT](https://github.com/Textualize/rich/blob/master/LICENSE) |
 | [python-lmdb](https://lmdb.readthedocs.io/en/release/)                         | [OpenLDAP Version 2.8](https://github.com/jnwatson/py-lmdb/blob/master/LICENSE) |
 | [PyYAML](https://pyyaml.org/)                                                  | [MIT](https://github.com/yaml/pyyaml/blob/master/LICENSE) |
