@@ -97,6 +97,7 @@ _planckian_coeffs_ratio = {
 }
 
 class RandomPlanckianJitter(nn.Module):
+    pl: torch.Tensor
     def __init__(self, mode: str = "blackbody", p: float = 0.5) -> None:
         super().__init__()
         self.register_buffer('pl', _planckian_coeffs_ratio[mode])
@@ -252,16 +253,22 @@ class Masking(nn.Module):
 
 
 class PatchWiseErasing(nn.Module):
-    def __init__(self, grids: Tuple[int, int] = (32, 32), p: float = 0.5) -> None:
+    permutePattern: torch.Tensor
+    def __init__(self, grids: Tuple[int, int] = (16, 16), p: float = 0.75) -> None:
         super().__init__()
         self.p = p
-        self.grids = (1, *grids)
+        self.grids = (1, 1, *grids)
+        # [1024, ]
+        permutePattern = torch.ones(grids).flatten()
+        permuteAmount = round(permutePattern.numel() * p)
+        permutePattern[:permuteAmount] = 0
+        self.register_buffer("permutePattern", permutePattern)
+
     def forward(self, x: torch.Tensor):
         shape = x.shape
-        if len(shape) == 4:
-            randShape = (x.shape[0], *self.grids)
-        else:
-            randShape = self.grids
         h, w = shape[-2], shape[-1]
-        notEraseArea = tf.interpolate((torch.rand(randShape, device=x.device) > self.p).float(), (h, w))
-        return x * notEraseArea
+        randIdx = torch.randperm(len(self.permutePattern), device=x.device)
+        self.permutePattern.copy_(self.permutePattern[randIdx])
+        permutePattern = self.permutePattern.reshape(self.grids)
+        eraseArea = tf.interpolate(permutePattern, (h, w))
+        return x * eraseArea

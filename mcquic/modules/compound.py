@@ -3,6 +3,7 @@ from typing import Optional, Any, Union, Sequence
 from torch import device, Tensor
 import torch
 from torch.nn import Module
+import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.loss import Distortion
@@ -18,13 +19,13 @@ class _compound(Module):
         super().__init__()
         self._compressor = compressor
         self._criterion = criterion
-        self._postProcess = getTraingingPostprocess()
+        self._postProcess = getTraingingPostprocess().to(dist.get_rank())
 
     def forward(self, x: Tensor):
         post = self._postProcess(x)
         xHat, yHat, codes, logits = self._compressor(post)
         rate, distortion = self._criterion(x, xHat, codes, logits)
-        return xHat, (rate, distortion), codes, logits
+        return (post, xHat), (rate, distortion), codes, logits
 
     @property
     def Freq(self):
