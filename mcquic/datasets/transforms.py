@@ -14,10 +14,9 @@ def getTrainingPreprocess():
 
 def getTrainingTransform():
     return nn.Sequential(
-        RandomPlanckianJitter("CIED", p=0.5),
+        RandomPlanckianJitter("CIED", p=1.0),
         RandomHorizontalFlip(p=0.5),
         RandomVerticalFlip(p=0.5),
-        RandomAutocontrast(p=0.5),
         T.Normalize(0.5, 0.5),
     )
 
