@@ -20,9 +20,13 @@ class _compound(Module):
         self._compressor = compressor
         self._criterion = criterion
         self._postProcess = getTraingingPostprocess().to(dist.get_rank())
+        self._postProcessEnabled = True
 
     def forward(self, x: Tensor):
-        post = self._postProcess(x)
+        if self._postProcessEnabled:
+            post = self._postProcess(x)
+        else:
+            post = x
         xHat, yHat, codes, logits = self._compressor(post)
         rate, distortion = self._criterion(x, xHat, codes, logits)
         return (post, xHat), (rate, distortion), codes, logits
@@ -30,6 +34,15 @@ class _compound(Module):
     @property
     def Freq(self):
         return self._compressor._quantizer._entropyCoder.NormalizedFreq
+
+    @property
+    def PostProcessEnabled(self):
+        return self._postProcessEnabled
+
+    @PostProcessEnabled.setter
+    def PostProcessEnabled(self, enabled: bool):
+        self._postProcessEnabled = enabled
+
 
 class Compound(DistributedDataParallel):
     module: _compound
@@ -51,3 +64,11 @@ class Compound(DistributedDataParallel):
 
     def formatDistortion(self, loss: torch.Tensor):
         return self.module._criterion.formatDistortion(loss)
+
+    @property
+    def PostProcessEnabled(self):
+        return self.module.PostProcessEnabled
+
+    @PostProcessEnabled.setter
+    def PostProcessEnabled(self, enabled: bool):
+        self.module.PostProcessEnabled = enabled

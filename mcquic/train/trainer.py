@@ -45,7 +45,7 @@ class _baseTrainer(Restorable):
 
         # Used for self.PrettyStep
         self.lastFormatted = -1
-        self.prettyStep = "     "
+        self.prettyStep = "......"
 
         self.transform = getTrainingTransform().to(self.rank)
 
@@ -120,36 +120,36 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] LR scheduler reset.", self.PrettyStep)
 
-    def _beforeRun(self, hook, *args, totalBatches, **kwargs):
-        hook(self._step, self._epoch, *args, totalBatches=totalBatches, **kwargs)
+    def _beforeRun(self, hook, *args, **kwArgs):
         if self._step > 0:
             self.saver.info("[%s] Resume training at %s steps / %d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
         else:
             self.saver.info("[%s] Start training.", self.PrettyStep)
 
         self.saver.debug("[%s] Training loop started.", self.PrettyStep)
+        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _afterRun(self, hook, *args, **kwArgs):
-        hook(self._step, self._epoch, *args, **kwArgs)
         self.saver.debug("[%s] Training loop finished.", self.PrettyStep)
+        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _stepStart(self, hook, *args, **kwArgs):
-        hook(self._step, self._epoch, *args, **kwArgs)
+        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _stepFinish(self, hook, *args, **kwArgs):
         self._step += 1
-        hook(self._step, self._epoch, *args, **kwArgs)
+        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _epochStart(self, hook, *args, trainSampler, **kwArgs):
         trainSampler.set_epoch(self._epoch)
-        hook(self._step, self._epoch, *args, trainSampler, **kwArgs)
 
         self.saver.debug("[%s] Epoch %4d started.", self.PrettyStep, self._epoch + 1)
 
         gc.collect()
         gc.collect()
+        hook(self._step, self._epoch, self, *args, trainSampler=trainSampler, logger=self.saver, **kwArgs)
 
-    def _epochFinish(self, hook, *args, trainSet, **kwArgs):
+    def _epochFinish(self, hook, *args, **kwArgs):
         self._epoch += 1
 
         self.saver.debug("[%s] Epoch %4d finished.", self.PrettyStep, self._epoch)
@@ -157,21 +157,8 @@ class _baseTrainer(Restorable):
         self._scheduler.step()
         self.saver.debug("[%s] Lr is set to %.2e.", self.PrettyStep, self._scheduler.get_last_lr()[0])
 
-        hook(self._step, self._epoch, *args, trainSet=trainSet, **kwArgs)
+        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
-        if self._epoch % (self.config.Train.ValFreq) == 0:
-            self.refresh()
-
-    @torch.inference_mode()
-    def refresh(self, *_, **__):
-        self.saver.debug("[%s] Start refresh at epoch %4d.", self.PrettyStep, self._epoch)
-
-        reAssignProportion = self._model.refresh(self.rank)
-
-        self.saver.debug("[%s] %.2f%% of codebook is re-assigned.", self.PrettyStep, reAssignProportion * 100)
-
-        self.saver.debug("[%s] End refresh at epoch %4d.", self.PrettyStep, self._epoch)
-        return reAssignProportion
 
     def train(self, trainLoader: DataLoader, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
@@ -181,16 +168,21 @@ class _baseTrainer(Restorable):
         epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
         epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
-        self._beforeRun(beforeRunHook, totalBatches=len(trainLoader))
+        trainingArgs = {
+            "trainLoader": trainLoader,
+            "trainSampler": trainSampler
+        }
+
+        self._beforeRun(beforeRunHook, **trainingArgs)
 
         images, postProcessed, xHat, codes, logits = None, None, None, None, None
 
         for _ in range(self._epoch, self.config.Train.Epoch):
-            self._epochStart(epochStartHook, trainSampler=trainSampler)
+            self._epochStart(epochStartHook, **trainingArgs)
             for images in trainLoader:
                 images = self.transform(images.to(self.rank, non_blocking=True))
 
-                self._stepStart(stepStartHook)
+                self._stepStart(stepStartHook, **trainingArgs)
 
                 self._optimizer.zero_grad()
 
@@ -199,8 +191,8 @@ class _baseTrainer(Restorable):
 
                 self._optimizer.step()
 
-                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion)
-            self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset)
+                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, **trainingArgs)
+            self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset, **trainingArgs)
         self._afterRun(afterRunHook)
 
 
@@ -279,7 +271,8 @@ class MainTrainer(_baseTrainer):
             stepStartHook=stepStartHook,
             stepFinishHook=ChainHook(self._stepFinishHook, stepFinishHook))
 
-    def _beforeRun(self, hook, *args, totalBatches, **kwargs):
+    def _beforeRun(self, hook, *args, trainLoader, **kwargs):
+        totalBatches = len(trainLoader)
         self.progress.update(self.trainingBar, total=totalBatches)
         self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
         self.progress.start_task(self.trainingBar)
@@ -311,9 +304,6 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
         super()._epochStart(hook, *args, **kwArgs)
 
-    def refresh(self, *_, **__):
-        reAssignProportion = super().refresh()
-        self.saver.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=self._step)
 
     def log(self, *_, images, postProcessed, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)

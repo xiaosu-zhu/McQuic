@@ -1,7 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 import math
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from marshmallow import Schema, fields, post_load, RAISE
 
@@ -40,6 +40,7 @@ class TrainSchema(Schema):
     optim = fields.Nested(GeneralSchema(), required=True, description="Optimizer used for training. As for current we have `Adam` and `Lamb`.")
     schdr = fields.Nested(GeneralSchema(), required=True, description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
     gpu = fields.Nested(GPUSchema(), required=True, description="GPU configs for training.")
+    hooks = fields.List(fields.Nested(GeneralSchema()), required=False, description="Hooks used for training. Key is used to retrieve hook from `mcquic.train.hooks`.")
 
     @post_load
     def _(self, data, **kwargs):
@@ -101,6 +102,7 @@ class Train:
     optim: General
     schdr: General
     gpu: GPU
+    hooks: List[General]
 
     @property
     def BatchSize(self) -> int:
@@ -148,6 +150,10 @@ class Train:
     @property
     def GPU(self) -> GPU:
         return self.gpu
+
+    @property
+    def Hooks(self) -> List[General]:
+        return self.hooks
 
 
 @dataclass
