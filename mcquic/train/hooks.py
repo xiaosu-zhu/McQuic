@@ -104,10 +104,10 @@ class DisablePostProcessAfterEpoch(EpochStartHook):
     def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
         if epoch > self._epoch > 0:
             trainer._model.PostProcessEnabled = False
-            logger.debug(f"Set PostProcessEnabled to `False` at epoch {epoch}")
+            logger.debug(f"Set PostProcessEnabled to `False` at epoch {epoch}.")
         else:
             trainer._model.PostProcessEnabled = True
-            logger.debug(f"Set PostProcessEnabled to `True` at epoch {epoch}")
+            logger.debug(f"Set PostProcessEnabled to `True` at epoch {epoch}.")
 
 @HookRegistry.register
 class CodebookReassign(EpochFinishHook):
