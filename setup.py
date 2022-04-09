@@ -53,7 +53,7 @@ if "PYPI_BUILDING" in os.environ:
         "pyyaml<7",
         "marshmallow<4",
         "click<9",
-        "vlutils",
+        "vlutils>=0.1.21",
         "msgpack-python<2",
         # "streamlit<2",
         "packaging"
