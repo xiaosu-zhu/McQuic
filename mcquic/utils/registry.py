@@ -1,4 +1,4 @@
-from typing import Callable, Tuple, Type
+from typing import Type
 
 from vlutils.base import Registry
 
@@ -25,4 +25,7 @@ class OptimizerRegistry(Registry[Type["torch.optim.optimizer.Optimizer"]]):
     pass
 
 class LossRegistry(Registry[Type["torch.nn.Module"]]):
+    pass
+
+class HookRegistry(Registry[Type["mcquic.train.hooks.Hook"]]):
     pass

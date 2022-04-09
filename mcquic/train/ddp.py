@@ -4,13 +4,13 @@ from typing import Tuple
 import os
 
 import torch
-from torch import nn
 import torch.distributed as dist
 from vlutils.config import summary
 
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.datasets import getTrainLoader, getValLoader
+from mcquic.train.hooks import getAllHooks
 from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry, LossRegistry
 import mcquic.train.lrSchedulers as _
 import mcquic.loss
@@ -78,7 +78,7 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
     valLoader = getValLoader(config.Train.ValSet, disable=rank != 0, logger=saver)
     saver.debug("Train and validation datasets mounted.")
 
-    trainer.train(trainLoader, trainSampler, valLoader)
+    trainer.train(trainLoader, trainSampler, valLoader, **getAllHooks(config.Train.Hooks))
 
     saver.debug(summary(config.serialize()))
     saver.info("Bye.")
