@@ -35,7 +35,7 @@ requirements:
     - pyyaml>=5.4,<7
     - marshmallow>=3.14,<4
     - click>=8,<9
-    - vlutils>=0.1.21
+    - vlutils>=0.1.22
     - msgpack-python>=1,<2
     - packaging
 
