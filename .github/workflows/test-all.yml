@@ -82,6 +82,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.8", "3.9", "3.10"]
     # The type of runner that the job will run on
     runs-on: ${{ matrix.os }}
     steps:
@@ -98,7 +99,7 @@ jobs:
           conda init powershell
           "if (test-path $PROFILE.CurrentUserAllHosts) { & $PROFILE.CurrentUserAllHosts}"
           conda activate
-          conda install -y python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y python=${{ python-version }} "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
           conda install -y mcquic -c xiaosu-zhu -c conda-forge
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
@@ -114,7 +115,7 @@ jobs:
         run: |
           eval "$(conda shell.bash hook)"
           conda activate
-          conda install -y python=3.9 "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y python=${{ python-version }} "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
           conda install -y mcquic -c xiaosu-zhu -c conda-forge
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
