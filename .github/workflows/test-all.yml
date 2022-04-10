@@ -99,7 +99,7 @@ jobs:
           conda init powershell
           "if (test-path $PROFILE.CurrentUserAllHosts) { & $PROFILE.CurrentUserAllHosts}"
           conda activate
-          conda install -y python=${{ python-version }} "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y "python=${{ matrix.python-version }}" "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
           conda install -y mcquic -c xiaosu-zhu -c conda-forge
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
@@ -115,7 +115,7 @@ jobs:
         run: |
           eval "$(conda shell.bash hook)"
           conda activate
-          conda install -y python=${{ python-version }} "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
+          conda install -y "python=${{ matrix.python-version }}" "torchvision>=0.12,<1" "pytorch>=1.11,<2" -c pytorch
           conda install -y mcquic -c xiaosu-zhu -c conda-forge
           mcquic -qp 2 assets/sample.png ./
           mcquic ./sample.mcq ./
