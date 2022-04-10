@@ -133,7 +133,7 @@ jobs:
     container: ghcr.io/xiaosu-zhu/mcquic:main
     steps:
       - run: |
-          mcquic -qp 2 assets/sample.png
+          mcquic -qp 2 /workspace/mcquic/assets/sample.png
           mcquic --help
           mcquic train --help
           mcquic validate --help
