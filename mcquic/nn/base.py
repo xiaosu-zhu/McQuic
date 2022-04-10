@@ -88,26 +88,26 @@ class _logExpMinusOne(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, bound):
         ctx.save_for_backward(x, bound)
-        return (x.exp() - 1 + Consts.Eps).log()
+        return (x.exp() - 1 + torch.finfo(x.dtype).eps).log()
 
     @staticmethod
     def backward(ctx, grad_output):
         x, bound = ctx.saved_tensors
         passThroughIf = x > bound
         remaining = ~passThroughIf
-        return passThroughIf * grad_output + remaining * grad_output * x.exp() / (x.exp() - 1 + Consts.Eps), None
+        return passThroughIf * grad_output + remaining * grad_output * x.exp() / (x.exp() - 1 + torch.finfo(x.dtype).eps), None
 
 class LogExpMinusOne(nn.Module):
-    def __init__(self, eps: Union[torch.Tensor, float] = Consts.Eps):
+    def __init__(self):
         super().__init__()
-        eps = torch.tensor(eps, dtype=torch.float)
+        eps = torch.tensor(torch.finfo(torch.float).eps)
         self.register_buffer("_bound", ((1 + eps) / eps).log())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return _logExpMinusOne.apply(x, self._bound)
 
-def logExpMinusOne(x: torch.Tensor, eps: Union[torch.Tensor, float] = Consts.Eps) -> torch.Tensor:
-    eps = torch.tensor(eps, dtype=torch.float, device=x.device)
+def logExpMinusOne(x: torch.Tensor) -> torch.Tensor:
+    eps = torch.tensor(torch.finfo(x.dtype).eps, device=x.device)
     return _logExpMinusOne.apply(x, ((1 + eps) / eps).log())
 
 
@@ -116,7 +116,8 @@ def oneHot(x: torch.LongTensor, numClasses: int, dim: int = -1, dtype = torch.fl
 
 
 def gumbelSoftmax(logits: torch.Tensor, temperature: float = 1.0, hard: bool = True, dim: int = -1):
-    uniforms = torch.rand_like(logits).clamp_(Consts.Eps, 1 - Consts.Eps)
+    eps = torch.finfo(logits.dtype).eps
+    uniforms = torch.rand_like(logits).clamp_(eps, 1 - eps)
     gumbels = -((-(uniforms.log())).log())
 
     y_soft = ((logits + gumbels) / temperature).softmax(dim)

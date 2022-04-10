@@ -1,7 +1,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from marshmallow import Schema, fields, post_load, RAISE
 
@@ -102,7 +102,7 @@ class Train:
     optim: General
     schdr: General
     gpu: GPU
-    hooks: List[General]
+    hooks: Optional[List[General]] = None
 
     @property
     def BatchSize(self) -> int:
@@ -153,6 +153,8 @@ class Train:
 
     @property
     def Hooks(self) -> List[General]:
+        if self.hooks is None:
+            return list()
         return self.hooks
 
 

@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import atexit
 
+import torch
 
 class ConstsMetaClass(type):
     @property
@@ -21,7 +22,6 @@ class Consts(metaclass=ConstsMetaClass):
     Name = "mcquic"
     # lazy load
     # TempDir = "/tmp/mcquic/"
-    # torch.finfo(torch.float).eps
-    Eps = 1.1920928955078125e-07
+    Eps = 1e-6
     CDot = "·"
     TimeOut = 15
