@@ -127,3 +127,16 @@ jobs:
           mcquic-dataset --help
       - name: Test complete
         run: echo "All install test completed."
+  test-docker:
+    runs-on: ubuntu-latest
+    container: ghcr.io/xiaosu-zhu/mcquic:main
+    steps:
+      - run: |
+          mcquic -qp 2 assets/sample.png
+          mcquic --help
+          mcquic train --help
+          mcquic validate --help
+          mcquic dataset --help
+          mcquic-train --help
+          mcquic-validate --help
+          mcquic-dataset --help
