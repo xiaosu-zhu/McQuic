@@ -1,8 +1,9 @@
 name: Sync to Hugging Face hub
 on:
-  push:
-    branches: [main]
-    paths: ['mcquic/service/stCompressService.py']
+  workflow_run:
+    workflows: [Bump version]
+    types:
+      - completed
 
 jobs:
   sync-to-hub:

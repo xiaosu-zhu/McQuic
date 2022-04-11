@@ -1,17 +1,22 @@
 import pathlib
 from shutil import copy2
-from typing import Tuple
+from typing import List, Tuple
 import os
+import importlib.util
+import sys
+import hashlib
 
 import torch
 import torch.distributed as dist
+from vlutils.base.registry import Registry
 from vlutils.config import summary
 
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor
 from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.train.hooks import getAllHooks
-from mcquic.utils.registry import OptimizerRegistry, LrSchedulerRegistry, LossRegistry
+from mcquic.utils.registry import *
+import mcquic.utils.registry
 import mcquic.train.lrSchedulers as _
 import mcquic.loss
 
@@ -19,7 +24,28 @@ from .utils import getSaver, initializeBaseConfigs
 from .trainer import getTrainer
 
 
-def registerForTrain():
+def registerForTrain(config: Config):
+    _registerBuiltinFunctions()
+
+    otherPythonFiles = config.Train.ExternalLib
+
+    _registerExternalFunctions(otherPythonFiles)
+
+
+def _registerExternalFunctions(otherPythonFiles: List[str]):
+    for pyFile in otherPythonFiles:
+        # md5 of file path as module name
+        moduleName = hashlib.md5(pyFile.encode()).hexdigest()
+        spec = importlib.util.spec_from_file_location(moduleName, pyFile)
+        if spec is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[moduleName] = module
+        spec.loader.exec_module(module)
+
+
+def _registerBuiltinFunctions():
+    # Built-in pytorch modules to be registered.
     try:
         import apex
         OptimizerRegistry.register("Lamb")(apex.optimizers.FusedLAMB)
@@ -41,7 +67,7 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distor
 
 
 def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: pathlib.Path, loggingLevel: int):
-    registerForTrain()
+    registerForTrain(config)
 
 
     # load ckpt before create trainer, in case it moved to other place.
@@ -64,6 +90,11 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
     saver.debug("Base configs initialized.")
 
     dist.barrier()
+
+    for reg in mcquic.utils.registry.__all__:
+        registry = getattr(mcquic.utils.registry, reg)
+        if issubclass(registry, Registry):
+            saver.debug("Summary of %s: \r\n%s", registry, registry.summary())
 
     optimizerFn = OptimizerRegistry.get(config.Train.Optim.Key, logger=saver)
     schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.Key, logger=saver)

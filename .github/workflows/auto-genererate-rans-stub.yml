@@ -37,4 +37,4 @@ jobs:
           rm -rf stubs
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: Auto update config schema and configs/README.md
+          commit_message: Auto update pyi stubs of mcquic.rans module

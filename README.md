@@ -321,7 +321,7 @@ Please ensure you've installed [`NVIDIA/Apex`](#optional-install-nvidiaapex). To
   * Better if you have `≥4-way` NVIDIA RTX 3090s or faster GPUs.
 
 ## Configs
-The folder [configs](configs) provides example config `example.yaml` to train models. Please check specifications in [configs/README.md](configs/README.md).
+The folder [configs](configs) provides example config `example.yaml` to train models. Please check specifications in [configs/schema.md](configs/schema.md).
 
 ## Prepare a Dataset
 Before training models, you need to prepare an image dataset. It is free to pick any images to form dataset, as long as the image-size is `≥512x512`.
