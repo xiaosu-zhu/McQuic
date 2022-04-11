@@ -225,6 +225,17 @@ Try with the latest docker image:
 docker pull ghcr.io/xiaosu-zhu/mcquic:main
 ```
 
+The entrypoint of this container is set to `mcquic` itself. So, you can directly use it as `mcquic` main program to execute.
+```bash
+docker run ghcr.io/xiaosu-zhu/mcquic:main --help
+```
+
+To compress/restore images, you need to mount native files into the container. Therefore, a working example forms as follows:
+```bash
+# `someimage.png` is located in `path/to/some/folder`. And this folder will be mounted at `/workspace/workdir`.
+docker run -v path/to/some/folder:/workspace/workdir ghcr.io/xiaosu-zhu/mcquic:main /workspace/workdir/someimage.png /workspace/workdir/output.mcq
+docker run -v path/to/some/folder:/workspace/workdir ghcr.io/xiaosu-zhu/mcquic:main /workspace/workdir/output.mcq /workspace/workdir/restored.png
+```
 
 ## Install Manually (for dev)
 This way enables your full access to this repo for modifying. Also, if you want to go on, a `conda` environment is needed, *e.g.* [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
