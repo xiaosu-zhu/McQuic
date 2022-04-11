@@ -9,7 +9,7 @@ import yaml
 from vlutils.runtime import queryGPU
 
 from mcquic.config import Config
-from .ddp import ddpSpawnTraining, registerForTrain
+from .ddp import ddpSpawnTraining
 
 def checkArgs(debug, quiet, resume: pathlib.Path, configPath: pathlib.Path):
     if resume is None and configPath is None:
@@ -40,8 +40,6 @@ def main(debug: bool, quiet: bool, resume: pathlib.Path, configPath: pathlib.Pat
     worldSize = len(gpus)
 
     masterPort = str(random.randint(10001, 65535))
-
-    registerForTrain()
 
     # `daemon` is True --- Way to handle SIGINT globally.
     # Give up handling SIGINT by yourself... PyTorch hacks it.

@@ -41,6 +41,7 @@ class TrainSchema(Schema):
     schdr = fields.Nested(GeneralSchema(), required=True, description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
     gpu = fields.Nested(GPUSchema(), required=True, description="GPU configs for training.")
     hooks = fields.List(fields.Nested(GeneralSchema()), required=False, description="Hooks used for training. Key is used to retrieve hook from `mcquic.train.hooks`.")
+    externalLib = fields.List(fields.Str(), required=False, description="External libraries used for training. All python files in `externalLib` will be imported to extend registries.")
 
     @post_load
     def _(self, data, **kwargs):
@@ -103,6 +104,7 @@ class Train:
     schdr: General
     gpu: GPU
     hooks: Optional[List[General]] = None
+    externalLib: Optional[List[str]] = None
 
     @property
     def BatchSize(self) -> int:
@@ -156,6 +158,12 @@ class Train:
         if self.hooks is None:
             return list()
         return self.hooks
+
+    @property
+    def ExternalLib(self) -> List[str]:
+        if self.externalLib is None:
+            return list()
+        return self.externalLib
 
 
 @dataclass

@@ -13,6 +13,9 @@ train:
   valSet: data/clic/valid
   saveDir: saved
   target: MsSSIM
+  externalLib: []
+    # - some/modules/to/be/registered1.py
+    # - some/modules/to/be/registered2.py
   optim:
     key: Lamb
     params:

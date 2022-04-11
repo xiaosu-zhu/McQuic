@@ -9,7 +9,8 @@ __all__ = [
     "ValueTunerRegistry",
     "LrSchedulerRegistry",
     "OptimizerRegistry",
-    "LossRegistry"
+    "LossRegistry",
+    "HookRegistry"
 ]
 
 class ModuleRegistry(Registry[Type["torch.nn.Module"]]):
