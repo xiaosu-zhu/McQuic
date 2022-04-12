@@ -128,6 +128,29 @@ class CodebookReassign(EpochFinishHook):
 
         logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
+
+
+class TrainerLogger(BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook):
+    def __init__(self):
+        super().__init__()
+
+    def beforeRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
+        return
+
+    def afterRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
+        return
+
+    def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
+        return
+
+    def epochFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
+        return
+
+    def stepStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
+        return
+
+    def stepFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
+        return
 # Some built-in hooks END
 
 
