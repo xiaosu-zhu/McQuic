@@ -11,6 +11,8 @@ jobs:
     env:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
+      - name: Delay 300 seconds (wait for pypi package online)
+        run: sleep 300s
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
