@@ -52,7 +52,7 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.PUSH_TO_RELEASE }}
-          branch: r${{ github.event.inputs.release-tag }}
+          branch: v${{ github.event.inputs.release-tag }}
   linux-wheels:
     needs: [check-version-and-create-branch]
     runs-on: ubuntu-latest
@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@master
         with:
-          ref: r${{ github.event.inputs.release-tag }}
+          ref: v${{ github.event.inputs.release-tag }}
       - name: Install dependencies
         run: /opt/python/${{ matrix.python-version }}/bin/python -m pip install build twine
       - name: Build wheel
@@ -84,7 +84,7 @@ jobs:
         with:
           files: |
             dist/*
-          tag_name: r${{ github.event.inputs.release-tag }}
+          tag_name: v${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   macos-wheels:
     needs: [check-version-and-create-branch]
@@ -98,7 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: r${{ github.event.inputs.release-tag }}
+          ref: v${{ github.event.inputs.release-tag }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
@@ -120,7 +120,7 @@ jobs:
         with:
           files: |
             dist/*
-          tag_name: r${{ github.event.inputs.release-tag }}
+          tag_name: v${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   windows-wheels:
     needs: [check-version-and-create-branch]
@@ -134,7 +134,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: r${{ github.event.inputs.release-tag }}
+          ref: v${{ github.event.inputs.release-tag }}
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
@@ -156,7 +156,7 @@ jobs:
         with:
           files: |
             dist/*
-          tag_name: r${{ github.event.inputs.release-tag }}
+          tag_name: v${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   pypi-sdist:
     needs: [check-version-and-create-branch]
@@ -167,7 +167,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: r${{ github.event.inputs.release-tag }}
+          ref: v${{ github.event.inputs.release-tag }}
       - name: Set up Python 3.8
         uses: actions/setup-python@v3
         with:
@@ -188,7 +188,7 @@ jobs:
         with:
           files: |
             dist/*
-          tag_name: r${{ github.event.inputs.release-tag }}
+          tag_name: v${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   build-native:
     needs: [check-version-and-create-branch]
@@ -203,7 +203,7 @@ jobs:
     steps:
       - uses: actions/checkout@master
         with:
-          ref: r${{ github.event.inputs.release-tag }}
+          ref: v${{ github.event.inputs.release-tag }}
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
@@ -231,7 +231,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: build/*/*.tar.bz2
-          tag_name: r${{ github.event.inputs.release-tag }}
+          tag_name: v${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   build-cross-arm:
     needs: [check-version-and-create-branch]
@@ -243,7 +243,7 @@ jobs:
     steps:
       - uses: actions/checkout@master
         with:
-          ref: r${{ github.event.inputs.release-tag }}
+          ref: v${{ github.event.inputs.release-tag }}
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
@@ -269,7 +269,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: build/*/*.tar.bz2
-          tag_name: r${{ github.event.inputs.release-tag }}
+          tag_name: v${{ github.event.inputs.release-tag }}
           name: Release ${{ github.event.inputs.release-tag }}
   build-docker:
     needs: [check-version-and-create-branch]
