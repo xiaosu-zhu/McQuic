@@ -53,6 +53,7 @@ jobs:
         with:
           github_token: ${{ secrets.PUSH_TO_RELEASE }}
           branch: v${{ github.event.inputs.release-tag }}
+          tags: true
   linux-wheels:
     needs: [check-version-and-create-branch]
     runs-on: ubuntu-latest

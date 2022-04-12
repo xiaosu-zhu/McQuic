@@ -6,10 +6,10 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 on:
-  release:
-    types:
-      - created
-      - published
+  push:
+    tags:
+      - "**"
+
 jobs:
   build-docker:
     runs-on: ubuntu-latest
