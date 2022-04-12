@@ -9,8 +9,6 @@ on:
   create:
     tags:
       - 'r*'
-    branches:
-      - 'releases/**'
   release:
     types: [published]
 jobs:
