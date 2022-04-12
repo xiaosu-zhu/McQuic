@@ -8,85 +8,101 @@ In config, the `model` section gives hyper parameter for defining a model. For e
 
 # Training parameters
 
-The `train` section defines training batch-size, optimizer, learning rate, *etc.* The desired `optimizer`/`lr scheduler`/... are retrieved by key in corresponding registry.
+The `train` section declares training batch-size, optimizer, learning rate, *etc.* The desired `optimizer`/`lr scheduler`/... are retrieved by key in corresponding registry.
 
 You could see all entries of registries by calling registry's `.summary()` method.
 
-Specifying debug mode in `mcquic train` could also show these entries.
+Specifying debug `-D` flag in `mcquic train` could also show these entries.
 
 Currently, registries are:
 
-- `OptimizerRegistry` contains Adam and LAMB optimizer currently.
-- `LrSchedulerRegistry` contains most of learning rate schedulers in `torch.optim.lr_scheduler` as well as `mcquic.train.lrSchedulers`.
-- `HookRegistry` contains trainer hooks.
+- `OptimizerRegistry` has some torch optimizers.
+- `LrSchedulerRegistry` has some learning rate schedulers from `torch.optim.lr_scheduler` and `mcquic.train.lrSchedulers`.
+- `LossRegistry` has distortion (and may also has rate) objectives.
+- `HookRegistry` has hooks for trainer.
 
-For example, when
+For example, following config:
 ```yaml
 ...
 train:
-    ...
-    optim:
-        key: Lamb
-        params:
-            lr: 1.e-3
+  optim:
+    key: Lamb
+    params:
+      lr: 1.e-3
 ```
-Then, "Lamb" optim will be retrieved from `OptimizerRegistry` and initialized by
-## Extending registries by externalLibs
+will get LAMB optimizer from `OptimizerRegistry` by key `Lamb`, and initialize it by params as follows:
+```python
+optimClass = OptimizerRegistry.get(config.Train.Optim.Key) # "Lamb"
+optim = optimClass(**config.Train.Optim.Params) # equivalent to `Lamb(lr=1e-3)`
+```
 
-The `externalLib` in `train` provides interface to add external registry entries for extra training favors.
+## Extending registry by external libs
 
-To acheive this, you should first write a python script that define some extra functions and register them with a registry. For example, if you have wrotten an amazing optimizer:
+`externalLib` in `train` section provides interface to include python scripts defined outside mcquic. Therefore, you could register your custom functions to extend training components. For example, if you have built an amazing optimzer:
 ```python
 # my_amaz_optim.py
 ...
+
 class MyAmazOptim(torch.optim.Optimizer):
-    pass
-    ...
+  ...
 ```
-Then, you need to import `OptimRegistry` to register it.
+The way to use it for mcquic training is to import `OptimizerRegistry` and register your optimizer into it:
 ```python
 # my_amaz_optim.py
 ...
-from mcquic.utils.registry import OptimRegistry
+from mcquic.utils.registry import OptimizerRegistry
 
-# or `@OptimRegistry.register("blabla")` to register with a specific key.
-@OptimRegistry.register
+# or @OptimizerRegistry.register("amaz") to give a special name
+@OptimizerRegistry.register
 class MyAmazOptim(torch.optim.Optimizer):
-    pass
-    ...
+  ...
 ```
-Next, how to ensure above code is visible to mcquic trainer? You only need to declare this file as an "external lib" in config:
+
+Then, in config, you could declare your python file by path in `externalLib` part:
 ```yaml
 ...
 train:
-    ...
-    externalLib:
-        - path/to/my_amaz_optim.py
-...
+  externalLib:
+    - path/to/my_amaz_optim.py
+    # - other/modules/to/be/registered.py
+  optim:
+    key: MyAmazOptim
+    params:
+      myparam: myvalue
 ```
-You just need to give path of this file, and mcquic trainer will import it to register things in this file.
+And `mcquic train` will import this file to make your code be visible to it. Then, `MyAmazOptim` will be retrieved and initialized by `MyAmazOptim(myparam=myvalue)`.
 
 <a href="#">
   <image src="https://img.shields.io/badge/NOTE-yellow?style=for-the-badge" alt="NOTE"/>
 </a>
 
-> The imported module is named by the MD5 hash of its absolute file path.
+> The imported module will be named as its MD5 hash of the absolute file path.
 
-> To see which module is registered, you could enable `-D` flag in `mcquic train`. And all registries' summaries will be printed (mcquic/train/ddp.py:L98).
+> To check all registered things, you could specify `-D` flag in `mcquic train`. And registry information will be logged as in `mcquic/train/ddp.py#L97`.
 
-## Hooks called during training
+## Hooks in trainer
 
-When trainer is running, a bunch of hooks are called periodically. These are:
+Hooks are called periodically during training. As their names show, they are called when train starts/stops, epoch begins/ends and single step starts/ends, all hooks are:
+```
+BeforeRunHook
+AfterRunHook
+EpochStartHook
+EpochFinishHook
+StepStartHook
+StepFinishHook
+```
+To implement hooks, please refer to `mcquic/train/hooks.py`.
 
-- BeforeRunHook
-- AfterRunHook
-- EpochStartHook
-- EpochFinishHook
-- StepStartHook
-- StepFinishHook
-
-Just named by when they are called.
-
-To implement a hook, please refer to `mcquic/train/hooks.py`.
-
-When hooks (registered key) are declared in
+### Use hooks
+`hooks` in `train` section declare hooks should be installed in this run. By using [external libs](#extending-registry-by-external-libs), you could insert your own hooks. Then:
+```yaml
+...
+train:
+  externalLib:
+    - path/to/my_amaz_hook.py # where you defined `MyAmazHook`
+  hooks:
+    - key: MyAmazHook
+      params:
+        myparam: myvalue
+```
+Similiary, your amazing hook will be retrieved and initialized by `MyAmazHook(myparam=myvalue)` and installed to trainer (depeding on which kinds of hooks you've implemented).

@@ -44,7 +44,7 @@ def hook(hookType: HookType):
 
         # For classes, since decorated function is not a instance's method, you should use `@classmethod`.
         # However, this is not recommended and has limitations.
-        # Inherit from `XXXHook` is better, which is defined below in this same file.
+        # Inherit from `XXXHook` is better, which is defined below.
         class SomeClass:
             ...
             @hook(HookType.xxxhook)
@@ -65,8 +65,8 @@ def hook(hookType: HookType):
     return _hook
 
 """
-Implement hooks by inheriting from one or multiple following classes.
-Please refer to below built-in hooks.
+Implement hooks by inheriting from one or multiple hook ABCs.
+Please see built-in hooks below as examples.
 """
 class BeforeRunHook(abc.ABC):
     @abc.abstractmethod
@@ -129,11 +129,6 @@ class CodebookReassign(EpochFinishHook):
         logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
 # Some built-in hooks END
-
-
-
-
-
 
 
 
