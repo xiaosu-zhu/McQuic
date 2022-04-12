@@ -48,6 +48,11 @@ jobs:
           author_name: Xiaosu Zhu
           author_email: xiaosu.zhu@outlook.com
           message: "Bump version to ${{ github.event.inputs.release-tag }}"
+      - name: Create tag
+        uses: tvdias/github-tagger@v0.0.2
+        with:
+          repo-token: ${{ secrets.PUSH_TO_RELEASE }}
+          tag: v${{ github.event.inputs.release-tag }}
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
