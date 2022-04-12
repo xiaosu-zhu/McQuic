@@ -8,7 +8,7 @@ env:
 on:
   create:
     tags:
-      - 'r*'
+      - 'v*'
   release:
     types: [published]
 jobs:
