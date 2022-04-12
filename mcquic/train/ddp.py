@@ -34,8 +34,9 @@ def registerForTrain(config: Config):
 
 def _registerExternalFunctions(otherPythonFiles: List[str]):
     for pyFile in otherPythonFiles:
-        # md5 of file path as module name
-        moduleName = hashlib.md5(pyFile.encode()).hexdigest()
+        filePath = pathlib.Path(pyFile).absolute()
+        # md5 of abs file path as module name
+        moduleName = hashlib.md5(str(filePath).encode()).hexdigest()
         spec = importlib.util.spec_from_file_location(moduleName, pyFile)
         if spec is None:
             continue
