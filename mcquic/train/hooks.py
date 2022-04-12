@@ -64,7 +64,10 @@ def hook(hookType: HookType):
         return _call
     return _hook
 
-
+"""
+Implement hooks by inheriting from one or multiple following classes.
+Please refer to below built-in hooks.
+"""
 class BeforeRunHook(abc.ABC):
     @abc.abstractmethod
     def beforeRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
@@ -91,10 +94,7 @@ class StepFinishHook(abc.ABC):
         raise NotImplementedError
 
 
-class BuiltInHooks(Registry):
-    ...
-
-
+# Some built-in hooks START
 @HookRegistry.register
 class DisablePostProcessAfterEpoch(EpochStartHook):
     def __init__(self, epoch: int) -> None:
@@ -128,29 +128,14 @@ class CodebookReassign(EpochFinishHook):
 
         logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
-# Some built-in hooks
-# @BuiltInHooks.register
-class TrainerLogger(BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook):
-    def __init__(self):
-        super().__init__()
+# Some built-in hooks END
 
-    def beforeRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
-        return
 
-    def afterRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
-        return
 
-    def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
-        return
 
-    def epochFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
-        return
 
-    def stepStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
-        return
 
-    def stepFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, **kwds: Any) -> Any:
-        return
+
 
 
 def splitHooks(*hooks: Union[Callable, BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook]) -> Dict[HookType, ChainHook]:
