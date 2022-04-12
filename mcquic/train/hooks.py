@@ -44,7 +44,7 @@ def hook(hookType: HookType):
 
         # For classes, since decorated function is not a instance's method, you should use `@classmethod`.
         # However, this is not recommended and has limitations.
-        # Inherit from `XXXHook` is better, which is defined below in this same file.
+        # Inherit from `XXXHook` is better, which is defined below.
         class SomeClass:
             ...
             @hook(HookType.xxxhook)
@@ -64,7 +64,8 @@ def hook(hookType: HookType):
         return _call
     return _hook
 
-
+# Implement hooks by inheriting one or multiple hook ABCs.
+# Please see built-in hooks below as examples
 class BeforeRunHook(abc.ABC):
     @abc.abstractmethod
     def beforeRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
@@ -91,10 +92,8 @@ class StepFinishHook(abc.ABC):
         raise NotImplementedError
 
 
-class BuiltInHooks(Registry):
-    ...
 
-
+# Some built-in hooks
 @HookRegistry.register
 class DisablePostProcessAfterEpoch(EpochStartHook):
     def __init__(self, epoch: int) -> None:
@@ -128,8 +127,7 @@ class CodebookReassign(EpochFinishHook):
 
         logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
-# Some built-in hooks
-# @BuiltInHooks.register
+        
 class TrainerLogger(BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook):
     def __init__(self):
         super().__init__()
@@ -153,6 +151,8 @@ class TrainerLogger(BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook
         return
 
 
+        
+        
 def splitHooks(*hooks: Union[Callable, BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook]) -> Dict[HookType, ChainHook]:
     """Split hooks into beforeRunHook, afterRunHook, epochStartHook, epochFinishHook, stepStartHook, stepFinishHook.
 
