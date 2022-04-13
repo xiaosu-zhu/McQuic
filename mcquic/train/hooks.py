@@ -201,6 +201,7 @@ def splitHooks(*hooks: Union[Callable, BeforeRunHook, AfterRunHook, EpochStartHo
 
 
 def getAllBuiltinHooks() -> Dict[HookType, ChainHook]:
+    raise NotImplementedError
     allHooks = list()
     for hook in BuiltInHooks.values():
         if hasattr(hook, "hookType"):
@@ -213,7 +214,7 @@ def getAllBuiltinHooks() -> Dict[HookType, ChainHook]:
 
 
 def getAllHooks(otherHooks: List[General]) -> Dict[str, ChainHook]:
-    builtInHooks = getAllBuiltinHooks()
+    # builtInHooks = getAllBuiltinHooks()
 
     otherHooksToAppend = list()
     for hook in otherHooks:
