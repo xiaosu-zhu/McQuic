@@ -4,6 +4,6 @@ import git
 repo = git.Repo(".")
 currentTime = datetime.now(timezone.utc)
 # if currentTime - last commit time more than 26 hours, then return error
-if (currentTime - repo.head.commit.committed_datetime).total_seconds() < 26 * 60 * 60:
+if (currentTime - repo.head.commit.committed_datetime).total_seconds() > 26 * 60 * 60:
     print("SKIP build: last commit is more than 26 hours ago")
     exit(1)
