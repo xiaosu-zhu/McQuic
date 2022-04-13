@@ -129,8 +129,11 @@ jobs:
       - name: Test complete
         run: echo "All install test completed."
   test-docker:
+    strategy:
+      matrix:
+        tag: ["latest", "main"]
     runs-on: ubuntu-latest
-    container: ghcr.io/xiaosu-zhu/mcquic:main
+    container: ghcr.io/xiaosu-zhu/mcquic:${{ matrix.tag }}
     steps:
       - run: |
           mcquic -qp 2 /workspace/mcquic/assets/sample.png
