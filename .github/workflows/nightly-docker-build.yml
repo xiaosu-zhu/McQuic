@@ -30,20 +30,20 @@ jobs:
           python -m pip install GitPython
           echo "::set-output name=check-result::$(python ci/pre_build/check_today_has_commit.py)"
       - name: Log in to the Container registry
-        if: ${{ steps.check-commit.outputs.check-result == "true" }}
+        if: ${{ steps.check-commit.outputs.check-result == 'true' }}
         uses: docker/login-action@v1
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract metadata (tags, labels) for Docker
-        if: ${{ steps.check-commit.outputs.check-result == "true" }}
+        if: ${{ steps.check-commit.outputs.check-result == 'true' }}
         id: meta
         uses: docker/metadata-action@v3
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       - name: Build and push Docker image
-        if: ${{ steps.check-commit.outputs.check-result == "true" }}
+        if: ${{ steps.check-commit.outputs.check-result == 'true' }}
         uses: docker/build-push-action@v2
         with:
           context: ./docker
