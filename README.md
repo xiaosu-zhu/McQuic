@@ -223,6 +223,8 @@ I also build [`docker` images](https://github.com/xiaosu-zhu/McQuic/pkgs/contain
 Try with the latest docker image:
 ```bash
 docker pull ghcr.io/xiaosu-zhu/mcquic:latest
+# or nightly build
+# docker pull ghcr.io/xiaosu-zhu/mcquic:main
 ```
 
 The entrypoint of this container is set to `mcquic` itself. So, you can directly use it as `mcquic` main program to execute.
