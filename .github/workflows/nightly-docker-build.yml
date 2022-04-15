@@ -7,7 +7,8 @@ env:
 
 on:
   schedule:
-    - cron:  "36 2 * * *"
+    # The actual run time usually delays for 2~3 hours
+    - cron:  "36 4 * * *"
   workflow_dispatch:
     inputs: {}
 
@@ -51,3 +52,18 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+  test-docker:
+    needs: [check-today-has-commit-and-build-docker]
+    if: ${{ needs.check-today-has-commit-and-build-docker.outputs.check-result == 'true' }}
+    runs-on: ubuntu-latest
+    container: ghcr.io/xiaosu-zhu/mcquic:main
+    steps:
+      - run: |
+          mcquic -qp 2 /workspace/mcquic/assets/sample.png
+          mcquic --help
+          mcquic train --help
+          mcquic validate --help
+          mcquic dataset --help
+          mcquic-train --help
+          mcquic-validate --help
+          mcquic-dataset --help
