@@ -224,7 +224,7 @@ Try with the latest docker image:
 ```bash
 docker pull ghcr.io/xiaosu-zhu/mcquic:latest
 # or nightly build
-# docker pull ghcr.io/xiaosu-zhu/mcquic:main
+# docker pull ghcr.io/xiaosu-zhu/mcquic:nightly
 ```
 
 The entrypoint of this container is set to `mcquic` itself. So, you can directly use it as `mcquic` main program to execute.
