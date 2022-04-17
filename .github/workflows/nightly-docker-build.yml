@@ -58,7 +58,7 @@ jobs:
     needs: [check-today-has-commit-and-build-docker]
     if: ${{ needs.check-today-has-commit-and-build-docker.outputs.check-result == 'true' }}
     runs-on: ubuntu-latest
-    container: ghcr.io/xiaosu-zhu/mcquic:main
+    container: ghcr.io/xiaosu-zhu/mcquic:nightly
     steps:
       - run: |
           mcquic -qp 2 /workspace/mcquic/assets/sample.png
