@@ -36,7 +36,7 @@ def hook(hookType: HookType):
         # To call the hook, the function registered should follow signature below
         # where `step, epcoh` is total train steps and epochs. `trainer` is the trainer instance.
         # All hooks are called after trainer's original methods.
-        # It's not recommended to modify trainer in hooks (Only if you really need indeed).
+        # It's not recommended to alter trainer's inner states/values/attributes in hooks (Only if you really need indeed).
         # Some other arguments may be passed in. Please refer to `mcquic/train/trainer.py:L123` to see what are passed.
         @hook(HookType.xxxhook)
         def someFunction(step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
