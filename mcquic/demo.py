@@ -161,3 +161,7 @@ def loadModel(qp: int, local: Optional[pathlib.Path], device, mse: bool, logger:
     model.load_state_dict(ckpt["model"])
     logger.info(f"Model loaded, params: {config.Model.Params}.")
     return model
+
+
+if __name__ == "__main__":
+    raise RuntimeError("Please run me with `mcquic` command directly.")
