@@ -225,9 +225,9 @@ def getAllHooks(otherHooks: List[General]) -> Dict[str, ChainHook]:
         else:
             # A class-def, create it.
             otherHooksToAppend.append(hookFn(**hook.Params))
-    otherHooksToAppend = splitHooks(*otherHooksToAppend)
+    allHooks: Dict[HookType, ChainHook] = splitHooks(*otherHooksToAppend)
 
-    allHooks: Dict[str, ChainHook] = dict()
-    for key in builtInHooks.keys():
-        allHooks[str(key)] = ChainHook(builtInHooks[key], otherHooksToAppend[key])
-    return allHooks
+    # allHooks = dict()
+    # for key in builtInHooks.keys():
+    #     allHooks[key] = ChainHook(builtInHooks[key], allHooks[key])
+    return { str(key): value for key, value in allHooks.items() }
