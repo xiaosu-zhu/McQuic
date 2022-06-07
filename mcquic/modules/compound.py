@@ -65,7 +65,7 @@ class Compound(DistributedDataParallel):
         return proportion
 
     def formatDistortion(self, loss: torch.Tensor):
-        return self.module._criterion.formatDistortion(loss)
+        return self.module._distortion.formatDistortion(loss)
 
     @property
     def PostProcessEnabled(self):
