@@ -34,10 +34,8 @@ class BasicRate(Rate):
         # m * [k, d]
         for c in codebook:
             # [k, k]
-            pairwise = c.T @ c
+            pairwise = c @ c.T
             norm = (c ** 2).sum(-1)
-            print(pairwise.shape)
-            print(norm.shape)
             cos = pairwise / (norm[:, None] * norm).sqrt()
             cos.triu(1).sum()
             losses.append(cos)
