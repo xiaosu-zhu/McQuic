@@ -27,6 +27,10 @@ class BaseQuantizer(nn.Module):
         raise NotImplementedError
 
     @property
+    def Codebooks(self) -> List[torch.Tensor]:
+        raise NotImplementedError
+
+    @property
     def CDFs(self):
         return self._entropyCoder.CDFs
 
@@ -230,6 +234,10 @@ class _quantizerEncoder(nn.Module):
         self._quantizationHead = quantizationHead
         self._latentHead = latentHead
 
+    @property
+    def Codebook(self):
+        return self._quantizer._codebook
+
     def syncCodebook(self):
         self._quantizer.syncCodebook()
 
@@ -332,6 +340,10 @@ class UMGMQuantizer(BaseQuantizer):
 
         self._encoders: nn.ModuleList[_quantizerEncoder] = nn.ModuleList(encoders)
         self._decoders: nn.ModuleList[_quantizerDecoder] = nn.ModuleList(decoders)
+
+    @property
+    def Codebooks(self):
+        return list(encoder.Codebook for encoder in self._encoders)
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()

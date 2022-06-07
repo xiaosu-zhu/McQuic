@@ -7,7 +7,7 @@ model:
     m: 2
 train:
   batchSize: 8
-  epoch: 2000
+  epoch: 1000
   valFreq: 10
   trainSet: data/compression
   valSet: data/clic/valid
@@ -25,9 +25,9 @@ train:
   schdr:
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 1000
+      first_cycle_steps: 100
       warmup_steps: 2
-      gamma: 0.25
+      gamma: 0.8
   gpu:
     gpus: 1
     vRam: -1

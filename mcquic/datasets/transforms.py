@@ -21,7 +21,7 @@ def getTrainingTransform():
     )
 
 def getTraingingPostprocess():
-    return PatchWiseErasing()
+    return nn.Identity() # PatchWiseErasing()
 
 
 def getEvalTransform():

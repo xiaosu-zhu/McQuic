@@ -50,8 +50,8 @@ class _baseTrainer(Restorable):
         self.transform = getTrainingTransform().to(self.rank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
-        compressor, criterion = trackingFunctionCalls(modelFn, self.saver)()
-        self._model = Compound(compressor.to(self.rank), criterion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
+        compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
+        self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -297,6 +297,7 @@ class MainTrainer(_baseTrainer):
         if self._step % 100 != 0:
             return
         self.saver.add_scalar(f"Stat/{self.config.Train.Target}", moment, global_step=self._step)
+        self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
     def _epochStart(self, hook, *args, **kwArgs):
