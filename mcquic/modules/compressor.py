@@ -45,6 +45,10 @@ class BaseCompressor(nn.Module):
         return self._quantizer.syncCodebook()
 
     @property
+    def Codebooks(self):
+        return self._quantizer.Codebooks
+
+    @property
     def CDFs(self):
         return self._quantizer.CDFs
 
