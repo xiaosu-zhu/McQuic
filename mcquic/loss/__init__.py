@@ -36,6 +36,8 @@ class BasicRate(Rate):
             # [k, k]
             pairwise = c.T @ c
             norm = (c ** 2).sum(-1)
+            print(pairwise.shape)
+            print(norm.shape)
             cos = pairwise / (norm[:, None] * norm).sqrt()
             cos.triu(1).sum()
             losses.append(cos)
