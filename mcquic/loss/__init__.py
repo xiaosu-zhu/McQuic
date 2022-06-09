@@ -25,7 +25,7 @@ class Rate(nn.Module):
 
 
 class BasicRate(Rate):
-    def __init__(self, gamma: float = 1e-6):
+    def __init__(self, gamma: float = 1e-7):
         super().__init__(nn.Identity())
         self._gamma = gamma
 
@@ -37,7 +37,7 @@ class BasicRate(Rate):
             pairwise = c @ c.T
             norm = (c ** 2).sum(-1)
             cos = pairwise / (norm[:, None] * norm).sqrt()
-            losses.append(cos.triu(1).sum())
+            losses.append(cos.triu(1).clamp(-0.9, 2).sum())
         return sum(losses)
 
     def forward(self, logits, codebooks, *_):
