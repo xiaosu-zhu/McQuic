@@ -55,10 +55,9 @@
 
 **Title:** key
 
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `string` |
+| ---- | -------- |
+|      |          |
 
 **Description:** A unique key used to retrieve in registry. For example, given `Lamb` for optimizers, it will check `OptimRegistry` and find the optimizer `apex.optim.FusedLAMB`.
 
@@ -95,30 +94,29 @@
 
 **Description:** Training configs.
 
-| Property                             | Pattern | Type             | Deprecated | Definition                 | Title/Description                                                                    |
-| ------------------------------------ | ------- | ---------------- | ---------- | -------------------------- | ------------------------------------------------------------------------------------ |
-| + [batchSize](#train_batchSize )     | No      | integer          | No         | -                          | batchSize                                                                            |
-| + [epoch](#train_epoch )             | No      | integer          | No         | -                          | epoch                                                                                |
-| - [externalLib](#train_externalLib ) | No      | array of string  | No         | -                          | externalLib                                                                          |
-| + [gpu](#train_gpu )                 | No      | object           | No         | In #/definitions/GPUSchema | GPU configs for training.                                                            |
-| - [hooks](#train_hooks )             | No      | array of object  | No         | -                          | hooks                                                                                |
-| + [optim](#train_optim )             | No      | object           | No         | Same as [model](#model )   | Optimizer used for training. As for current we have 'Adam' and 'Lamb'.               |
-| + [saveDir](#train_saveDir )         | No      | string           | No         | -                          | saveDir                                                                              |
-| + [schdr](#train_schdr )             | No      | object           | No         | Same as [model](#model )   | Learning rate scheduler used for training. As for current we have 'ReduceLROnPla ... |
-| + [target](#train_target )           | No      | enum (of string) | No         | -                          | target                                                                               |
-| + [trainSet](#train_trainSet )       | No      | string           | No         | -                          | trainSet                                                                             |
-| + [valFreq](#train_valFreq )         | No      | integer          | No         | -                          | valFreq                                                                              |
-| + [valSet](#train_valSet )           | No      | string           | No         | -                          | valSet                                                                               |
-|                                      |         |                  |            |                            |                                                                                      |
+| Property                             | Pattern | Type                    | Deprecated | Definition                 | Title/Description                                                                    |
+| ------------------------------------ | ------- | ----------------------- | ---------- | -------------------------- | ------------------------------------------------------------------------------------ |
+| + [batchSize](#train_batchSize )     | No      | integer                 | No         | -                          | batchSize                                                                            |
+| + [epoch](#train_epoch )             | No      | integer                 | No         | -                          | epoch                                                                                |
+| - [externalLib](#train_externalLib ) | No      | array of string or null | No         | -                          | externalLib                                                                          |
+| + [gpu](#train_gpu )                 | No      | object                  | No         | In #/definitions/GPUSchema | GPU configs for training.                                                            |
+| - [hooks](#train_hooks )             | No      | array of object         | No         | -                          | hooks                                                                                |
+| + [optim](#train_optim )             | No      | object                  | No         | Same as [model](#model )   | Optimizer used for training. As for current we have 'Adam' and 'Lamb'.               |
+| + [saveDir](#train_saveDir )         | No      | string                  | No         | -                          | saveDir                                                                              |
+| + [schdr](#train_schdr )             | No      | object                  | No         | Same as [model](#model )   | Learning rate scheduler used for training. As for current we have 'ReduceLROnPla ... |
+| + [target](#train_target )           | No      | enum (of string)        | No         | -                          | target                                                                               |
+| + [trainSet](#train_trainSet )       | No      | string                  | No         | -                          | trainSet                                                                             |
+| + [valFreq](#train_valFreq )         | No      | integer                 | No         | -                          | valFreq                                                                              |
+| + [valSet](#train_valSet )           | No      | string                  | No         | -                          | valSet                                                                               |
+|                                      |         |                         |            |                            |                                                                                      |
 
 ### <a name="train_batchSize"></a>2.1. ![badge](https://img.shields.io/badge/Required-blue) Property `batchSize`
 
 **Title:** batchSize
 
-| Type                      | `integer`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `integer` |
+| ---- | --------- |
+|      |           |
 
 **Description:** Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.
 
@@ -131,10 +129,9 @@
 
 **Title:** epoch
 
-| Type                      | `integer`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `integer` |
+| ---- | --------- |
+|      |           |
 
 **Description:** Total training epochs.
 
@@ -147,10 +144,9 @@
 
 **Title:** externalLib
 
-| Type                      | `array of string`                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `array of string or null` |
+| ---- | ------------------------- |
+|      |                           |
 
 **Description:** External libraries used for training. All python files in `externalLib` will be imported as modules. In this way, you could extend registries.
 
@@ -172,10 +168,9 @@
 
 **Title:** externalLib
 
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `string` |
+| ---- | -------- |
+|      |          |
 
 ### <a name="train_gpu"></a>2.4. ![badge](https://img.shields.io/badge/Required-blue) Property `gpu`
 
@@ -198,10 +193,9 @@
 
 **Title:** gpus
 
-| Type                      | `integer`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `integer` |
+| ---- | --------- |
+|      |           |
 
 **Description:** Number of gpus for training. This affects the `world size` of PyTorch DDP.
 
@@ -214,10 +208,9 @@
 
 **Title:** vRam
 
-| Type                      | `integer`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `integer` |
+| ---- | --------- |
+|      |           |
 
 **Description:** Minimum VRam required for each gpu. Set it to `-1` to use all gpus.
 
@@ -225,10 +218,9 @@
 
 **Title:** wantsMore
 
-| Type                      | `boolean`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `boolean` |
+| ---- | --------- |
+|      |           |
 
 **Description:** Set to `true` to use all visible gpus and all VRams and ignore `gpus` and `vRam`.
 
@@ -236,10 +228,9 @@
 
 **Title:** hooks
 
-| Type                      | `array of object`                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `array of object` |
+| ---- | ----------------- |
+|      |                   |
 
 **Description:** Hooks used for training. Key is used to retrieve hook from `mcquic.train.hooks`.
 
@@ -279,10 +270,9 @@
 
 **Title:** saveDir
 
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `string` |
+| ---- | -------- |
+|      |          |
 
 **Description:** A dir path to save model checkpoints, TensorBoard messages and logs.
 
@@ -300,10 +290,9 @@
 
 **Title:** target
 
-| Type                      | `enum (of string)`                                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `enum (of string)` |
+| ---- | ------------------ |
+|      |                    |
 
 **Description:** Training target. Now is one of `[PSNR, MsSSIM]`.
 
@@ -315,10 +304,9 @@ Must be one of:
 
 **Title:** trainSet
 
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `string` |
+| ---- | -------- |
+|      |          |
 
 **Description:** A dir path to load `lmdb` dataset. You need to convert your images before you give this path by calling `mcquic dataset ...`.
 
@@ -326,10 +314,9 @@ Must be one of:
 
 **Title:** valFreq
 
-| Type                      | `integer`                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `integer` |
+| ---- | --------- |
+|      |           |
 
 **Description:** Run validation after every `valFreq` epochs.
 
@@ -342,10 +329,9 @@ Must be one of:
 
 **Title:** valSet
 
-| Type                      | `string`                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Additional properties** | [![badge](https://img.shields.io/badge/Any+type-allowed-green)](# "Additional Properties of any type are allowed.") |
-|                           |                                                                                                                     |
+| Type | `string` |
+| ---- | -------- |
+|      |          |
 
 **Description:** A dir path to load image files for validation.
 
