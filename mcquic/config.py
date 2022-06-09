@@ -41,7 +41,7 @@ class TrainSchema(Schema):
     schdr = fields.Nested(GeneralSchema(), required=True, description="Learning rate scheduler used for training. As for current we have `ReduceLROnPlateau`, `Exponential`, `MultiStep`, `OneCycle` and all schedulers defined in `mcquic.train.lrSchedulers`.")
     gpu = fields.Nested(GPUSchema(), required=True, description="GPU configs for training.")
     hooks = fields.List(fields.Nested(GeneralSchema()), required=False, description="Hooks used for training. Key is used to retrieve hook from `mcquic.train.hooks`.")
-    externalLib = fields.List(fields.Str(), required=False, description="External libraries used for training. All python files in `externalLib` will be imported as modules. In this way, you could extend registries.")
+    externalLib = fields.List(fields.Str(), required=False, allow_none=True, description="External libraries used for training. All python files in `externalLib` will be imported as modules. In this way, you could extend registries.")
 
     @post_load
     def _(self, data, **kwargs):

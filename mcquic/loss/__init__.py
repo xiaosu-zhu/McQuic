@@ -25,7 +25,7 @@ class Rate(nn.Module):
 
 
 class BasicRate(Rate):
-    def __init__(self, gamma: float = 1e-4):
+    def __init__(self, gamma: float = 1e-6):
         super().__init__(nn.Identity())
         self._gamma = gamma
 
