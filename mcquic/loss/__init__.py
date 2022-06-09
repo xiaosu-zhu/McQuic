@@ -37,7 +37,7 @@ class BasicRate(Rate):
             pairwise = c @ c.T
             norm = (c ** 2).sum(-1)
             cos = pairwise / (norm[:, None] * norm).sqrt()
-            losses.append(cos.triu(1).clamp(-0.9, 2).sum())
+            losses.append(cos.triu(1).clamp(0.0, 2).sum())
         return sum(losses)
 
     def forward(self, logits, codebooks, *_):
