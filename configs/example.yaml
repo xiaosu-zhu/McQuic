@@ -19,15 +19,15 @@ train:
   optim:
     key: Lamb
     params:
-      lr: 2.e-4
+      lr: 2.e-4 # PSNR: 4.e-3
       # weight_decay: 0.0
       # use_nvlamb: true
   schdr:
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 100
+      first_cycle_steps: 50
       warmup_steps: 2
-      gamma: 0.8
+      gamma: 0.9
   gpu:
     gpus: 1
     vRam: -1
