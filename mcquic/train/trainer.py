@@ -261,7 +261,9 @@ class MainTrainer(_baseTrainer):
     def train(self, trainLoader: DataLoader, trainSampler: DistributedSampler, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler,
             beforeRunHook=beforeRunHook,
-            afterRunHook=afterRunHook,
+            afterRunHook=ChainHook(
+                functools.partial(self.validate, valLoader=valLoader),
+                afterRunHook),
             epochStartHook=ChainHook(
                 functools.partial(self.epochStartCalls, valLoader=valLoader),
                 epochStartHook),
