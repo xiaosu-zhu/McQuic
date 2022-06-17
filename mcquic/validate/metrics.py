@@ -254,9 +254,10 @@ class MsSSIM(nn.Module):
         return 1.0 - ms_ssim(X, Y, self.win, self.weights, self._avg_pool, data_range=self.data_range, sizeAverage=self.sizeAverage, K=self.K)
 
 
+# https://pytorch.org/ignite/generated/ignite.metrics.PSNR.html
 def psnr(x: torch.Tensor, y: torch.Tensor, sizeAverage: bool = False, upperBound: float = 255.0):
     mse = ((x.float() - y.float()) ** 2).mean(dim=(1, 2, 3))
-    res = 10 * (upperBound ** 2 / mse).log10()
+    res = 10 * (upperBound ** 2 / (mse + 1e-10)).log10()
     return res.mean() if sizeAverage else res
 
 
@@ -266,7 +267,8 @@ class PSNR(nn.Module):
         self.register_buffer("_upperBound", torch.tensor(upperBound ** 2))
         self._average = sizeAverage
 
+    # https://pytorch.org/ignite/generated/ignite.metrics.PSNR.html
     def forward(self, x: torch.Tensor, y: torch.Tensor):
-        mse = ((x.float() - y.float()) ** 2).mean(dim=(1, 2, 3))
-        res = 10 * (self._upperBound / mse).log10()
+        mse = ((x.double() - y.double()) ** 2).mean(dim=(1, 2, 3))
+        res = 10.0 * (self._upperBound / (mse + 1e-10)).log10()
         return res.mean() if self._average else res
