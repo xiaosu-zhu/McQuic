@@ -571,7 +571,7 @@ To cite our paper, please use following BibTex:
                Heng Tao Shen},
   title     = {Unified Multivariate Gaussian Mixture for Efficient Neural Image Compression},
   booktitle = {CVPR},
-  % pages     = {????--????}
+  pages     = {17612--17621}
   year      = {2022}
 }
 ```
