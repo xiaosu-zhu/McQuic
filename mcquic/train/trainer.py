@@ -1,5 +1,6 @@
 import functools
 import os
+import pathlib
 import shutil
 from time import sleep
 from typing import Callable, Optional, Tuple, Type
@@ -24,13 +25,13 @@ from mcquic.modules.compound import Compound
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
 from mcquic.validate import Validator
-from mcquic.utils import totalParameters
+from mcquic.utils import StrPath, totalParameters
 from mcquic.datasets.transforms import getTrainingTransform
 
 from .utils import EpochFrequencyHook, checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
+    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
         super().__init__()
         self.saver = saver
 
@@ -51,7 +52,7 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
-        self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank)
+        self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank, find_unused_parameters=True)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -66,6 +67,8 @@ class _baseTrainer(Restorable):
         self._scheduler = scheduler(self._optimizer, **self.config.Train.Schdr.Params)
         self.schdrFn = scheduler
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
+
+        self.tmpFile = tmpFile
 
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
@@ -95,22 +98,26 @@ class _baseTrainer(Restorable):
             else:
                 return f"{truncated:11.6f}"[:4] + suffix
 
-    def restoreStates(self, path: str):
+    def restoreStates(self, path: StrPath):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
-        self.saver.load(path, torch.device(f"cuda:{self.rank}"), logger=self.saver, trainer=self)
+        try:
+            self.saver.load(path, torch.device(f"cuda:{self.rank}"), logger=self.saver, trainer=self)
+        except RuntimeError:
+            pass
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
         self.resetOptimizer()
-        for group in self._optimizer.param_groups:
-            group.setdefault('initial_lr', group['lr'])
 
         self.resetScheduler(self._scheduler.last_epoch)
 
     def resetOptimizer(self):
         del self._optimizer
         self._optimizer = self.optimFn(self._model.parameters(), **self.config.Train.Optim.Params)
+
+        for group in self._optimizer.param_groups:
+            group.setdefault('initial_lr', group['lr'])
 
         self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
 
@@ -121,12 +128,11 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] LR scheduler reset.", self.PrettyStep)
 
     def _beforeRun(self, hook, *args, **kwArgs):
-        if self._step > 0:
+        if self.tmpFile is not None:
+            self.restoreStates(self.tmpFile)
             self.saver.info("[%s] Resume training at %s steps / %d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
-        else:
-            self.saver.info("[%s] Start training.", self.PrettyStep)
+        self.saver.info("[%s] Start training.", self.PrettyStep)
 
-        self.saver.debug("[%s] Training loop started.", self.PrettyStep)
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _afterRun(self, hook, *args, **kwArgs):
@@ -197,7 +203,7 @@ class _baseTrainer(Restorable):
 
 
 class MainTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
+    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
@@ -226,7 +232,7 @@ class MainTrainer(_baseTrainer):
         self.bestRate = 1e10
         self.bestDistortion = -1
 
-        super().__init__(config, modelFn, optimizer, scheduler, saver)
+        super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
         signal.signal(signal.SIGTERM, self._terminatedHandler)
 
@@ -273,10 +279,7 @@ class MainTrainer(_baseTrainer):
             stepStartHook=stepStartHook,
             stepFinishHook=ChainHook(self._stepFinishHook, stepFinishHook))
 
-    def _beforeRun(self, hook, *args, trainLoader, **kwargs):
-        totalBatches = len(trainLoader)
-        self.progress.update(self.trainingBar, total=totalBatches)
-        self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
+    def _beforeRun(self, hook, *args, **kwargs):
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
@@ -302,9 +305,13 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
-    def _epochStart(self, hook, *args, **kwArgs):
+    def _epochStart(self, hook, *args, trainLoader, **kwArgs):
+        totalBatches = len(trainLoader)
+        self.progress.update(self.trainingBar, total=totalBatches)
+        self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
+
         self.progress.reset(self.trainingBar)
-        self.progress.update(self.epochBar, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
+
         super()._epochStart(hook, *args, **kwArgs)
 
 
@@ -353,16 +360,16 @@ class MainTrainer(_baseTrainer):
 
 
 class PalTrainer(_baseTrainer):
-    def __init__(self, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
+    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         if dist.get_rank() == 0:
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
-        super().__init__(config, modelFn, optimizer, scheduler, saver)
+        super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
     def train(self, trainLoader: DataLoader, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, trainSampler, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
-def getTrainer(rank: int, config: Config, modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
+def getTrainer(rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
     if rank == 0:
-        return MainTrainer(config, modelFn, optimizer, scheduler, saver)
-    return PalTrainer(config, modelFn, optimizer, scheduler, saver)
+        return MainTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
+    return PalTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
