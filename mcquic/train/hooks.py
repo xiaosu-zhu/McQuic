@@ -128,6 +128,17 @@ class CodebookReassign(EpochFinishHook):
 
         logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
+@HookRegistry.register
+class FinetuneCodebook(EpochStartHook):
+    def __init__(self):
+        super().__init__()
+
+    def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
+        for name, param in trainer._model.named_parameters():
+            if "codebook" not in name:
+                param.requires_grad_(False)
+            else:
+                param.requires_grad_(True)
 
 
 class TrainerLogger(BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook):

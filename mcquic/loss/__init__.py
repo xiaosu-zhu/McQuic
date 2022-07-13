@@ -25,7 +25,7 @@ class Rate(nn.Module):
 
 
 class BasicRate(Rate):
-    def __init__(self, gamma: float = 1e-7):
+    def __init__(self, gamma: float = 0.0):
         super().__init__(nn.Identity())
         self._gamma = gamma
 
@@ -41,7 +41,7 @@ class BasicRate(Rate):
         return sum(losses)
 
     def forward(self, logits, codebooks, *_):
-        return sum(self._cosineLoss(codebook) for codebook in codebooks)
+        return self._gamma * sum(self._cosineLoss(codebook) for codebook in codebooks)
 
 
 @LossRegistry.register

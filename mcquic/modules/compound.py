@@ -6,7 +6,7 @@ from torch.nn import Module
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
-from mcquic.loss import Distortion, Rate, BasicRate
+from mcquic.loss import Distortion, Rate
 from mcquic.datasets.transforms import getTraingingPostprocess
 from .compressor import BaseCompressor
 
@@ -15,11 +15,10 @@ _devices_t = Sequence[_device_t]
 
 
 class _compound(Module):
-    def __init__(self, compressor: BaseCompressor, distortion: Distortion, rate: Rate):
+    def __init__(self, compressor: BaseCompressor, distortion: Distortion):
         super().__init__()
         self._compressor = compressor
         self._distortion = distortion
-        self._rate = rate
         self._postProcess = getTraingingPostprocess().to(dist.get_rank())
         self._postProcessEnabled = True
 
@@ -30,8 +29,7 @@ class _compound(Module):
             post = x
         xHat, yHat, codes, logits = self._compressor(post)
         distortion = self._distortion(x, xHat, codes, logits)
-        rate = self._rate(logits, self._compressor.Codebooks)
-        return (post, xHat), (rate, distortion), codes, logits
+        return (post, xHat), (0.0, distortion), codes, logits
 
     @property
     def Freq(self):
@@ -49,7 +47,7 @@ class _compound(Module):
 class Compound(DistributedDataParallel):
     module: _compound
     def __init__(self, compressor: BaseCompressor, criterion: Distortion, device_ids: Optional[_devices_t] = None, output_device: Optional[_device_t] = None, dim: int = 0, broadcast_buffers: bool = True, process_group: Optional[Any] = None, bucket_cap_mb: float = 25, find_unused_parameters: bool = False, **kwargs):
-        module = _compound(compressor, criterion, BasicRate(1e-7).to(device_ids[0]))
+        module = _compound(compressor, criterion)
         super().__init__(module, device_ids, output_device, dim, broadcast_buffers, process_group, bucket_cap_mb, find_unused_parameters, **kwargs)
 
     @property
