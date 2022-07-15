@@ -19,7 +19,7 @@ train:
   optim:
     key: Lamb
     params:
-      lr: 2.e-4 # PSNR: 4.e-3
+      lr: 2.e-4 # PSNR: 5.e-3
       # weight_decay: 0.0
       # use_nvlamb: true
   schdr:

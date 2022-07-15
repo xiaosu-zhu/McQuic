@@ -52,7 +52,7 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
-        self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank, find_unused_parameters=True)
+        self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -104,7 +104,12 @@ class _baseTrainer(Restorable):
         try:
             self.saver.load(path, torch.device(f"cuda:{self.rank}"), logger=self.saver, trainer=self)
         except RuntimeError:
-            pass
+            oldCkpt = torch.load(path, "cpu")
+            # Using a finetune config
+            if self.config.Model.Params["m"] != oldCkpt["config"]["model"]["params"]["m"]:
+                pass
+            else:
+                raise
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
@@ -197,7 +202,7 @@ class _baseTrainer(Restorable):
 
                 self._optimizer.step()
 
-                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, **trainingArgs)
+                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, **trainingArgs)
             self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset, **trainingArgs)
         self._afterRun(afterRunHook)
 
@@ -283,7 +288,7 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.trainingBar)
         self.progress.start_task(self.epochBar)
 
-        super()._beforeRun(hook, *args, totalBatches=totalBatches, **kwargs)
+        super()._beforeRun(hook, *args, **kwargs)
         self.saver.info("[%s] See you at `%s`", self.PrettyStep, self.saver.TensorboardURL)
 
     def _afterRun(self, hook, *args, **kwArgs):
