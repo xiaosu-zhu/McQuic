@@ -3,12 +3,14 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Callable, List, Union, Dict
 
+import torch
+import torch.distributed as dist
 from vlutils.saver import Saver
 from vlutils.base.freqHook import ChainHook
 from vlutils.base.registry import Registry
+
 from mcquic.config import General
 from mcquic.train.utils import getSaver
-
 from mcquic.utils.registry import HookRegistry
 from mcquic.train.trainer import _baseTrainer
 
@@ -129,9 +131,16 @@ class CodebookReassign(EpochFinishHook):
         logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
 @HookRegistry.register
-class FinetuneCodebook(EpochStartHook):
-    def __init__(self):
+class FinetuneCodebook(EpochStartHook, BeforeRunHook):
+    def __init__(self, codebookPath):
         super().__init__()
+        self.codebooks = torch.load(codebookPath)
+
+    @torch.no_grad()
+    def beforeRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
+        codebooks = trainer._model.Compressor.Codebooks
+        for c, target in zip(codebooks, self.codebooks):
+            c.copy_(target)
 
     def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
         for name, param in trainer._model.named_parameters():
@@ -139,6 +148,35 @@ class FinetuneCodebook(EpochStartHook):
                 param.requires_grad_(False)
             else:
                 param.requires_grad_(True)
+
+@HookRegistry.register
+class CountingCodes(StepFinishHook, EpochFinishHook):
+    def __init__(self, level):
+        super().__init__()
+        self.allCodes = [[] for _ in range(level)]
+        # self.targetM = targetM
+
+    def stepFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, codes, logger: Saver, **kwds: Any):
+        for codeAtLevel, allCodeAtLevel in zip(codes, self.allCodes):
+            allCodeAtLevel.append(codeAtLevel.detach().cpu())
+
+    def epochFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
+        codebooks = trainer._model.Compressor.Codebooks
+        if dist.get_rank() != 0:
+            return
+        for i, (allCodeAtLevel, codebook) in enumerate(zip(self.allCodes, codebooks)):
+            # [N, m, h, w]
+            allCodeAtLevel = torch.cat(allCodeAtLevel)
+            n, m, h, w = allCodeAtLevel.shape
+            code = allCodeAtLevel.permute(0, 2, 3, 1)
+            ix = torch.arange(m).expand_as(code)
+            codebook = codebook.detach().cpu()
+            indexed = codebook[ix, code]
+            # [n * h * w, c]
+            indexed = indexed.reshape(n * h * w, -1)
+            # use k-means to find new centers
+            torch.save(indexed, f"{i}.pth")
+        trainer._terminatedHandler(None, None)
 
 
 class TrainerLogger(BeforeRunHook, AfterRunHook, EpochStartHook, EpochFinishHook, StepStartHook, StepFinishHook):
