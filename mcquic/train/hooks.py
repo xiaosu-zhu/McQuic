@@ -175,7 +175,10 @@ class CountingCodes(StepFinishHook, EpochFinishHook):
             # [n * h * w, c]
             indexed = indexed.reshape(n * h * w, -1)
             # use k-means to find new centers
-            torch.save(indexed, f"{i}.pth")
+            raise NotImplementedError
+            # kmeans = MiniBatchKMeans(k, init="random", compute_labels=False)
+            # result = kmeans.fit(a)
+            # result = result.cluster_centers_
         trainer._terminatedHandler(None, None)
 
 
