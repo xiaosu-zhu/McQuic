@@ -42,7 +42,7 @@
     <img src="https://img.shields.io/conda/dn/xiaosu-zhu/mcquic" alt="Downloads"/>
   </a>
   <a href="https://huggingface.co/spaces/xiaosu-zhu/McQuic" target="_blank">
-    <img src="https://img.shields.io/badge/dynamic/json?color=red&label=🤗%20Hugging%20Face%20Space&query=%24.runtime.stage&url=https%3A%2F%2Fhuggingface.co%2Fapi%2Fspaces%2Fxiaosu-zhu%2FMcQuic" alt="Demo"/>
+    <img src="https://img.shields.io/badge/dynamic/json?color=red&label=Hugging%20Face%20Space&query=%24.runtime.stage&url=https%3A%2F%2Fhuggingface.co%2Fapi%2Fspaces%2Fxiaosu-zhu%2FMcQuic" alt="Demo"/>
   </a>
 </p>
 
