@@ -3,6 +3,8 @@ import os
 import json
 import sys
 from pathlib import Path
+import glob
+import io
 
 import lmdb
 import torch
@@ -13,6 +15,14 @@ from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import IMG_EXTENSIONS, default_loader
 from vlutils.runtime import relativePath
 from vlutils.types import StrPath
+from PIL import Image
+from PIL import ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, message='TypedStorage is deprecated')
 
 
 __all__ = [
@@ -77,7 +87,11 @@ class Basic(VisionDataset):
             RuntimeError: Find no images in this folder.
         """
         super().__init__(root, transform=transform)
-        samples = _makeDataset(self.root, IMG_EXTENSIONS if is_valid_file is None else None, is_valid_file)
+        samples = list()
+        for ext in IMG_EXTENSIONS:
+            samples += glob.glob(f'{root}/**/*{ext}', recursive=True)
+
+        # samples = _makeDataset(self.root, IMG_EXTENSIONS if is_valid_file is None else None, is_valid_file)
         if len(samples) == 0:
             msg = "Found 0 files in subfolders of: {}\n".format(self.root)
             msg += "Supported extensions are: {}".format(",".join(IMG_EXTENSIONS))
@@ -97,7 +111,7 @@ class Basic(VisionDataset):
         """
         path = self.samples[index]
         # No need to force RGB. Transforms will handle it.
-        sample = read_image(path, ImageReadMode.UNCHANGED)
+        sample = Image.open(path).convert("RGB")
         if self.transform is not None:
             sample = self.transform(sample)
         return sample, Path(path).stem
@@ -107,7 +121,6 @@ class Basic(VisionDataset):
 
     def __str__(self) -> str:
         return f"<Basic> at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
-
 
 class BasicLMDB(VisionDataset):
     """A Basic dataset that reads from a LMDB.
@@ -154,7 +167,7 @@ class BasicLMDB(VisionDataset):
         self._env = lmdb.open(self.root, map_size=int(1024 ** 4), subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=self._maxTxns, lock=False)
         self._txn = self._env.begin(write=False, buffers=True)
 
-    def __getitem__(self, index: int) -> Tensor:
+    def __getitem__(self, index: int) -> Tuple[Tensor, str]:
         """
         Args:
             index (int): Index
@@ -175,7 +188,7 @@ class BasicLMDB(VisionDataset):
             sample = sample[:3]
         if self.transform is not None:
             sample = self.transform(sample)
-        return sample
+        return sample, 'None'
 
     def __len__(self) -> int:
         return self._length * self._repeat
