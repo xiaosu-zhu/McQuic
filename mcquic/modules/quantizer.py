@@ -6,7 +6,7 @@ from torch import nn
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from mcquic.modules.entropyCoder import EntropyCoder
+from mcquic.modules.entropyCoder import EntropyCoder, PlainCoder
 from mcquic.nn.base import LowerBound
 from mcquic.utils.specification import CodeSize
 from mcquic import Consts
@@ -61,6 +61,12 @@ class BaseQuantizer(nn.Module):
         # self._validateCode(codes, decompressed)
         return self.decode(decompressed)
 
+class PlainQuantizer(BaseQuantizer):
+    def __init__(self, m: int, k: List[int]):
+        nn.Module.__init__(self)
+        self._entropyCoder = PlainCoder(m, k)
+        self._m = m
+        self._k = k
 
 # NOTE: You may notice the quantizer implemented here is different with README.md
 #       After some tests, I find some strange behavior if `k` is not placed in the last dim.
@@ -119,20 +125,28 @@ class _multiCodebookQuantization(nn.Module):
     def _distance(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
         # [n, m, d, h, w]
-        x = x.reshape(n, self._m, self._d, h, w)
+        x = x.reshape(n, self._m, self._d, h, w).contiguous()
 
         # [n, m, 1, h, w]
         x2 = (x ** 2).sum(2, keepdim=True)
 
         # [m, k, 1, 1]
-        c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None]
+        c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None].contiguous()
         # [n, m, d, h, w] * [m, k, d] -sum-> [n, m, k, h, w]
-        inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebook)
+        # inter = torch.einsum("nmdhw,mkd->nmkhw", x, self._codebook).contiguous()
+        ######## NAIVE implemnetation ################
+        # [n*m, hw, d]
+        left = x.reshape(n*self._m, self._d, h*w).permute(0, 2, 1).contiguous()
+        # [n*m, d, k]
+        right = self._codebook.expand(n, self._m, self._k, self._d).reshape(n*self._m, self._k, self._d).permute(0, 2, 1).contiguous()
+        # [n*m, hw, k]
+        inter = torch.bmm(left, right)
+        inter = inter.reshape(n, self._m, h, w, self._k).permute(0, 1, 4, 2, 3).contiguous()
         # [n, m, k, h, w]
         distance = x2 + c2 - 2 * inter
         # IMPORTANT to move k to last dim --- PLEASE SEE NOTE.
         # [n, m, h, w, k]
-        return distance.permute(0, 1, 3, 4, 2)
+        return distance.permute(0, 1, 3, 4, 2).contiguous()
 
     def _logit(self, x: torch.Tensor) -> torch.Tensor:
         logit = -1 * self._distance(x)
@@ -145,7 +159,7 @@ class _multiCodebookQuantization(nn.Module):
         needPerm = torch.rand_like(sample[..., 0]) < self._permutationRate
         randomed = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=sample.device), num_classes=self._k).float()
         sample[needPerm] = randomed
-        return sample
+        return sample.contiguous()
 
     def _sample(self, x: torch.Tensor, temperature: float):
         # [n, m, h, w, k] * [m, 1, 1, 1]
@@ -168,7 +182,7 @@ class _multiCodebookQuantization(nn.Module):
 
         sampled = gumbelSoftmax(logit, temperature, True)
 
-        sampled = self._permute(sampled)
+        # sampled = self._permute(sampled)
 
         # It causes training unstable
         # leave to future tests.
@@ -176,13 +190,15 @@ class _multiCodebookQuantization(nn.Module):
         return sampled, logit
 
     def forward(self, x: torch.Tensor):
-        sample, logit = self._sample(x, 1.0)
-        # [n, m, h, w, 1]
-        code = logit.argmax(-1, keepdim=True)
-        # [n, m, h, w, k]
-        oneHot = torch.zeros_like(logit).scatter_(-1, code, 1)
-        # [n, m, h, w, k]
-        return sample, code[..., 0], oneHot, logit
+        with torch.autocast('cuda', enabled=False):
+            x = x.float()
+            sample, logit = self._sample(x, 1.0)
+            # [n, m, h, w, 1]
+            code = logit.argmax(-1, keepdim=True)
+            # [n, m, h, w, k]
+            oneHot = torch.zeros_like(logit).scatter_(-1, code, 1).contiguous()
+            # [n, m, h, w, k]
+            return sample, code[..., 0].contiguous(), oneHot, logit
 
 
 class _multiCodebookDeQuantization(nn.Module):
@@ -196,19 +212,28 @@ class _multiCodebookDeQuantization(nn.Module):
         # codes: [n, m, h, w]
         n, _, h, w = code.shape
         # [n, h, w, m]
-        code = code.permute(0, 2, 3, 1)
+        code = code.permute(0, 2, 3, 1).contiguous()
         # use codes to index codebook (m, k, d) ==> [n, h, w, m, k] -> [n, c, h, w]
         ix = self._ix.expand_as(code)
         # [n, h, w, m, d]
         indexed = self._codebook[ix, code]
         # [n, c, h, w]
-        return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2)
+        return indexed.reshape(n, h, w, -1).permute(0, 3, 1, 2).contiguous()
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def forward(self, sample: torch.Tensor):
-        n, _, h, w, _ = sample.shape
-        # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
-        return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w)
+        with torch.autocast('cuda', enabled=False):
+            sample = sample.float()
+            n, _, h, w, _ = sample.shape
+            # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
+            # return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).contiguous().permute(0, 1, 4, 2, 3).contiguous().reshape(n, -1, h, w).contiguous()
+            # [nm, hw, k]
+            left = sample.reshape(n*self._m, h*w, self._k).contiguous()
+            # [nm, k, d]
+            right = self._codebook.expand(n, self._m, self._k, self._d).reshape(n*self._m, self._k, self._d).contiguous()
+            # [nm, hw, d]
+            result = torch.bmm(left, right)
+            return result.reshape(n, self._m, h, w, self._d).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w).contiguous()
 
 
 class _quantizerEncoder(nn.Module):
@@ -281,7 +306,7 @@ class _quantizerDecoder(nn.Module):
         super().__init__()
         self._dequantizer =  dequantizer
         self._dequantizationHead =  dequantizationHead
-        self._sideHead =  sideHead
+        self._sideHead = sideHead
         self._restoreHead =  restoreHead
 
     #                [n, m, h, w]
@@ -337,6 +362,333 @@ class UMGMQuantizer(BaseQuantizer):
             dequantizer = _multiCodebookDeQuantization(codebook)
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
             decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+        self._encoders: nn.ModuleList[_quantizerEncoder] = nn.ModuleList(encoders)
+        self._decoders: nn.ModuleList[_quantizerDecoder] = nn.ModuleList(decoders)
+
+    @property
+    def Codebooks(self):
+        return list(encoder.Codebook for encoder in self._encoders)
+
+    def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
+        codes = list()
+        i = 0
+        for encoder in self._encoders:
+            x, code = encoder.encode(x)
+            #            [n, m, h, w]
+            codes.append(code)
+            i += 1
+        # lv * [n, m, h, w]
+        return codes
+
+    def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
+        formerLevel = None
+        i = 0
+        for decoder, code in zip(self._decoders[::-1], codes[::-1]):
+            formerLevel = decoder.decode(code, formerLevel)
+            i += 1
+        return formerLevel
+
+    def reAssignCodebook(self) -> torch.Tensor:
+        freqs = self.NormalizedFreq
+        reassigned: List[torch.Tensor] = list()
+        for encoder, freq in zip(self._encoders, freqs):
+            # freq: [m, ki]
+            reassigned.append(encoder.reAssignCodebook(freq))
+        return torch.cat(reassigned).float().mean()
+
+    def syncCodebook(self):
+        dist.barrier()
+        for encoder in self._encoders:
+            encoder.syncCodebook()
+
+    def forward(self, x: torch.Tensor):
+        quantizeds = list()
+        codes = list()
+        oneHots = list()
+        logits = list()
+        for encoder in self._encoders:
+            #          ↓ residual
+            quantized, x, code, oneHot, logit = encoder(x)
+            # [n, c, h, w]
+            quantizeds.append(quantized)
+            # [n, m, h, w]
+            codes.append(code)
+            # [n, m, h, w, k]
+            oneHots.append(oneHot)
+            # [n, m, h, w, k]
+            logits.append(logit)
+        formerLevel = None
+        for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
+            # ↓ restored
+            formerLevel = decoder(quantized, formerLevel)
+
+        # update freq in entropy coder
+        self._entropyCoder(oneHots)
+
+        return formerLevel, codes, logits
+
+
+
+
+
+class NeonQuantizer(PlainQuantizer):
+    def __init__(self, k):
+        if not isinstance(k, list):
+            raise AttributeError
+
+        from mcquic.nn import pixelShuffle3x3
+        from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
+        from mcquic.nn.blocks import AttentionBlock
+        from mcquic.nn.convs import conv3x3
+
+        # 16, 13,
+        super().__init__(1, k)
+
+        encoders = list()
+        decoders = list()
+
+        ############################################################
+        # input: 16, output: 16, middle: 16
+        latentStageEncoder = nn.Sequential(
+            ResidualBlock(640, 32, groups=1),
+            AttentionBlock(32, groups=1),
+            ResidualBlock(32, 32, groups=1),
+            AttentionBlock(32, groups=1),
+            conv3x3(32, 32)
+        )
+        quantizationHead = nn.Identity()
+        latentHead = nn.Identity()
+        codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        quantizer = _multiCodebookQuantization(codebook, 0.)
+        dequantizer = _multiCodebookDeQuantization(codebook)
+
+        dequantizationHead = nn.Identity()
+        sideHead = None
+        restoreHead = nn.Sequential(
+            conv3x3(32, 32),
+            AttentionBlock(32, groups=1),
+            ResidualBlock(32, 32, groups=1),
+            AttentionBlock(32, groups=1),
+            ResidualBlock(32, 640, groups=1)
+        )
+
+        encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+        ############################################################
+        # input: 16, output: 16, middle: 13
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 4)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 4),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+
+        # ############################################################
+        # # input: 13, output: 13, middle: 10
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 4)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = None
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 4),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+
+        ############################################################
+        # input: 10, output: 10, middle: 8
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 3)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 3),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+
+
+        # ############################################################
+        # # input: 8, output: 8, middle: 6
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 3)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 3),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+        # ############################################################
+        # # input: 6, output: 6, middle: 5
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 2)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 2),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+        # ############################################################
+        # # input: 5, output: 5, middle: 4
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 2)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 2),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+
+        # ############################################################
+        # # input: 4, output: 4, middle: 3
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 2)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 2),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+
+        # ############################################################
+        # # input: 3, output: 3, middle: 2
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 2)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = nn.Identity()
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 2),
+        #     AttentionBlock(32, groups=1),
+        #     ResidualBlock(32, 32, groups=1)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
+
+
+        # ############################################################
+        # # input: 2, output: 2, middle: 1
+        # latentStageEncoder = nn.Sequential(
+        #     ResidualBlock(32, 32, groups=1),
+        #     AttentionBlock(32, groups=1),
+        #     nn.Conv2d(32, 32, 2)
+        # )
+        # quantizationHead = nn.Identity()
+        # latentHead = nn.Identity()
+        # codebook = nn.Parameter(nn.init.normal_(torch.empty(1, 4096, 32), std=math.sqrt(2 / (5 * 32))))
+        # quantizer = _multiCodebookQuantization(codebook, 0.)
+        # dequantizer = _multiCodebookDeQuantization(codebook)
+
+        # dequantizationHead = nn.Identity()
+        # sideHead = None
+        # restoreHead = nn.Sequential(
+        #     nn.ConvTranspose2d(32, 32, 2),
+        #     AttentionBlock(32),
+        #     ResidualBlock(32, 32)
+        # )
+        # encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
+        # decoders.append(_quantizerDecoder(dequantizer, dequantizationHead, sideHead, restoreHead))
 
         self._encoders: nn.ModuleList[_quantizerEncoder] = nn.ModuleList(encoders)
         self._decoders: nn.ModuleList[_quantizerDecoder] = nn.ModuleList(decoders)

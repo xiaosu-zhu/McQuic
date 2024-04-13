@@ -9,6 +9,7 @@ import threading
 import gc
 
 import torch
+from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
@@ -54,7 +55,7 @@ class _baseTrainer(Restorable):
         compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
         self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
-        self.saver.debug("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
+        self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
@@ -186,21 +187,30 @@ class _baseTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, **trainingArgs)
 
+        scaler = GradScaler()
+
         images, postProcessed, xHat, codes, logits = None, None, None, None, None
 
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, **trainingArgs)
-            for images in trainLoader:
+            for images, _ in trainLoader:
                 images = self.transform(images.to(self.rank, non_blocking=True))
 
                 self._stepStart(stepStartHook, **trainingArgs)
 
                 self._optimizer.zero_grad()
 
+                # with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 (postProcessed, xHat), (rate, distortion), codes, logits = self._model(images)
-                (rate + distortion).backward()
+                scaler.scale(rate + distortion).backward()
 
-                self._optimizer.step()
+                scaler.unscale_(self._optimizer)
+
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+
+                scaler.step(self._optimizer)
+
+                scaler.update()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, **trainingArgs)
             self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset, **trainingArgs)

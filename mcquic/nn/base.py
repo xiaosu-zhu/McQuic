@@ -49,9 +49,10 @@ class LowerBound(nn.Module):
         return _lowerBound.apply(x, self.bound)
 
     def forward(self, x):
-        if torch.jit.is_scripting():
-            return torch.max(x, self.bound)
-        return self.lower_bound(x)
+        with torch.autocast(device_type='cuda', enabled=False):
+            if torch.jit.is_scripting():
+                return torch.max(x.float(), self.bound)
+            return self.lower_bound(x.float())
 
 
 class NonNegativeParametrizer(nn.Module):
@@ -125,7 +126,7 @@ def gumbelSoftmax(logits: torch.Tensor, temperature: float = 1.0, hard: bool = T
     if hard:
         # Straight through.
         index = y_soft.max(dim, keepdim=True)[1]
-        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0).contiguous()
         ret = y_hard - y_soft.detach() + y_soft
     else:
         # Reparametrization trick.

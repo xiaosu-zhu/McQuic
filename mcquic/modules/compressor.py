@@ -11,7 +11,7 @@ from mcquic.nn.blocks import AttentionBlock
 from mcquic.nn.convs import conv3x3
 from mcquic.utils.specification import FileHeader, ImageSize
 
-from .quantizer import BaseQuantizer, UMGMQuantizer
+from .quantizer import BaseQuantizer, UMGMQuantizer, NeonQuantizer
 
 
 class BaseCompressor(nn.Module):
@@ -154,4 +154,36 @@ class Compressor(BaseCompressor):
                 ResidualBlock(channel, channel, groups=1),
             ),
         })
+        super().__init__(encoder, quantizer, decoder)
+
+
+
+class Neon(BaseCompressor):
+    def __init__(self, channel: int, m: int, k: List[int], *_, **__):
+        encoder = nn.Sequential(
+            # convs.conv3x3(3, channel),
+            conv3x3(3, 320),
+            ResidualBlock(320, 320, groups=1),
+            ResidualBlockWithStride(320, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            ResidualBlockWithStride(320, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            ResidualBlockWithStride(320, 320, groups=1),
+            AttentionBlock(320, groups=1),
+            ResidualBlock(320, 320),
+            ResidualBlockWithStride(320, 640, groups=1),
+        )
+        decoder = nn.Sequential(
+            ResidualBlockShuffle(640, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            AttentionBlock(320, groups=1),
+            ResidualBlockShuffle(320, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            ResidualBlockShuffle(320, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            ResidualBlockShuffle(320, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            conv3x3(320, 3)
+        )
+        quantizer = NeonQuantizer(k)
         super().__init__(encoder, quantizer, decoder)

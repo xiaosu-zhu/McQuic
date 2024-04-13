@@ -46,7 +46,7 @@ class _compound(Module):
 
 class Compound(DistributedDataParallel):
     module: _compound
-    def __init__(self, compressor: BaseCompressor, criterion: Distortion, device_ids: Optional[_devices_t] = None, output_device: Optional[_device_t] = None, dim: int = 0, broadcast_buffers: bool = True, process_group: Optional[Any] = None, bucket_cap_mb: float = 25, find_unused_parameters: bool = False, **kwargs):
+    def __init__(self, compressor: BaseCompressor, criterion: Distortion, device_ids: Optional[_devices_t] = None, output_device: Optional[_device_t] = None, dim: int = 0, broadcast_buffers: bool = True, process_group: Optional[Any] = None, bucket_cap_mb: int = 25, find_unused_parameters: bool = False, **kwargs):
         module = _compound(compressor, criterion)
         super().__init__(module, device_ids, output_device, dim, broadcast_buffers, process_group, bucket_cap_mb, find_unused_parameters, **kwargs)
 

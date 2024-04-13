@@ -12,7 +12,7 @@ from vlutils.base.registry import Registry
 from vlutils.config import summary
 
 from mcquic import Config, Consts
-from mcquic.modules.compressor import BaseCompressor, Compressor
+from mcquic.modules.compressor import BaseCompressor, Compressor, Neon
 from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.train.hooks import getAllHooks
 from mcquic.utils.registry import *
@@ -51,8 +51,9 @@ def _registerBuiltinFunctions():
         import apex
         OptimizerRegistry.register("Lamb")(apex.optimizers.FusedLAMB)
     except:
-        raise ImportError("`import apex` failed. Apex not installed.")
-    OptimizerRegistry.register("Adam")(torch.optim.Adam)
+        pass
+        # raise ImportError("`import apex` failed. Apex not installed.")
+    OptimizerRegistry.register("Adam")(torch.optim.AdamW)
 
     LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
     LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
@@ -61,7 +62,7 @@ def _registerBuiltinFunctions():
 
 
 def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distortion]:
-    compressor = Compressor(**modelParams)
+    compressor = Neon(**modelParams)
     criterion = LossRegistry.get(lossTarget)()
 
     return compressor, criterion

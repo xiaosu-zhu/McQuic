@@ -62,14 +62,16 @@ class GenDivNorm(nn.Module):
         self.gamma = nn.Parameter(gamma)
 
     def forward(self, x):
-        # C = x.shape[-3]
-        beta = self.beta_reparam(self.beta)
-        gamma = self.gamma_reparam(self.gamma)
-        # [C, C // groups, 1, 1]
-        gamma = gamma[..., None, None]
-        std = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
+        with torch.autocast(device_type='cuda', enabled=False):
+            x = x.float()
+            # C = x.shape[-3]
+            beta = self.beta_reparam(self.beta)
+            gamma = self.gamma_reparam(self.gamma)
+            # [C, C // groups, 1, 1]
+            gamma = gamma[..., None, None]
+            std = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
 
-        return self._normalize(x, std)
+            return self._normalize(x, std)
 
     def _normalize(self, x: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
         return x * torch.rsqrt(std)

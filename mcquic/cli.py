@@ -31,7 +31,7 @@ def version(ctx, _, value):
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
-@click.group(cls=DefaultGroup, context_settings=CONTEXT_SETTINGS)
+@click.group(cls=DefaultGroup, context_settings=CONTEXT_SETTINGS, default='defaultEntry')
 @click.option("-v", "--version", is_flag=True, callback=version, expose_value=False, is_eager=True, help="Print version info.")
 def entryPoint():
     pass
@@ -47,7 +47,7 @@ def entryPoint():
 @click.option("--crop", is_flag=True, help="Crop the image to align feature patches. Edges of image are cutted though, compressed binary will be smaller.")
 @click.argument('input', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), nargs=1)
 @click.argument('output', type=click.Path(exists=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def _(debug, quiet, qp, local, disable_gpu, mse, crop, input, output):
+def defaultEntry(debug, quiet, qp, local, disable_gpu, mse, crop, input, output):
     """Compress/restore a file.
 
 Args:
