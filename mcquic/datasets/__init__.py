@@ -25,10 +25,10 @@ class DummyLoader(DataLoader):
         return
 
 def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    trainDataset = BasicLMDB(datasetPath, maxTxns=(2 * batchSize) * worldSize, transform=getTrainingPreprocess())
+    trainDataset = BasicLMDB(datasetPath, transform=getTrainingPreprocess())
     logger.debug("Create training set: %s", trainDataset)
     trainSampler = DistributedSampler(trainDataset, worldSize, rank)
-    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), sampler=trainSampler, num_workers=2 * batchSize, pin_memory=True, prefetch_factor=4, persistent_workers=True)
+    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), sampler=trainSampler, num_workers=24, pin_memory=True, prefetch_factor=2, persistent_workers=True)
     return trainLoader, trainSampler
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):

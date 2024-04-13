@@ -7,6 +7,9 @@ data
 *.mcq
 saved/
 tmp/
+wandb/
+*.tsv
+valid/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
