@@ -5,8 +5,15 @@ from torchvision import transforms as T
 
 from mcquic.utils.vision import RandomGamma, RandomPlanckianJitter, RandomAutocontrast, RandomHorizontalFlip, RandomVerticalFlip, PatchWiseErasing
 
+
+# def hook(x):
+#     print(type(x['jpg']))
+#     exit()
+#     return x['jpg']
+
 def getTrainingPreprocess():
     return T.Compose([
+        # T.ToTensor(),
         T.RandomCrop(512, pad_if_needed=True),
         T.ConvertImageDtype(torch.float32),
         RandomGamma()

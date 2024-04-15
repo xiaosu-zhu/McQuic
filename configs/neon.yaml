@@ -9,7 +9,7 @@ train:
   batchSize: 2
   epoch: 50
   valFreq: 10
-  trainSet: data/
+  trainSet: /mnt/nfs/CMG/mcquic/
   valSet: valid
   saveDir: saved
   target: MsSSIM

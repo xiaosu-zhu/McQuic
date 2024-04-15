@@ -6,13 +6,19 @@ Exports:
 """
 from typing import Union
 import logging
+import os
+import json
+import glob
 from torch.utils.data import DataLoader, DistributedSampler
 from vlutils.logger import LoggerBase
 from vlutils.saver import StrPath
+import torch
 
 from .transforms import getTrainingPreprocess, getEvalTransform
 from .dataset import Basic, BasicLMDB
 
+from torchvision.io.image import ImageReadMode, decode_image
+import webdataset as wds
 
 __all__ = [
     "Basic",
@@ -24,12 +30,31 @@ class DummyLoader(DataLoader):
     def __init__(self, **_):
         return
 
+
+def wdsDecode(sample):
+
+    sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(sample['jpg'])))
+    # UNCHANGED --- Slightly speedup
+    # No need to force RGB. Transforms will handle it.
+    sample = decode_image(sample, ImageReadMode.UNCHANGED)
+    if len(sample.shape) < 3:
+        sample = sample.expand(3, *sample.shape)
+    if sample.shape[0] == 1:
+        sample = sample.repeat((3, 1, 1))
+    elif sample.shape[0] == 4:
+        sample = sample[:3]
+    return sample
+
 def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    trainDataset = BasicLMDB(datasetPath, transform=getTrainingPreprocess())
+    allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
+    # NOTE: no need to use disbtribued sampler, since shuffle have difference RNG over time and pid.
+    trainDataset = wds.WebDataset(allTarGZ).repeat().shuffle(1000).map(wdsDecode).map(getTrainingPreprocess())
+    # trainDataset = BasicLMDB(datasetPath, transform=getTrainingPreprocess())
     logger.debug("Create training set: %s", trainDataset)
-    trainSampler = DistributedSampler(trainDataset, worldSize, rank)
-    trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), sampler=trainSampler, num_workers=24, pin_memory=True, prefetch_factor=2, persistent_workers=True)
-    return trainLoader, trainSampler
+    # trainSampler = DistributedSampler(trainDataset, worldSize, rank)
+    trainLoader = wds.WebLoader(trainDataset, batch_size=batchSize, num_workers=24, pin_memory=True, prefetch_factor=2, persistent_workers=True)
+    # trainLoader = DataLoader(trainDataset, batch_size=min(batchSize, len(trainDataset)), sampler=trainSampler, num_workers=24, pin_memory=True, prefetch_factor=2, persistent_workers=True)
+    return trainLoader
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
     if disable:
