@@ -33,13 +33,13 @@ class GenDivNorm(nn.Module):
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
 
-    def __init__(self, inChannels: int, groups: int = 1, biasBound: float = 1e-6, weightInit: float = 0.1):
+    def __init__(self, inChannels: int, groups: int = 1, biasBound: float = 1e-4, weightInit: float = 0.1):
         """Generalized Divisive Normalization layer.
 
         Args:
             inChannels (int): Channels of input tensor.
             inverse (bool, optional): GDN or I-GDN. Defaults to False.
-            beta_min (float, optional): Lower bound of beta. Defaults to 1e-6.
+            beta_min (float, optional): Lower bound of beta. Defaults to 1e-4.
             gamma_init (float, optional): Initial value of gamma. Defaults to 0.1.
         """
         super().__init__()

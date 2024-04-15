@@ -111,7 +111,7 @@ class Basic(VisionDataset):
         """
         path = self.samples[index]
         # No need to force RGB. Transforms will handle it.
-        sample = Image.open(path).convert("RGB")
+        sample = read_image(path, ImageReadMode.UNCHANGED)
         if self.transform is not None:
             sample = self.transform(sample)
         return sample, Path(path).stem
