@@ -4,62 +4,100 @@ from random import shuffle
 import shutil
 import sys
 import pathlib
+import glob
+import PIL.Image
+import joblib
+from joblib import Parallel, delayed
+import contextlib
 
-import lmdb
+import webdataset as wds
 from PIL import Image
 import PIL
 import click
 from mcquic.train.utils import getRichProgress
+
+from filelock import Timeout, FileLock
 
 from mcquic.utils import hashOfFile
 
 _EXT = [".png", ".jpg", ".jpeg"]
 
 
-def write(txn, i: bytes, path: str):
+def write(sink: wds.ShardWriter, i: int, path: str):
     with open(path, "rb") as fp:
-        txn.put(i, fp.read())
+        sink.write(
+            {
+                '__key__': 'sample%08d' % i,
+                'jpg': fp.read()
+            }
+        )
 
 
 def findAllWithSize(dirPath, ext):
     files = list()
-    filesAndDirs = os.listdir(dirPath)
-    for f in filesAndDirs:
-        if os.path.isdir(os.path.join(dirPath, f)):
-            files.extend(findAllWithSize(os.path.join(dirPath, f), ext))
-        elif os.path.splitext(f)[1].lower() in ext:
-            f = os.path.join(dirPath, f)
-            files.append((f, os.path.getsize(f)))
-    return files
+    for e in ext:
+        beforeLen = len(files)
+        print(f'Searching {e} in {dirPath} ...')
+        finded = glob.glob(os.path.join(dirPath, '**', f'*{e.lower()}'))
+        files.extend(finded)
+        finded = glob.glob(os.path.join(dirPath, '**', f'*{e.upper()}'))
+        files.extend(finded)
+        print(f'Added {len(files) - beforeLen} files.')
+    return files[:10000]
+
+
+def _joblibValidateImage(path, strict):
+    try:
+        a = Image.open(path)
+    except (PIL.UnidentifiedImageError, PIL.Image.DecompressionBombError):
+        return None
+    w, h = a.size
+    if strict:
+        # force images size > 512.
+        if h < 512 or w < 512:
+            return None
+    return path
+
+
+@contextlib.contextmanager
+def rich_joblib(updateFn):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            updateFn(self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
 
 
 def getFilesFromDir(root, progress, strict: bool = False):
     files = findAllWithSize(root, _EXT)
-    newFile = list()
 
     total = len(files)
 
     task = progress.add_task(f"[ Check ]", total=total, progress="0.00%", suffix=f"Scanning {total} images")
 
-    for i, f in enumerate(files):
-        try:
-            a = Image.open(f[0])
-        except PIL.UnidentifiedImageError:
-            continue
-        w, h = a.size
-        if strict:
-            # force images size > 512.
-            if h < 512 or w < 512:
-                continue
-        newFile.append(f)
+    class updateFn:
+        def __init__(self):
+            self._current = 0
+        def __call__(self, advance):
+            self._current = self._current + advance
+            progress.update(task, advance=advance, progress=f"{self._current / total * 100 :.2f}%")
 
-        progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
+    with rich_joblib(updateFn()):
+        result = Parallel(32)(delayed(_joblibValidateImage)(f, strict) for f in files)
+    newFile = [x for x in result if x is not None]
 
-    print(f"{len(newFile)} images meets requirement.")\
+    print(f"{len(newFile)} images ({len(newFile) / total * 100:0.2f}%) meets requirement.")
 
     progress.remove_task(task)
 
-    return [x[0] for x in newFile]
+    return newFile
 
 
 def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
@@ -74,34 +112,29 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
 
         shuffle(allFiles)
 
-        env = lmdb.Environment(str(targetDir), subdir=True, map_size=int(1024 ** 4))
+        sink = wds.ShardWriter(os.path.join(targetDir, 'OpenImagesv7_%04d.tar.gz'), maxcount=10000000, maxsize=30000000000)
 
         total = len(allFiles)
 
         task = progress.add_task(f"[ Write ]", total=total, progress="0.00%", suffix=f"Writing {total} images")
 
-        with env.begin(write=True) as txn:
-            i = -1
-            for i, f in enumerate(allFiles):
-                write(txn, i.to_bytes(32, sys.byteorder), f)
-                progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
-        env.close()
+        # class updateFn:
+        #     def __init__(self):
+        #         self._current = 0
+        #     def __call__(self, advance):
+        #         self._current = self._current + advance
+        #         progress.update(task, advance=advance, progress=f"{self._current / total * 100 :.2f}%")
+        i = -1
+        for i, f in enumerate(allFiles):
+            write(sink, i, f)
+            progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
+
+        with open(os.path.join(targetDir, 'metadata.json'), 'w') as fp:
+            json.dump({
+                'length': len(allFiles)
+            }, fp)
 
         progress.remove_task(task)
-
-
-        dbFile = os.path.join(targetDir, "data.mdb")
-
-        print("Calculate database hash...")
-
-        hashResult = hashOfFile(dbFile, progress)
-
-        # Create metadata needed for dataset
-        with open(os.path.join(targetDir, "metadata.json"), "w") as fp:
-            json.dump({
-                "length": i + 1,
-                "hash": hashResult
-            }, fp)
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])

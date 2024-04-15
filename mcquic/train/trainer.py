@@ -154,14 +154,14 @@ class _baseTrainer(Restorable):
             self._scheduler.step()
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
-    def _epochStart(self, hook, *args, trainSampler, **kwArgs):
-        trainSampler.set_epoch(self._epoch)
+    def _epochStart(self, hook, *args, **kwArgs):
+        # trainSampler.set_epoch(self._epoch)
 
         self.saver.debug("[%s] Epoch %4d started.", self.PrettyStep, self._epoch + 1)
 
         gc.collect()
         gc.collect()
-        hook(self._step, self._epoch, self, *args, trainSampler=trainSampler, logger=self.saver, **kwArgs)
+        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _epochFinish(self, hook, *args, **kwArgs):
         self._epoch += 1
@@ -173,7 +173,7 @@ class _baseTrainer(Restorable):
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
 
-    def train(self, trainLoader: DataLoader, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
@@ -182,8 +182,7 @@ class _baseTrainer(Restorable):
         epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
         trainingArgs = {
-            "trainLoader": trainLoader,
-            "trainSampler": trainSampler
+            "trainLoader": trainLoader
         }
 
         self._beforeRun(beforeRunHook, **trainingArgs)
@@ -282,8 +281,8 @@ class MainTrainer(_baseTrainer):
             self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
-    def train(self, trainLoader: DataLoader, trainSampler: DistributedSampler, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        return super().train(trainLoader, trainSampler,
+    def train(self, trainLoader: DataLoader, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+        return super().train(trainLoader,
             beforeRunHook=beforeRunHook,
             afterRunHook=ChainHook(
                 functools.partial(self.validate, valLoader=valLoader),
@@ -293,7 +292,7 @@ class MainTrainer(_baseTrainer):
             stepStartHook=ChainHook(
                 functools.partial(self.stepStartCalls, valLoader=valLoader),
                 stepStartHook),
-            stepFinishHook=ChainHook(self._stepFinishHook, self.epochFinishCalls, stepFinishHook))
+            stepFinishHook=ChainHook(self._stepFinishHook, self.stepFinishCalls, stepFinishHook))
 
     def _beforeRun(self, hook, *args, **kwargs):
         self.progress.start_task(self.trainingBar)
@@ -321,8 +320,16 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
-    def _epochStart(self, hook, *args, trainLoader, **kwArgs):
-        totalBatches = len(trainLoader)
+    def _epochStart(self, hook, *args, trainLoader: DataLoader, **kwArgs):
+        import json
+        def parseLengthFromMetadata(path):
+            metadata = os.path.join(path, 'metadata.json')
+            with open(metadata, 'r') as fp:
+                metadata = json.load(fp)
+            return metadata['length']
+
+        length = parseLengthFromMetadata(self.config.Train.TrainSet)
+        totalBatches = length // self.config.Train.BatchSize
         self.progress.update(self.trainingBar, total=totalBatches)
         self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
 
@@ -341,7 +348,7 @@ class MainTrainer(_baseTrainer):
             self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
-        self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
+        # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
@@ -381,8 +388,8 @@ class PalTrainer(_baseTrainer):
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
-    def train(self, trainLoader: DataLoader, trainSampler: DistributedSampler, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        return super().train(trainLoader, trainSampler, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
+    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+        return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
 def getTrainer(rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
