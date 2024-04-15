@@ -12,6 +12,14 @@ from mcquic.utils import LrSchedulerRegistry
 
 
 @LrSchedulerRegistry.register
+class Placeholder(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer: Optimizer, *_, **__) -> None:
+        super().__init__(optimizer)
+    def get_lr(self):
+        return self.base_lrs
+
+
+@LrSchedulerRegistry.register
 class MultiStepLRWithWarmUp(torch.optim.lr_scheduler._LRScheduler):
     """Decays the learning rate of each parameter group by gamma once the
     number of epoch reaches one of the milestones. Notice that such decay can
@@ -312,7 +320,7 @@ class CosineAnnealingWarmupRestarts(torch.optim.lr_scheduler._LRScheduler):
                  optimizer : torch.optim.Optimizer,
                  first_cycle_steps : int,
                  cycle_mult : float = 1.,
-                 lrScaleRatio: float = 0.01,
+                 lrScaleRatio: float = 0.001,
                  warmup_steps : int = 0,
                  gamma : float = 1.,
                  last_epoch : int = -1,

@@ -276,13 +276,15 @@ class AttentionBlock(nn.Module):
         )
 
     def forward(self, x):
-        identity = x
-        a = self._mainBranch(x)
-        b = self._sideBranch(x)
-        mask = torch.sigmoid(b)
-        out = a * mask
-        out += identity
-        return out
+        with torch.autocast('cuda', enabled=False):
+            x = x.float()
+            identity = x
+            a = self._mainBranch(x)
+            b = self._sideBranch(x)
+            mask = torch.sigmoid(b)
+            out = a * mask
+            out += identity
+            return out
 
 
 @ModuleRegistry.register

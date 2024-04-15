@@ -150,6 +150,8 @@ class _baseTrainer(Restorable):
 
     def _stepFinish(self, hook, *args, **kwArgs):
         self._step += 1
+        if self._step > 10:
+            self._scheduler.step()
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
 
     def _epochStart(self, hook, *args, trainSampler, **kwArgs):
@@ -166,7 +168,6 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Epoch %4d finished.", self.PrettyStep, self._epoch)
 
-        self._scheduler.step()
         self.saver.debug("[%s] Lr is set to %.2e.", self.PrettyStep, self._scheduler.get_last_lr()[0])
 
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
@@ -187,7 +188,7 @@ class _baseTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, **trainingArgs)
 
-        scaler = GradScaler()
+        # scaler = GradScaler()
 
         images, postProcessed, xHat, codes, logits = None, None, None, None, None
 
@@ -200,17 +201,19 @@ class _baseTrainer(Restorable):
 
                 self._optimizer.zero_grad()
 
-                # with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                # with torch.autocast(device_type="cuda", dtype=torch.float16):
                 (postProcessed, xHat), (rate, distortion), codes, logits = self._model(images)
-                scaler.scale(rate + distortion).backward()
+                # scaler.scale(rate + distortion).backward()
+                (rate + distortion).backward()
 
-                scaler.unscale_(self._optimizer)
+                # scaler.unscale_(self._optimizer)
 
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
 
-                scaler.step(self._optimizer)
+                self._optimizer.step()
+                # scaler.step(self._optimizer)
 
-                scaler.update()
+                # scaler.update()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, **trainingArgs)
             self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset, **trainingArgs)
@@ -235,12 +238,12 @@ class MainTrainer(_baseTrainer):
         self.diffTracker = EMATracker((), 0.99).to(self.rank)
 
         # Call function at every X epoches.
-        self.epochFinishCalls = EpochFrequencyHook(
-            (1, self.log),
+        self.stepFinishCalls = EpochFrequencyHook(
+            (1000, self.log),
             logger=self.saver
         )
-        self.epochStartCalls = EpochFrequencyHook(
-            (self.config.Train.ValFreq, self.validate),
+        self.stepStartCalls = EpochFrequencyHook(
+            (10000, self.validate),
             logger=self.saver
         )
 
@@ -285,14 +288,12 @@ class MainTrainer(_baseTrainer):
             afterRunHook=ChainHook(
                 functools.partial(self.validate, valLoader=valLoader),
                 afterRunHook),
-            epochStartHook=ChainHook(
-                functools.partial(self.epochStartCalls, valLoader=valLoader),
-                epochStartHook),
-            epochFinishHook=ChainHook(
-                self.epochFinishCalls,
-                epochFinishHook),
-            stepStartHook=stepStartHook,
-            stepFinishHook=ChainHook(self._stepFinishHook, stepFinishHook))
+            epochStartHook=epochStartHook,
+            epochFinishHook=epochFinishHook,
+            stepStartHook=ChainHook(
+                functools.partial(self.stepStartCalls, valLoader=valLoader),
+                stepStartHook),
+            stepFinishHook=ChainHook(self._stepFinishHook, self.epochFinishCalls, stepFinishHook))
 
     def _beforeRun(self, hook, *args, **kwargs):
         self.progress.start_task(self.trainingBar)
@@ -314,7 +315,7 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
         self.progress.update(self.epochBar, advance=1)
 
-        if self._step % 100 != 0:
+        if self._step % 5 != 0:
             return
         self.saver.add_scalar(f"Stat/{self.config.Train.Target}", moment, global_step=self._step)
         self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)

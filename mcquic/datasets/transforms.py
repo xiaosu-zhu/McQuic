@@ -26,9 +26,7 @@ def getTraingingPostprocess():
 
 def getEvalTransform():
     return T.Compose([
-        T.ToTensor(),
-        # T.ConvertImageDtype(torch.float32),
-        T.RandomCrop(256, pad_if_needed=True),
+        T.ConvertImageDtype(torch.float32),
         AlignedCrop(128),
         T.Normalize(0.5, 0.5),
     ])

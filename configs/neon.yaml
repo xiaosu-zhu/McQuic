@@ -3,7 +3,7 @@ model:
   key: Compressor
   params:
     channel: 128
-    k: [4096, 4096, 4096] #, 4096, 4096, 4096, 4096, 4096, 4096, 4096]
+    k: [4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096]
     m: 1
 train:
   batchSize: 2
@@ -19,15 +19,16 @@ train:
   optim:
     key: Adam
     params:
-      lr: 2.e-3 # PSNR: 5.e-3
+      lr: 2.e-4 # PSNR: 5.e-3
       # weight_decay: 0.0
       # use_nvlamb: true
   schdr:
+    # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 500
-      warmup_steps: 5
-      gamma: 0.8
+      first_cycle_steps: 40240 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 500
+      gamma: 1.0
   gpu:
     gpus: 8
     vRam: -1
@@ -38,4 +39,4 @@ train:
         epoch: 1000
     - key: CodebookReassign
       params:
-        freq: 1
+        freq: 10
