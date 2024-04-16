@@ -10,6 +10,7 @@ import joblib
 from joblib import Parallel, delayed
 import contextlib
 import datetime
+from tqdm import tqdm
 # from multiprocessing import Queue
 
 import webdataset as wds
@@ -115,7 +116,7 @@ def createwdsSingle(rank: int, start: int, files, targetDir):
     os.makedirs(targetDir, exist_ok=True)
     # 00000 ~ 05000
     sink = wds.ShardWriter(os.path.join(targetDir, FILENAME), maxcount=1000000)
-    for i, f in enumerate(files):
+    for i, f in enumerate(tqdm(files)):
         write(sink, start + i, f)
 
 
@@ -183,7 +184,7 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path, parallel: int = 32)
         json.dump({
             'length': len(allFiles),
             'from': str(imageFolder),
-            'creation': datetime.datetime.now()
+            'creation': datetime.datetime.now().strftime('%Y-%m-%d, %H:%M:%S')
         }, fp)
 
     # progress.remove_task(task)
@@ -193,9 +194,10 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-j", "--jobs", type=int, default=32, show_default=True, help="Parallelized processing jobs.")
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("output", type=click.Path(exists=False, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
-def entryPoint(debug, quiet, path, images, output):
+def entryPoint(debug, quiet, jobs, images, output):
     """Create training set from `images` dir to `output` dir.
 
 Args:
@@ -204,4 +206,4 @@ Args:
 
     output (str): Output dir to create training set.
     """
-    main(images, output)
+    main(images, output, jobs)
