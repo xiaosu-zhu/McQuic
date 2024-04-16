@@ -15,7 +15,7 @@ from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.saver import Saver
 from vlutils.logger import trackingFunctionCalls
-from vlutils.base import Restorable
+from vlutils.base import Restorable, FrequecyHook
 from vlutils.runtime import relativePath
 from rich import filesize
 
@@ -29,7 +29,7 @@ from mcquic.validate import Validator
 from mcquic.utils import StrPath, totalParameters
 from mcquic.datasets.transforms import getTrainingTransform
 
-from .utils import EpochFrequencyHook, checkHook, getRichProgress
+from .utils import checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
     def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
@@ -147,12 +147,14 @@ class _baseTrainer(Restorable):
 
     def _stepStart(self, hook, *args, **kwArgs):
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+        self.saver.debug("[%s] Call `stepStart` hooks done.", self.PrettyStep)
 
     def _stepFinish(self, hook, *args, **kwArgs):
         self._step += 1
         if self._step > 10:
             self._scheduler.step()
         hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+        self.saver.debug("[%s] Call `stepFinish` hooks done.", self.PrettyStep)
 
     def _epochStart(self, hook, *args, **kwArgs):
         # trainSampler.set_epoch(self._epoch)
@@ -193,7 +195,8 @@ class _baseTrainer(Restorable):
 
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, **trainingArgs)
-            for images, _ in trainLoader:
+            for images in trainLoader:
+                self.saver.debug("[%s] Image loaded.", self.PrettyStep)
                 images = self.transform(images.to(self.rank, non_blocking=True))
 
                 self._stepStart(stepStartHook, **trainingArgs)
@@ -202,6 +205,7 @@ class _baseTrainer(Restorable):
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
                 (postProcessed, xHat), (rate, distortion), codes, logits = self._model(images)
+                self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
                 (rate + distortion).backward()
 
@@ -210,12 +214,13 @@ class _baseTrainer(Restorable):
                 torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
 
                 self._optimizer.step()
+                self.saver.debug("[%s] Model backwarded.", self.PrettyStep)
                 # scaler.step(self._optimizer)
 
                 # scaler.update()
 
-                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, **trainingArgs)
-            self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, trainSet=trainLoader.dataset, **trainingArgs)
+                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, postProcessed=postProcessed, logits=logits, **trainingArgs)
+            self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, **trainingArgs)
         self._afterRun(afterRunHook)
 
 
@@ -237,11 +242,11 @@ class MainTrainer(_baseTrainer):
         self.diffTracker = EMATracker((), 0.99).to(self.rank)
 
         # Call function at every X epoches.
-        self.stepFinishCalls = EpochFrequencyHook(
+        self.stepFinishCalls = FrequecyHook(
             (1000, self.log),
             logger=self.saver
         )
-        self.stepStartCalls = EpochFrequencyHook(
+        self.stepStartCalls = FrequecyHook(
             (10000, self.validate),
             logger=self.saver
         )
@@ -351,6 +356,7 @@ class MainTrainer(_baseTrainer):
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
+        self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
     def validate(self, *_, valLoader: DataLoader, **__):
         torch.cuda.empty_cache()
