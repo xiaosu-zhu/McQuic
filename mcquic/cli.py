@@ -103,9 +103,10 @@ Args:
 @entryPoint.command()
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-j", "--jobs", type=int, default=32, show_default=True, help="Parallelized processing jobs.")
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("output", type=click.Path(exists=False, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
-def dataset(debug, quiet, images, output):
+def dataset(debug, quiet, jobs, images, output):
     """Create training set from `images` dir to `output` dir.
 
 Args:
@@ -115,4 +116,4 @@ Args:
     output (str): Output dir to create training set.
     """
     from mcquic.datasets.cli import main
-    main(images, output)
+    main(images, output, jobs)
