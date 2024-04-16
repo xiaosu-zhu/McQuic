@@ -9,6 +9,8 @@ import PIL.Image
 import joblib
 from joblib import Parallel, delayed
 import contextlib
+import datetime
+# from multiprocessing import Queue
 
 import webdataset as wds
 from PIL import Image
@@ -21,6 +23,13 @@ from filelock import Timeout, FileLock
 from mcquic.utils import hashOfFile
 
 _EXT = [".png", ".jpg", ".jpeg"]
+
+FILENAME = 'mcquic_DATA_%05d.tar.gz'
+
+
+from PIL import ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = False
 
 
 def write(sink: wds.ShardWriter, i: int, path: str):
@@ -43,7 +52,7 @@ def findAllWithSize(dirPath, ext):
         finded = glob.glob(os.path.join(dirPath, '**', f'*{e.upper()}'))
         files.extend(finded)
         print(f'Added {len(files) - beforeLen} files.')
-    return files[:10000]
+    return files
 
 
 def _joblibValidateImage(path, strict):
@@ -100,23 +109,62 @@ def getFilesFromDir(root, progress, strict: bool = False):
     return newFile
 
 
-def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
+def createwdsSingle(rank: int, start: int, files, targetDir):
+    targetDir = os.path.join(targetDir, f'split{rank:03d}')
+    shutil.rmtree(targetDir, ignore_errors=True)
+    os.makedirs(targetDir, exist_ok=True)
+    # 00000 ~ 05000
+    sink = wds.ShardWriter(os.path.join(targetDir, FILENAME), maxcount=1000000)
+    for i, f in enumerate(files):
+        write(sink, start + i, f)
+
+
+def combineAllSplits(targetDir, progress):
+    allSplits = sorted(glob.glob(os.path.join(targetDir, 'split*')))
+
+    task = progress.add_task(f"[ Check ]", total=len(allSplits), progress="0.00%", suffix=f"Moving {len(allSplits)} splits...")
+
+    current = 0
+    for i, split in enumerate(allSplits):
+        allTars = sorted(glob.glob(os.path.join(split, '*.tar.gz')))
+        for tar in allTars:
+            shutil.move(tar, os.path.join(targetDir, FILENAME % current))
+            print(f'Moved {tar} to {os.path.join(targetDir, FILENAME % current)}')
+            current += 1
+        progress.update(task, advance=1, progress=f"{i / len(allSplits) * 100 :.2f}%")
+    for split in allSplits:
+        shutil.rmtree(split)
+    return
+
+def main(imageFolder: pathlib.Path, targetDir: pathlib.Path, parallel: int = 32):
     shutil.rmtree(targetDir, ignore_errors=True)
     os.makedirs(targetDir, exist_ok=True)
 
     progress = getRichProgress()
 
     with progress:
-
         allFiles = getFilesFromDir(imageFolder, progress, True)
 
         shuffle(allFiles)
 
-        sink = wds.ShardWriter(os.path.join(targetDir, 'OpenImagesv7_%04d.tar.gz'), maxcount=10000000, maxsize=30000000000)
+        lenSplit = len(allFiles) // parallel
 
-        total = len(allFiles)
+        fileGroups, starts = list(), list()
 
-        task = progress.add_task(f"[ Write ]", total=total, progress="0.00%", suffix=f"Writing {total} images")
+        start = 0
+        for i in range(parallel):
+            fileGroups.append(allFiles[i * lenSplit:(i + 1) * lenSplit])
+            starts.append(start)
+            start += len(fileGroups[-1])
+
+        Parallel(parallel)(delayed(createwdsSingle)(rank, start, files, targetDir) for rank, (start, files) in enumerate(zip(starts, fileGroups)))
+
+        # 00000 ~ 05000
+        # sink = wds.ShardWriter(os.path.join(targetDir, 'OpenImagesv7_%05d.tar.gz'), maxcount=1000000)
+
+        # total = len(allFiles)
+
+        # task = progress.add_task(f"[ Write ]", total=total, progress="0.00%", suffix=f"Writing {total} images")
 
         # class updateFn:
         #     def __init__(self):
@@ -124,17 +172,21 @@ def main(imageFolder: pathlib.Path, targetDir: pathlib.Path):
         #     def __call__(self, advance):
         #         self._current = self._current + advance
         #         progress.update(task, advance=advance, progress=f"{self._current / total * 100 :.2f}%")
-        i = -1
-        for i, f in enumerate(allFiles):
-            write(sink, i, f)
-            progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
+        # i = -1
+        # for i, f in enumerate(allFiles):
+        #     write(sink, i, f)
+        #     progress.update(task, advance=1, progress=f"{(i + 1) / total * 100 :.2f}%")
 
-        with open(os.path.join(targetDir, 'metadata.json'), 'w') as fp:
-            json.dump({
-                'length': len(allFiles)
-            }, fp)
+        combineAllSplits(targetDir, progress)
 
-        progress.remove_task(task)
+    with open(os.path.join(targetDir, 'metadata.json'), 'w') as fp:
+        json.dump({
+            'length': len(allFiles),
+            'from': str(imageFolder),
+            'creation': datetime.datetime.now()
+        }, fp)
+
+    # progress.remove_task(task)
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
