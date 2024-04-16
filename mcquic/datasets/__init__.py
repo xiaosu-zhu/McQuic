@@ -49,6 +49,7 @@ def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: i
     allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
     # NOTE: no need to use disbtribued sampler, since shuffle have difference RNG over time and pid.
     # NOTE: do not call .repeat(), it hangs!
+    # NOTE: if number of shard < nodes, do not use shard_splitter, it hangs!
     trainDataset = wds.WebDataset(allTarGZ).shuffle(1000).map(wdsDecode).map(getTrainingPreprocess())
     # trainDataset = BasicLMDB(datasetPath, transform=getTrainingPreprocess())
     logger.debug("Create training set: %s", trainDataset)
