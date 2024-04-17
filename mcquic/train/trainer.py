@@ -7,6 +7,7 @@ from typing import Callable, Optional, Tuple, Type
 import signal
 import threading
 import gc
+import wandb
 
 import torch
 from torch.cuda.amp import GradScaler
@@ -232,6 +233,11 @@ class MainTrainer(_baseTrainer):
         self.rank = dist.get_rank()
         self.config = config
         self.saver = saver
+        # wandb.login()
+        # self.run = wandb.init(
+        #     project='mcquic',
+        #     config=config.serialize()
+        # )
 
         self.progress = getRichProgress().__enter__()
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
@@ -357,6 +363,7 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
+        self.save()
 
     def validate(self, *_, valLoader: DataLoader, **__):
         torch.cuda.empty_cache()

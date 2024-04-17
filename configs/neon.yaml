@@ -6,7 +6,7 @@ model:
     k: [4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096]
     m: 1
 train:
-  batchSize: 3
+  batchSize: 12
   epoch: 2
   valFreq: 10
   trainSet: /mnt/nfs/CMG/mcquic/
@@ -19,14 +19,14 @@ train:
   optim:
     key: Adam
     params:
-      lr: 5.e-4 # PSNR: 5.e-3
+      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
       # weight_decay: 0.0
       # use_nvlamb: true
   schdr:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 50000 # totalimage / gpus / batchsize * epochs
+      first_cycle_steps: 20000 # totalimage / gpus / batchsize * epochs
       warmup_steps: 500
       gamma: 1.0
   gpu:
