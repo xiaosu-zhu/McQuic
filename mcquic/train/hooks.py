@@ -112,13 +112,13 @@ class DisablePostProcessAfterEpoch(EpochStartHook):
             logger.debug(f"Set PostProcessEnabled to `True` at epoch {epoch}.")
 
 @HookRegistry.register
-class CodebookReassign(EpochFinishHook):
+class CodebookReassign(StepFinishHook):
     def __init__(self, freq) -> None:
         super().__init__()
         self._freq = freq
 
-    def epochFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
-        if epoch % self._freq != 0:
+    def stepFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
+        if (step + 1) % self._freq != 0:
             return
         logger.debug("[%s] Start refresh at epoch %4d.", trainer.PrettyStep, epoch)
 

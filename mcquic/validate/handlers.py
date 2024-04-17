@@ -108,20 +108,20 @@ class ImageCollector(Handler):
 
 
 class IdealBPP(Handler):
-    def __init__(self, m: int, k: List[int], format: str = r"%.4f"):
+    def __init__(self, m: List[int], k: List[int], format: str = r"%.4f"):
         super().__init__(format)
 
         self._k = k
         self._m = m
-        self.accumulated: List[torch.Tensor] = list(torch.zeros((m, k)) for k in self._k)
+        self.accumulated: List[torch.Tensor] = list(torch.zeros((m, k)) for m, k in zip(self._m, self._k))
         self.totalPixels = torch.zeros(())
-        self.totalCodes: List[torch.Tensor] = list(torch.zeros((self._m)) for _ in self._k)
+        self.totalCodes: List[torch.Tensor] = list(torch.zeros((m)) for m, _ in zip(self._m, self._k))
 
     def reset(self):
         self.length = 0
-        self.accumulated = list(torch.zeros((self._m, k)) for k in self._k)
+        self.accumulated = list(torch.zeros((m, k)) for m, k in zip(self._m, self._k))
         self.totalPixels = torch.zeros(())
-        self.totalCodes = list(torch.zeros((self._m)) for _ in self._k)
+        self.totalCodes = list(torch.zeros((m)) for m, _ in zip(self._m, self._k))
 
     def __call__(self, *args: Any, **kwds: Any):
         results, pixels, codes = self.handle(*args, **kwds)
@@ -150,10 +150,10 @@ class IdealBPP(Handler):
         allCounts: List[torch.Tensor] = list()
         codesNum: List[torch.Tensor] = list()
         # [n, m, h, w]
-        for code, k in zip(codes, self._k):
+        for lvl, (code, k) in enumerate(zip(codes, self._k)):
             groupCounts = list()
             groupCodeNum = list()
-            for m in range(self._m):
+            for m in range(self._m[lvl]):
                 # [n, h, w] -> [k]
                 count = torch.bincount(code[:, m].flatten(), minlength=k).cpu()
                 groupCounts.append(count)

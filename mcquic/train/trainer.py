@@ -325,9 +325,9 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
         self.progress.update(self.epochBar, advance=1)
 
-        if self._step % 5 != 0:
-            return
-        self.saver.add_scalar(f"Stat/{self.config.Train.Target}", moment, global_step=self._step)
+        # if self._step % 5 != 0:
+        #     return
+        self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 

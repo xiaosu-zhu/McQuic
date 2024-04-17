@@ -162,7 +162,9 @@ class Neon(BaseCompressor):
     def __init__(self, channel: int, m: List[int], k: List[int], *_, **__):
         encoder = nn.Sequential(
             # convs.conv3x3(3, channel),
-            conv3x3(3, 320),
+            conv3x3(3, 32),
+            AttentionBlock(32, groups=1),
+            ResidualBlock(32, 320, groups=1),
             ResidualBlock(320, 320, groups=1),
             ResidualBlockWithStride(320, 320, groups=1),
             ResidualBlock(320, 320, groups=1),
@@ -170,20 +172,35 @@ class Neon(BaseCompressor):
             ResidualBlock(320, 320, groups=1),
             ResidualBlockWithStride(320, 320, groups=1),
             AttentionBlock(320, groups=1),
-            ResidualBlock(320, 320),
-            ResidualBlockWithStride(320, 640, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            # ResidualBlock(320, 640),
+            # ResidualBlockWithStride(320, 640, groups=1),
+            # ResidualBlock(640, 640),
+            ResidualBlock(320, 640),
+            ResidualBlock(640, 640),
+            ResidualBlock(640, 320),
+            ResidualBlock(320, 32),
+            AttentionBlock(32, groups=1),
         )
         decoder = nn.Sequential(
-            ResidualBlockShuffle(640, 320, groups=1),
-            ResidualBlock(320, 320, groups=1),
+            AttentionBlock(32, groups=1),
+            ResidualBlock(32, 320),
+            # AttentionBlock(32, groups=1),
+            ResidualBlock(320, 640),
+            ResidualBlock(640, 640),
+            ResidualBlock(640, 320),
+            # ResidualBlockShuffle(640, 320, groups=1),
             AttentionBlock(320, groups=1),
-            ResidualBlockShuffle(320, 320, groups=1),
             ResidualBlock(320, 320, groups=1),
             ResidualBlockShuffle(320, 320, groups=1),
             ResidualBlock(320, 320, groups=1),
             ResidualBlockShuffle(320, 320, groups=1),
             ResidualBlock(320, 320, groups=1),
-            conv3x3(320, 3)
+            ResidualBlockShuffle(320, 320, groups=1),
+            ResidualBlock(320, 320, groups=1),
+            ResidualBlock(320, 32, groups=1),
+            AttentionBlock(32, groups=1),
+            conv3x3(32, 3)
         )
         quantizer = NeonQuantizer(m, k)
         super().__init__(encoder, quantizer, decoder)
