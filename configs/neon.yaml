@@ -6,7 +6,7 @@ model:
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 2, 4, 8, 16]
 train:
-  batchSize: 12
+  batchSize: 2
   epoch: 2
   valFreq: 10
   trainSet: /mnt/nfs/CMG/mcquic/
@@ -34,9 +34,6 @@ train:
     vRam: -1
     wantsMore: false
   hooks:
-    - key: DisablePostProcessAfterEpoch
-      params:
-        epoch: 1000
     - key: CodebookReassign
       params:
-        freq: 1
+        freq: 1000
