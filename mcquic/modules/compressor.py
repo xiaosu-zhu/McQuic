@@ -159,7 +159,7 @@ class Compressor(BaseCompressor):
 
 
 class Neon(BaseCompressor):
-    def __init__(self, channel: int, m: int, k: List[int], *_, **__):
+    def __init__(self, channel: int, m: List[int], k: List[int], *_, **__):
         encoder = nn.Sequential(
             # convs.conv3x3(3, channel),
             conv3x3(3, 320),
@@ -185,5 +185,5 @@ class Neon(BaseCompressor):
             ResidualBlock(320, 320, groups=1),
             conv3x3(320, 3)
         )
-        quantizer = NeonQuantizer(k)
+        quantizer = NeonQuantizer(m, k)
         super().__init__(encoder, quantizer, decoder)
