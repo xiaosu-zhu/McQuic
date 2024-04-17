@@ -58,8 +58,8 @@ def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: i
     # NOTE: don't use their (wds) collate function, it is wrong.
     trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True).shuffle(10000).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate)
     logger.debug("Create training set: %s", trainDataset)
-    # NOTE: we use native dataloader, num_worker=4 is very enough
-    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=4, pin_memory=True, prefetch_factor=2, persistent_workers=True)
+    # NOTE: we use native dataloader
+    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=batchSize, pin_memory=True, prefetch_factor=2, persistent_workers=True)
     return trainLoader
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
