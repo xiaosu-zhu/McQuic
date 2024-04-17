@@ -4,7 +4,7 @@ model:
   params:
     channel: 128
     k: [4096, 4096, 4096, 4096, 4096]
-    m: [1, 2, 4, 8, 16]
+    m: [1, 1, 1, 1, 1]
 train:
   batchSize: 2
   epoch: 2
@@ -26,7 +26,7 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 20000 # totalimage / gpus / batchsize * epochs
+      first_cycle_steps: 200000 # totalimage / gpus / batchsize * epochs
       warmup_steps: 500
       gamma: 1.0
   gpu:
@@ -36,4 +36,4 @@ train:
   hooks:
     - key: CodebookReassign
       params:
-        freq: 1000
+        freq: 2000
