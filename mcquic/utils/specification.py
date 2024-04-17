@@ -28,7 +28,7 @@ class ImageSizeSchema(Schema):
         return ImageSize(**data)
 
 class CodeSizeSchema(Schema):
-    m = fields.Int()
+    m = fields.List(fields.Int())
     heights = fields.List(fields.Int())
     widths = fields.List(fields.Int())
     k = fields.List(fields.Int())
@@ -86,13 +86,13 @@ class CodeSize:
         k (List[int]): [k1, k2, ...], codewords amount for each stage.
         m (int): M, multi-codebook amount.
     """
-    m: int
+    m: List[int]
     heights: List[int]
     widths: List[int]
     k: List[int]
 
     def __str__(self) -> str:
-        sequence = ", ".join(f"[{w}x{h}, {k}]" for h, w, k in zip(self.heights, self.widths, self.k))
+        sequence = ", ".join(f"[{w}x{h}, {k}]x{m}" for h, w, k, m in zip(self.heights, self.widths, self.k, self.m))
         return f"""
         {self.m} code-groups: {sequence}"""
 
