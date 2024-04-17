@@ -3,8 +3,8 @@ model:
   key: Compressor
   params:
     channel: 128
-    k: [4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096]
-    m: 1
+    k: [4096, 4096, 4096, 4096, 4096]
+    m: [1, 2, 4, 8, 16]
 train:
   batchSize: 12
   epoch: 2
