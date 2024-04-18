@@ -11,7 +11,7 @@ from rich.progress import Progress
 
 import mcquic
 
-from .registry import *
+from mcquic.utils.registry import *
 
 StrPath = Union[str, Path]
 

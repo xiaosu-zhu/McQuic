@@ -11,7 +11,7 @@ from mcquic.nn.blocks import AttentionBlock
 from mcquic.nn.convs import conv3x3
 from mcquic.utils.specification import FileHeader, ImageSize
 
-from .quantizer import BaseQuantizer, UMGMQuantizer, NeonQuantizer, ResidualBackwardQuantizer
+from mcquic.modules.quantizer import BaseQuantizer, UMGMQuantizer, NeonQuantizer, ResidualBackwardQuantizer
 
 
 class BaseCompressor(nn.Module):

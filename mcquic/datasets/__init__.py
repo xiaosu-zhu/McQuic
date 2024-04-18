@@ -17,8 +17,8 @@ from vlutils.saver import StrPath
 import torch
 from torch.utils.data import default_collate
 
-from .transforms import getTrainingPreprocess, getEvalTransform
-from .dataset import Basic, BasicLMDB
+from mcquic.datasets.transforms import getTrainingPreprocess, getEvalTransform
+from mcquic.datasets.dataset import Basic, BasicLMDB
 
 from torchvision.io.image import ImageReadMode, decode_image
 import webdataset as wds
@@ -48,7 +48,7 @@ def wdsDecode(sample):
     #     sample = sample[:3]
     return sample
 
-def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
+def getTrainLoader(datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
     allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
     # NOTE: no need to use disbtribued sampler, since shuffle have difference RNG over time and pid.
     # NOTE: do not call .repeat(), it hangs!
@@ -56,7 +56,7 @@ def getTrainLoader(rank: int, worldSize: int, datasetPath: StrPath, batchSize: i
     # NOTE: shuffle as large as it can to ensure randomness
     # NOTE: they (wds) recommend to batch in advance, not in dataloader
     # NOTE: don't use their (wds) collate function, it is wrong.
-    trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True).shuffle(10000).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate)
+    trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True).shuffle(10000).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
     trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=batchSize, pin_memory=True, prefetch_factor=2, persistent_workers=True)

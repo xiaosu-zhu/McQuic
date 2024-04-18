@@ -1,4 +1,4 @@
-from .cli import entryPoint
+from mcquic.validate.cli import entryPoint
 
 
 if __name__ == "__main__":

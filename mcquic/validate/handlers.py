@@ -7,8 +7,8 @@ from torchvision.models import inception_v3
 from torch.utils.data import DataLoader, Dataset
 from vlutils.metrics.meter import Handler
 
-from .metrics import MsSSIM as M, PSNR as P
-from .utils import Decibel
+from mcquic.validate.metrics import MsSSIM as M, PSNR as P
+from mcquic.validate.utils import Decibel
 
 
 class MsSSIM(Handler):

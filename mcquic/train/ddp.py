@@ -1,6 +1,6 @@
 import pathlib
 from shutil import copy2
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import os
 import importlib.util
 import sys
@@ -20,8 +20,8 @@ import mcquic.utils.registry
 import mcquic.train.lrSchedulers as _
 import mcquic.loss
 
-from .utils import getSaver, initializeBaseConfigs
-from .trainer import getTrainer
+from mcquic.train.utils import getSaver, initializeBaseConfigs
+from mcquic.train.trainer import getTrainer
 
 
 def registerForTrain(config: Config):
@@ -68,9 +68,9 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distor
     return compressor, criterion
 
 
-def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveDir: str, resume: pathlib.Path, loggingLevel: int):
+def ddpSpawnTraining(config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
     registerForTrain(config)
-
+    rank = int(os.environ['LOCAL_RANK'])
 
     # load ckpt before create trainer, in case it moved to other place.
     if resume is not None:
@@ -88,7 +88,7 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
 
     saver.debug("Creating the world...")
 
-    initializeBaseConfigs(port, rank, worldSize, logger=saver)
+    initializeBaseConfigs(logger=saver)
     saver.debug("Base configs initialized.")
 
     dist.barrier()
@@ -107,7 +107,7 @@ def ddpSpawnTraining(rank: int, worldSize: int, port: str, config: Config, saveD
     #     saver.info("Found ckpt to resume at %s", resume)
     #     trainer.restoreStates(tmpFile)
 
-    trainLoader = getTrainLoader(rank, worldSize, config.Train.TrainSet, config.Train.BatchSize, logger=saver)
+    trainLoader = getTrainLoader(config.Train.TrainSet, config.Train.BatchSize, logger=saver)
     valLoader = getValLoader(config.Train.ValSet, disable=rank != 0, logger=saver)
     saver.debug("Train and validation datasets mounted.")
 
