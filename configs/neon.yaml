@@ -36,4 +36,4 @@ train:
   hooks:
     - key: CodebookReassign
       params:
-        freq: 2000
+        freq: 4000
