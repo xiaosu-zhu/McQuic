@@ -16,11 +16,11 @@ from rich.progress import TimeElapsedColumn, BarColumn, TimeRemainingColumn
 from mcquic.utils import nop
 
 
-def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = port
-    logger.debug("DDP master addr: `%s`", "127.0.0.1")
-    logger.debug("DDP master port: `%s`", port)
+def initializeBaseConfigs(logger: Union[logging.Logger, LoggerBase] = logging.root):
+    # os.environ["MASTER_ADDR"] = "127.0.0.1"
+    # os.environ["MASTER_PORT"] = port
+    # logger.debug("DDP master addr: `%s`", "127.0.0.1")
+    # logger.debug("DDP master port: `%s`", port)
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
 
@@ -30,9 +30,9 @@ def initializeBaseConfigs(port: str, rank: int, worldSize: int, logger: Union[lo
     random.seed(3407)
     np.random.seed(3407)
     logger.debug("            Random seed = `%d`", 3407)
-    torch.cuda.set_device(rank)
-    dist.init_process_group("nccl", world_size=worldSize, rank=rank)
-    logger.debug("Process group = `%s`, world size = `%d`", "NCCL", worldSize)
+    dist.init_process_group("nccl")
+    # logger.debug("Process group = `%s`, world size = `%d`", "NCCL", worldSize)
+    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
 
 
 def getRichProgress(disable: bool = False) -> RichProgress:

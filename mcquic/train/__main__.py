@@ -1,4 +1,4 @@
-from .cli import entryPoint
+from mcquic.train.cli import entryPoint
 
 
 if __name__ == "__main__":

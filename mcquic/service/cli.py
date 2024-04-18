@@ -1,6 +1,6 @@
 import click
 
-from .stCompressService import main
+from mcquic.service.stCompressService import main
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])

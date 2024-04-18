@@ -45,8 +45,8 @@ import torch
 from torch import nn
 
 from mcquic.utils import ModuleRegistry
-from .gdn import GenDivNorm, InvGenDivNorm
-from .convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3, pixelShuffle1x1
+from mcquic.nn.gdn import GenDivNorm, InvGenDivNorm
+from mcquic.nn.convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3, pixelShuffle1x1
 
 
 __all__ = [

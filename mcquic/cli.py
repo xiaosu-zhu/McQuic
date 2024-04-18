@@ -56,7 +56,7 @@ Args:
 
     output (optional, str): Output file path or dir. If not provided, this program will only print compressor information of input file.
     """
-    from .demo import main
+    from mcquic.demo import main
     with torch.inference_mode():
         main(debug, quiet, qp, local, disable_gpu, mse, crop, input, output)
 
@@ -64,17 +64,16 @@ Args:
 @entryPoint.command()
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
-@click.option("-r", "--resume", type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1, help="`.ckpt` file path to resume training.")
 @click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def train(debug, quiet, resume, config):
-    """Train a model.
+def train(debug, quiet, config):
+    """Train a model with automatic resuming.
 
 Args:
 
     config (str): Config file (yaml) path. If `-r/--resume` is present but config is still given, then this config will be used to update the resumed training.
     """
     from mcquic.train.cli import main
-    main(debug, quiet, resume, config)
+    main(debug, quiet, config)
 
 
 @entryPoint.command()
