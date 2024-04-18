@@ -448,9 +448,8 @@ class NeonQuantizer(VariousMQuantizer):
         if not isinstance(k, list):
             raise AttributeError
 
-        from mcquic.nn import pixelShuffle3x3
         from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
-        from mcquic.nn.blocks import AttentionBlock, _residulBlock
+        from mcquic.nn.blocks import AttentionBlock
         from mcquic.nn.convs import conv3x3, conv1x1
 
         # 16, 13,
@@ -461,8 +460,8 @@ class NeonQuantizer(VariousMQuantizer):
 
         for i, (ki, mi) in enumerate(zip(k, m)):
             latentStageEncoder = nn.Sequential(
-                ResidualBlock(32, 32, groups=1),
-                AttentionBlock(32, groups=1),
+                ResidualBlock(32, 32),
+                AttentionBlock(32),
                 ResidualBlockWithStride(32, 32),
                 conv1x1(32, 32, bias=False)
             )
@@ -477,8 +476,8 @@ class NeonQuantizer(VariousMQuantizer):
             restoreHead = nn.Sequential(
                 conv1x1(32, 32, bias=False),
                 ResidualBlockShuffle(32, 32),
-                AttentionBlock(32, groups=1),
-                ResidualBlock(32, 32, groups=1)
+                AttentionBlock(32),
+                ResidualBlock(32, 32)
             )
 
             encoders.append(_quantizerEncoder(quantizer, dequantizer, latentStageEncoder, quantizationHead, latentHead))
@@ -540,6 +539,149 @@ class NeonQuantizer(VariousMQuantizer):
         for decoder, quantized in zip(self._decoders[::-1], quantizeds[::-1]):
             # ↓ restored
             formerLevel = decoder(quantized, formerLevel)
+
+        # update freq in entropy coder
+        self._entropyCoder(oneHots)
+
+        return formerLevel, codes, logits
+
+
+
+class ResidualBackwardQuantizer(VariousMQuantizer):
+    def __init__(self, m: List[int], k: List[int]):
+        if not isinstance(k, list):
+            raise AttributeError
+
+        from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
+        from mcquic.nn.blocks import AttentionBlock
+        from mcquic.nn.convs import conv3x3, conv1x1
+
+        super().__init__(m, k)
+
+        encoders = list()
+        backwards = list()
+        decoders = list()
+        quantizers = list()
+        dequantizers = list()
+
+        # reverse adding encoder, decoder and quantizer
+        for i, (ki, mi) in enumerate(zip(k[::-1], m[::-1])):
+            latentStageEncoder = nn.Sequential(
+                ResidualBlock(32, 32),
+                AttentionBlock(32),
+                ResidualBlockWithStride(32, 32),
+                conv1x1(32, 32, bias=False)
+            )
+            codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, 32 // mi), std=math.sqrt(2 / (5 * 32 / float(mi)))))
+            quantizer = _multiCodebookQuantization(codebook, 0.)
+            dequantizer = _multiCodebookDeQuantization(codebook)
+
+            backward = nn.Sequential(
+                conv1x1(32, 32, bias=False),
+                ResidualBlockShuffle(32, 32),
+                AttentionBlock(32),
+                ResidualBlock(32, 32)
+            ) if i < len(k) - 1 else nn.Identity()
+
+            restoreHead = nn.Sequential(
+                conv1x1(32, 32, bias=False),
+                ResidualBlockShuffle(32, 32),
+                AttentionBlock(32),
+                ResidualBlock(32, 32)
+            )
+
+            encoders.append(latentStageEncoder)
+            backwards.append(backward)
+            decoders.append(restoreHead)
+            quantizers.append(quantizer)
+            dequantizers.append(dequantizer)
+
+        self._encoders: nn.ModuleList = nn.ModuleList(encoders)
+        self._decoders: nn.ModuleList = nn.ModuleList(decoders)
+        self._backwards: nn.ModuleList = nn.ModuleList(backwards)
+        self._quantizers: nn.ModuleList = nn.ModuleList(quantizers)
+        self._dequantizers: nn.ModuleList = nn.ModuleList(dequantizers)
+
+    @property
+    def Codebooks(self):
+        return list(quantizer._codebook for quantizer in self._quantizers)
+
+    def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
+        codes = list()
+        allLatents = list()
+        # firstly, get all latents
+        for encoder in self._encoders:
+            x = encoder(x)
+            allLatents.append(x)
+        # calculate smallest code, and produce residuals from small to large
+        currentLatent = torch.zeros_like(allLatents[-1])
+        for quantizer, dequantizer, backward, latent in zip(self._quantizers, self._dequantizers, self._backwards, allLatents[::-1]):
+            residual = latent - currentLatent
+            code = quantizer.encode(residual)
+            quantized = dequantizer.decode(code)
+            # [n, m, h, w]
+            codes.append(code)
+            currentLatent = backward(quantized)
+        # lv * [n, m, h, w]
+        return codes
+
+    def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
+        formerLevel = None
+        for decoder, dequantizer, code in zip(self._decoders, self._dequantizers, codes):
+            quantized = dequantizer.decode(code)
+            if formerLevel is None:
+                formerLevel = decoder(quantized)
+            else:
+                formerLevel = decoder(quantized + formerLevel)
+        return formerLevel
+
+    def reAssignCodebook(self) -> torch.Tensor:
+        freqs = self.NormalizedFreq
+        reassigned: List[torch.Tensor] = list()
+        for quantizer, freq in zip(self._quantizers, freqs):
+            # freq: [m, ki]
+            reassigned.append(quantizer.reAssignCodebook(freq))
+        return torch.cat(reassigned).float().mean()
+
+    def syncCodebook(self):
+        dist.barrier()
+        for quantizer in self._quantizers:
+            quantizer.syncCodebook()
+
+    def forward(self, x: torch.Tensor):
+        quantizeds = list()
+        codes = list()
+        oneHots = list()
+        logits = list()
+        allLatents = list()
+        # firstly, get all latents
+        for encoder in self._encoders:
+            x = encoder(x)
+            allLatents.append(x)
+
+        ######################## ENCODING ########################
+        # calculate smallest code, and produce residuals from small to large
+        currentLatent = torch.zeros_like(allLatents[-1])
+        for quantizer, dequantizer, backward, latent in zip(self._quantizers, self._dequantizers, self._backwards, allLatents[::-1]):
+            residual = latent - currentLatent
+            sample, code, oneHot, logit = quantizer(residual)
+            quantized = dequantizer(sample)
+            # [n, c, h, w]
+            quantizeds.append(quantized)
+            # [n, m, h, w]
+            codes.append(code)
+            # [n, m, h, w, k]
+            oneHots.append(oneHot)
+            # [n, m, h, w, k]
+            logits.append(logit)
+            currentLatent = backward(quantized)
+
+        ######################## DECODING ########################
+        # From smallest quantized latent, scale 2x, and sum with next quantized latent
+        formerLevel = torch.zeros_like(quantizeds[0])
+        for decoder, quantized in zip(self._decoders, quantizeds):
+            # ↓ restored
+            formerLevel = decoder(formerLevel + quantized)
 
         # update freq in entropy coder
         self._entropyCoder(oneHots)
