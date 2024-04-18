@@ -30,7 +30,7 @@ from mcquic.validate import Validator
 from mcquic.utils import StrPath, totalParameters
 from mcquic.datasets.transforms import getTrainingTransform
 
-from .utils import checkHook, getRichProgress
+from mcquic.train.utils import checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
     def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
@@ -40,7 +40,8 @@ class _baseTrainer(Restorable):
         self.rank = dist.get_rank()
         self.saver.debug("<%s> is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
-        torch.cuda.set_device(self.rank)
+        localRank = int(os.environ['LOCAL_RANK'])
+        torch.cuda.set_device(localRank)
         self.config = config
 
         self._epoch = 0
@@ -50,11 +51,13 @@ class _baseTrainer(Restorable):
         self.lastFormatted = -1
         self.prettyStep = "......"
 
-        self.transform = getTrainingTransform().to(self.rank)
+        self.transform = getTrainingTransform().to(localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
-        self._model = Compound(compressor.to(self.rank), distortion.to(self.rank), device_ids=[self.rank], output_device=self.rank, find_unused_parameters=False)
+
+
+        self._model = Compound(compressor.to(localRank), distortion.to(localRank), device_ids=[localRank], output_device=localRank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -73,6 +76,10 @@ class _baseTrainer(Restorable):
         self.tmpFile = tmpFile
 
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
+
+    def periodicSave(self):
+        if int(os.environ['LOCAL_RANK']) == 0:
+            self.save()
 
     def save(self, path = None):
         self.saver.save(path, trainer=self, config=self.config.serialize())
@@ -104,7 +111,7 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
         try:
-            self.saver.load(path, torch.device(f"cuda:{self.rank}"), logger=self.saver, trainer=self)
+            self.saver.load(path, torch.device(f"cuda:{int(os.environ['LOCAL_RANK'])}"), logger=self.saver, trainer=self)
         except RuntimeError:
             oldCkpt = torch.load(path, "cpu")
             # Using a finetune config
@@ -180,7 +187,7 @@ class _baseTrainer(Restorable):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
-        stepFinishHook = checkHook(stepFinishHook, "StepFinishHook", self.saver)
+        stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave), self.saver), stepFinishHook), "StepFinishHook", self.saver)
         epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
         epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
@@ -192,20 +199,22 @@ class _baseTrainer(Restorable):
 
         # scaler = GradScaler()
 
-        images, postProcessed, xHat, codes, logits = None, None, None, None, None
+        images, xHat, codes, logits = None, None, None, None
+
+        localRank = int(os.environ['LOCAL_RANK'])
 
         for _ in range(self._epoch, self.config.Train.Epoch):
             self._epochStart(epochStartHook, **trainingArgs)
             for images in trainLoader:
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
-                images = self.transform(images.to(self.rank, non_blocking=True))
+                images = self.transform(images.to(localRank, non_blocking=True))
 
                 self._stepStart(stepStartHook, **trainingArgs)
 
                 self._optimizer.zero_grad()
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                (postProcessed, xHat), (rate, distortion), codes, logits = self._model(images)
+                xHat, (rate, distortion), codes, logits = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
                 (rate + distortion).backward()
@@ -220,13 +229,14 @@ class _baseTrainer(Restorable):
 
                 # scaler.update()
 
-                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, postProcessed=postProcessed, logits=logits, **trainingArgs)
-            self._epochFinish(epochFinishHook, images=images, restored=xHat, postProcessed=postProcessed, codes=codes, logits=logits, **trainingArgs)
+                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, logits=logits, **trainingArgs)
+            self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, **trainingArgs)
         self._afterRun(afterRunHook)
 
 
 class MainTrainer(_baseTrainer):
     def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
+        # global rank
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
@@ -243,9 +253,9 @@ class MainTrainer(_baseTrainer):
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
         self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
-        self.validator = Validator(self.config, self.rank)
+        self.validator = Validator(self.config, int(os.environ['LOCAL_RANK']))
 
-        self.diffTracker = EMATracker((), 0.99).to(self.rank)
+        self.diffTracker = EMATracker((), 0.99).to(int(os.environ['LOCAL_RANK']))
 
         # Call function at every X epoches.
         self.stepFinishCalls = FrequecyHook(
@@ -349,7 +359,7 @@ class MainTrainer(_baseTrainer):
         super()._epochStart(hook, *args, **kwArgs)
 
 
-    def log(self, *_, images, postProcessed, restored, codes, logits, **__):
+    def log(self, *_, images, restored, codes, logits, **__):
         self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
         self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
@@ -363,7 +373,6 @@ class MainTrainer(_baseTrainer):
         self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
         self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
-        self.save()
 
     def validate(self, *_, valLoader: DataLoader, **__):
         torch.cuda.empty_cache()
@@ -377,8 +386,6 @@ class MainTrainer(_baseTrainer):
         self.saver.add_scalar(f"Eval/PSNR", results["PSNR"], global_step=self._step)
         self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
         self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
-
-        self.save()
 
         rate, distortion = results["BPP"], results[self.config.Train.Target]
 

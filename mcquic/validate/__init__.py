@@ -1,1 +1,1 @@
-from .validator import Validator
+from mcquic.validate.validator import Validator

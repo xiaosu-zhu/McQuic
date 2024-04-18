@@ -15,7 +15,7 @@ from mcquic.train.utils import getRichProgress
 from mcquic.datasets import getValLoader
 from mcquic.utils import hashOfFile, versionCheck
 
-from .validator import Validator
+from mcquic.validate.validator import Validator
 
 
 def checkArgs(debug: bool, quiet: bool):

@@ -1,5 +1,6 @@
 from typing import Optional, Any, Union, Sequence
 
+import os
 from torch import device, Tensor
 import torch
 from torch.nn import Module
@@ -7,8 +8,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.loss import Distortion, Rate
-from mcquic.datasets.transforms import getTraingingPostprocess
-from .compressor import BaseCompressor
+from mcquic.modules.compressor import BaseCompressor
 
 _device_t = Union[int, device]
 _devices_t = Sequence[_device_t]
@@ -19,29 +19,15 @@ class _compound(Module):
         super().__init__()
         self._compressor = compressor
         self._distortion = distortion
-        self._postProcess = getTraingingPostprocess().to(dist.get_rank())
-        self._postProcessEnabled = True
 
     def forward(self, x: Tensor):
-        if self._postProcessEnabled:
-            post = self._postProcess(x)
-        else:
-            post = x
-        xHat, yHat, codes, logits = self._compressor(post)
+        xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(x, xHat, codes, logits)
-        return (post, xHat), (0.0, distortion), codes, logits
+        return xHat, (0.0, distortion), codes, logits
 
     @property
     def Freq(self):
         return self._compressor._quantizer._entropyCoder.NormalizedFreq
-
-    @property
-    def PostProcessEnabled(self):
-        return self._postProcessEnabled
-
-    @PostProcessEnabled.setter
-    def PostProcessEnabled(self, enabled: bool):
-        self._postProcessEnabled = enabled
 
 
 class Compound(DistributedDataParallel):
@@ -64,11 +50,3 @@ class Compound(DistributedDataParallel):
 
     def formatDistortion(self, loss: torch.Tensor):
         return self.module._distortion.formatDistortion(loss)
-
-    @property
-    def PostProcessEnabled(self):
-        return self.module.PostProcessEnabled
-
-    @PostProcessEnabled.setter
-    def PostProcessEnabled(self, enabled: bool):
-        self.module.PostProcessEnabled = enabled
