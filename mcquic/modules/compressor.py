@@ -13,6 +13,7 @@ from mcquic.utils.specification import FileHeader, ImageSize
 
 from mcquic.modules.quantizer import BaseQuantizer, UMGMQuantizer, NeonQuantizer, ResidualBackwardQuantizer
 
+from fairscale.nn.checkpoint.checkpoint_activations import checkpoint_wrapper
 
 class BaseCompressor(nn.Module):
     def __init__(self, encoder: nn.Module, quantizer: BaseQuantizer, decoder: nn.Module):
@@ -32,11 +33,14 @@ class BaseCompressor(nn.Module):
         self._qp = qp
 
     def forward(self, x: torch.Tensor):
-        y = self._encoder(x)
-        # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-        yHat, codes, logits = self._quantizer(y)
-        xHat = self._decoder(yHat)
-        return xHat, yHat, codes, logits
+        if self.training:
+            # compatible with torch checkpointing
+            x.requires_grad_()
+            y = self._encoder(x)
+            # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
+            yHat, codes, logits = self._quantizer(y)
+            xHat = self._decoder(yHat)
+            return xHat, yHat, codes, logits
 
     def reAssignCodebook(self) -> torch.Tensor:
         return self._quantizer.reAssignCodebook()
@@ -202,5 +206,9 @@ class Neon(BaseCompressor):
             AttentionBlock(32),
             conv3x3(32, 3)
         )
+
+        encoder = checkpoint_wrapper(encoder)
+        decoder = checkpoint_wrapper(decoder)
+
         quantizer = ResidualBackwardQuantizer(m, k)
         super().__init__(encoder, quantizer, decoder)

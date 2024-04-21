@@ -19,8 +19,6 @@ import PIL
 import click
 from mcquic.train.utils import getRichProgress
 
-from filelock import Timeout, FileLock
-
 from mcquic.utils import hashOfFile
 
 _EXT = [".png", ".jpg", ".jpeg"]
