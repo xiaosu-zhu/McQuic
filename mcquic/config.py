@@ -2,6 +2,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 import math
 from typing import Any, Dict, List, Optional
+import torch.distributed as dist
 
 from marshmallow import Schema, fields, post_load, RAISE
 
@@ -136,8 +137,8 @@ class Train:
 
     @property
     def Optim(self) -> General:
-        batchSize = self.BatchSize * self.gpu.GPUs
-        exponent = math.log2(batchSize)
+        globalBatch = self.BatchSize * dist.get_world_size()
+        exponent = math.log2(globalBatch)
         scale = 3 - exponent / 2
         if "lr" in self.optim.Params:
             optim = deepcopy(self.optim)

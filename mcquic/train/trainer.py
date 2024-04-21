@@ -3,23 +3,25 @@ import os
 import pathlib
 import shutil
 from time import sleep
-from typing import Callable, Optional, Tuple, Type
+from typing import Callable, Optional, Tuple, Type, Dict, Any
 import signal
 import threading
 import gc
 import wandb
+import numpy as np
 
 import torch
+from torchvision.transforms.functional import to_pil_image
 from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
-from vlutils.saver import Saver
 from vlutils.logger import trackingFunctionCalls
 from vlutils.base import Restorable, FrequecyHook
 from vlutils.runtime import relativePath
 from rich import filesize
 
+from mcquic.train.utils import Saver
 from mcquic.consts import Consts
 from mcquic.loss import Distortion
 from mcquic.validate.utils import EMATracker
@@ -38,6 +40,7 @@ class _baseTrainer(Restorable):
         self.saver = saver
 
         self.rank = dist.get_rank()
+
         self.saver.debug("<%s> is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
         localRank = int(os.environ['LOCAL_RANK'])
@@ -187,7 +190,7 @@ class _baseTrainer(Restorable):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
-        stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave), self.saver), stepFinishHook), "StepFinishHook", self.saver)
+        stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave)), stepFinishHook), "StepFinishHook", self.saver)
         epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
         epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
@@ -243,11 +246,15 @@ class MainTrainer(_baseTrainer):
         self.rank = dist.get_rank()
         self.config = config
         self.saver = saver
-        # wandb.login()
-        # self.run = wandb.init(
-        #     project='mcquic',
-        #     config=config.serialize()
-        # )
+
+        if self.rank == 0:
+            wandb.login()
+            self.run = wandb.init(
+                project='mcquic',
+                config={
+                    'lr': config.Train.Optim.Params['lr']
+                }
+            )
 
         self.progress = getRichProgress().__enter__()
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
@@ -272,28 +279,28 @@ class MainTrainer(_baseTrainer):
 
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
-        signal.signal(signal.SIGTERM, self._terminatedHandler)
+        # signal.signal(signal.SIGTERM, self._terminatedHandler)
 
-    def _kill(self):
-        sleep(Consts.TimeOut)
-        self.saver.critical("[%s] Timeout exceeds, killed.", self.PrettyStep)
-        signal.raise_signal(signal.SIGKILL)
+    # def _kill(self):
+    #     sleep(Consts.TimeOut)
+    #     self.saver.critical("[%s] Timeout exceeds, killed.", self.PrettyStep)
+    #     signal.raise_signal(signal.SIGKILL)
 
-    # Handle SIGTERM when main process is terminated.
-    # Save necessary info.
-    def _terminatedHandler(self, signum, frame):
-        killer = threading.Thread(target=self._kill, daemon=True)
-        killer.start()
-        self.saver.critical("[%s] Main process was interrupted, try to save necessary info.", self.PrettyStep)
-        self.saver.critical("[%s] This post-process will be killed after %d secs if stuck.", self.PrettyStep, Consts.TimeOut)
-        self.progress.__exit__(None, None, None)
-        self.save(os.path.join(self.saver.SaveDir, "last.ckpt"))
-        self.saver.critical("[%s] Find the last checkpoint at `%s`", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "last.ckpt")))
-        self.summary()
-        self.saver.critical("[%s] QUIT.", self.PrettyStep)
-        # reset to default SIGTERM handler
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        signal.raise_signal(signal.SIGTERM)
+    # # Handle SIGTERM when main process is terminated.
+    # # Save necessary info.
+    # def _terminatedHandler(self, signum, frame):
+    #     killer = threading.Thread(target=self._kill, daemon=True)
+    #     killer.start()
+    #     self.saver.critical("[%s] Main process was interrupted, try to save necessary info.", self.PrettyStep)
+    #     self.saver.critical("[%s] This post-process will be killed after %d secs if stuck.", self.PrettyStep, Consts.TimeOut)
+    #     self.progress.__exit__(None, None, None)
+    #     self.save(os.path.join(self.saver.SaveDir, "last.ckpt"))
+    #     self.saver.critical("[%s] Find the last checkpoint at `%s`", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "last.ckpt")))
+    #     self.summary()
+    #     self.saver.critical("[%s] QUIT.", self.PrettyStep)
+    #     # reset to default SIGTERM handler
+    #     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    #     signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
         if abs(self.bestRate / self.bestDistortion) > 1e4:
@@ -320,7 +327,7 @@ class MainTrainer(_baseTrainer):
         self.progress.start_task(self.epochBar)
 
         super()._beforeRun(hook, *args, **kwargs)
-        self.saver.info("[%s] See you at `%s`", self.PrettyStep, self.saver.TensorboardURL)
+        # self.saver.info("[%s] See you at `%s`", self.PrettyStep, self.saver.TensorboardURL)
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
@@ -335,11 +342,13 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
         self.progress.update(self.epochBar, advance=1)
 
-        # if self._step % 5 != 0:
-        #     return
-        self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
-        self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
-        self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
+        if self._step % 100 != 0:
+            return
+        if self.rank == 0:
+            wandb.log({"Loss/{self.config.Train.Target}": distortionDB, "Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
+        # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
+        # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
+        # self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
     def _epochStart(self, hook, *args, trainLoader: DataLoader, **kwArgs):
         import json
@@ -360,18 +369,33 @@ class MainTrainer(_baseTrainer):
 
 
     def log(self, *_, images, restored, codes, logits, **__):
-        self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
+        if self.rank != 0:
+            return
+        payload: Dict[str, Any] = {
+            'LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10()),
+        }
+        # self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
-        self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
+        # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         freq = self._model.Compressor.NormalizedFreq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
-            self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
-            self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
-        self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
+            payload[f'FreqLv{lv}'] = wandb.Histogram(np_histogram=np.histogram(fr[0], bins=len(fr[0]), range=(0, len(fr[0]))), num_bins=len(fr[0]))
+            payload[f'CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
+            # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
+            # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
+        payload['Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
+        # self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
-        self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
-        self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
+
+        payload['Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
+        # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
+
+        payload['CodeUsage'] = self._model.Compressor.CodeUsage
+        # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
+
+        wandb.log(payload, step=self._step)
+
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
     def validate(self, *_, valLoader: DataLoader, **__):
@@ -382,12 +406,22 @@ class MainTrainer(_baseTrainer):
         self._model.eval()
         results, summary = self.validator.validate(self._epoch, self._model.Compressor, valLoader, self.progress)
 
-        self.saver.add_scalar(f"Eval/MsSSIM", results["MsSSIM"], global_step=self._step)
-        self.saver.add_scalar(f"Eval/PSNR", results["PSNR"], global_step=self._step)
-        self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
-        self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
+
+        wandb.log({
+            'MsSSIM': results["MsSSIM"],
+            'PSNR': results["PSNR"],
+            'BPP': results['BPP'],
+            'Visualization': [wandb.Image(to_pil_image(x)) for x in results["Visualization"]]
+        }, step=self._step)
+
+        # self.saver.add_scalar(f"Eval/MsSSIM", results["MsSSIM"], global_step=self._step)
+        # self.saver.add_scalar(f"Eval/PSNR", results["PSNR"], global_step=self._step)
+        # self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
+        # self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
 
         rate, distortion = results["BPP"], results[self.config.Train.Target]
+
+        self.save()
 
         # TODO: Why d/r continously decrease?
         # if (distortion / rate) > (self.bestDistortion / self.bestRate):

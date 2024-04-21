@@ -56,7 +56,10 @@ if "PYPI_BUILDING" in os.environ:
         "vlutils>=0.1.22",
         "msgpack-python<2",
         # "streamlit<2",
-        "packaging"
+        "packaging",
+        'webdataset',
+        'wandb',
+        'fairscale'
     ]
 
     setupArgs.update({

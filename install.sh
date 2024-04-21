@@ -13,11 +13,11 @@ fi
 
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    conda create -y -n mcquic pytorch-cuda "torchvision" "pytorch>2" -c pytorch -c nvidia
+    conda create -y -n mcquic "python<3.12" pytorch-cuda "torchvision" "pytorch>2" -c pytorch -c nvidia
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    conda create -y -n mcquic "torchvision" "pytorch>2" -c pytorch
+    conda create -y -n mcquic "python<3.12" "torchvision" "pytorch>2" -c pytorch
 else
-    conda create -y -n mcquic pytorch-cuda "torchvision" "pytorch>2" -c pytorch -c nvidia
+    conda create -y -n mcquic "python<3.12" pytorch-cuda "torchvision" "pytorch>2" -c pytorch -c nvidia
 fi
 
 eval "$(conda shell.bash hook)"
@@ -33,7 +33,7 @@ if [[ "$CONDA_DEFAULT_ENV" != "mcquic" ]]; then
 fi
 
 
-ADD_ENTRY=SET pip install -e .
+ADD_ENTRY=SET PYPI_BUILDING=SET pip install -e .
 
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
