@@ -5,10 +5,10 @@ from typing import Any, Callable, List, Union, Dict
 
 import torch
 import torch.distributed as dist
-from vlutils.saver import Saver
 from vlutils.base.freqHook import ChainHook
 from vlutils.base.registry import Registry
 
+from mcquic.train.utils import Saver
 from mcquic.config import General
 from mcquic.train.utils import getSaver
 from mcquic.utils.registry import HookRegistry
