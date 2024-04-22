@@ -364,7 +364,7 @@ class MainTrainer(_baseTrainer):
         if self._step % 10 != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Loss_{self.config.Train.Target}": distortionDB, "Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
+            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
         if self._step % 100 == 0:
             self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
@@ -393,7 +393,7 @@ class MainTrainer(_baseTrainer):
         if self.rank != 0:
             return
         payload: Dict[str, Any] = {
-            'LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10().detach().cpu().numpy()),
+            'Hist/LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10().detach().cpu().numpy()),
         }
         # self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
@@ -401,18 +401,18 @@ class MainTrainer(_baseTrainer):
         freq = self._model.Compressor.NormalizedFreq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
-            payload[f'FreqLv{lv}'] = wandb.Histogram(fr[0].detach().cpu().numpy(), num_bins=min(512, len(fr[0])))
-            payload[f'CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
+            payload[f'Hist/FreqLv{lv}'] = wandb.Histogram(fr[0].detach().cpu().numpy(), num_bins=min(512, len(fr[0])))
+            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
-        payload['Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
+        payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
         # self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
 
-        payload['Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
+        payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
-        payload['CodeUsage'] = float(self._model.Compressor.CodeUsage)
+        payload['Stat/CodeUsage'] = float(self._model.Compressor.CodeUsage)
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
         wandb.log(payload, step=self._step)
@@ -429,10 +429,10 @@ class MainTrainer(_baseTrainer):
 
 
         wandb.log({
-            'MsSSIM': results["MsSSIM"],
-            'PSNR': results["PSNR"],
-            'BPP': results['BPP'],
-            'Visualization': [wandb.Image(to_pil_image(x)) for x in results["Visualization"]]
+            'Eval/MsSSIM': results["MsSSIM"],
+            'Eval/PSNR': results["PSNR"],
+            'Eval/BPP': results['BPP'],
+            'Eval/Visualization': [wandb.Image(to_pil_image(x)) for x in results["Visualization"]]
         }, step=self._step)
 
         # self.saver.add_scalar(f"Eval/MsSSIM", results["MsSSIM"], global_step=self._step)
