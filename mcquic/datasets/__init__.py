@@ -20,6 +20,7 @@ from torch.utils.data import default_collate
 from mcquic.datasets.transforms import getTrainingPreprocess, getEvalTransform
 from mcquic.datasets.dataset import Basic, BasicLMDB
 
+from torchvision.transforms.functional import to_tensor
 from torchvision.io.image import ImageReadMode, decode_image
 import webdataset as wds
 
@@ -37,6 +38,8 @@ class DummyLoader(DataLoader):
 def wdsDecode(sample):
     with io.BytesIO(sample['jpg']) as stream:
         sample = Image.open(stream).convert('RGB')
+        result = to_tensor(sample.copy()).detach().clone()
+        sample.close()
         # sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(sample['jpg'])))
         # UNCHANGED --- Slightly speedup
         # No need to force RGB. Transforms will handle it.
@@ -47,7 +50,7 @@ def wdsDecode(sample):
         #     sample = sample.repeat((3, 1, 1))
         # elif sample.shape[0] == 4:
         #     sample = sample[:3]
-        return sample
+    return result
 
 def getTrainLoader(datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
     allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
