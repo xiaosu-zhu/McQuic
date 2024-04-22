@@ -5,7 +5,7 @@ model:
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
 train:
-  batchSize: 2
+  batchSize: 6
   epoch: 2
   valFreq: 10
   trainSet: /ssdfs/datahome/tj24011/dataset

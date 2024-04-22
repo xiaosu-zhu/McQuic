@@ -21,4 +21,6 @@ sbatch singlenode.sh
 # 输出在 slurm-jobid.out, slurm-jobid.err
 # job 状态
 squeue --job JOB_ID
+# 取消
+scancel JOB_ID
 ```
