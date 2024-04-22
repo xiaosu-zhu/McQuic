@@ -129,7 +129,7 @@ class CodebookReassign(StepFinishHook):
 
         logger.debug("[%s] End refresh at epoch %4d.", trainer.PrettyStep, epoch)
 
-        wandb.log("Stat/ReAssignProportion", reAssignProportion, global_step=step)
+        wandb.log("Stat/ReAssignProportion", reAssignProportion, step=step)
 
 @HookRegistry.register
 class FinetuneCodebook(EpochStartHook, BeforeRunHook):
