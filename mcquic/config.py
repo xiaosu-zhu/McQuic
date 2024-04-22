@@ -31,6 +31,7 @@ class GPUSchema(Schema):
 class TrainSchema(Schema):
     class Meta:
         unknown = RAISE
+    totalStep = fields.Int(required=True, description="Total steps for training.`.", exclusiveMinimum=0)
     batchSize = fields.Int(required=True, description="Batch size for training. NOTE: The actual batch size (whole world) is computed by `batchSize * gpus`.", exclusiveMinimum=0)
     epoch = fields.Int(required=True, description="Total training epochs.", exclusiveMinimum=0)
     valFreq = fields.Int(required=True, description="Run validation after every `valFreq` epochs.", exclusiveMinimum=0)
@@ -94,6 +95,7 @@ class GPU:
 
 @dataclass
 class Train:
+    totalStep: int
     batchSize: int
     epoch: int
     valFreq: int
@@ -106,6 +108,10 @@ class Train:
     gpu: GPU
     hooks: Optional[List[General]] = None
     externalLib: Optional[List[str]] = None
+
+    @property
+    def TotalStep(self) -> int:
+        return self.totalStep
 
     @property
     def BatchSize(self) -> int:
