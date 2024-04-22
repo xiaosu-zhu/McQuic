@@ -18,14 +18,14 @@ train:
   optim:
     key: Adam
     params:
-      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      lr: 2.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
       # weight_decay: 0.0
       # use_nvlamb: true
   schdr:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 794348 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 2 * 2)
+      first_cycle_steps: 595761 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 2 * 1.5)
       warmup_steps: 500
       gamma: 1.0
   gpu:

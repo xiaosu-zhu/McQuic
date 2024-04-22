@@ -249,7 +249,7 @@ class MainTrainer(_baseTrainer):
         self.saver = saver
 
         if self.rank == 0:
-            wandb.login()
+            wandb.login(key=os.environ['MCQUIC_WANDB_LOGIN'])
             self.run = wandb.init(
                 project='mcquic',
                 config={
@@ -379,7 +379,7 @@ class MainTrainer(_baseTrainer):
             return metadata['length']
 
         length = parseLengthFromMetadata(self.config.Train.TrainSet)
-        totalBatches = length // self.config.Train.BatchSize
+        totalBatches = length // (self.worldSize * self.config.Train.BatchSize)
         self.progress.update(self.trainingBar, total=totalBatches)
         self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
 
