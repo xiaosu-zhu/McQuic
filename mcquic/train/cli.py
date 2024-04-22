@@ -45,7 +45,7 @@ def main(debug: bool, quiet: bool, configPath: pathlib.Path) -> int:
 
     # `daemon` is True --- Way to handle SIGINT globally.
     # Give up handling SIGINT by yourself... PyTorch hacks it.
-    ddpSpawnTraining(str(configPath), config, config.Train.SaveDir, resume, loggingLevel)
+    ddpSpawnTraining(config, config.Train.SaveDir, resume, loggingLevel)
     return 0
 
 
