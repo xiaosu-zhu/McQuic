@@ -2,6 +2,7 @@ import abc
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, List, Union, Dict
+import wandb
 
 import torch
 import torch.distributed as dist
@@ -128,7 +129,7 @@ class CodebookReassign(StepFinishHook):
 
         logger.debug("[%s] End refresh at epoch %4d.", trainer.PrettyStep, epoch)
 
-        logger.add_scalar("Stat/ReAssignProportion", reAssignProportion, global_step=step)
+        wandb.log("Stat/ReAssignProportion", reAssignProportion, global_step=step)
 
 @HookRegistry.register
 class FinetuneCodebook(EpochStartHook, BeforeRunHook):
