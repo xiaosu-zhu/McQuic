@@ -449,7 +449,7 @@ class MainTrainer(_baseTrainer):
             self.bestDistortion = distortion
             self.bestRate = rate
             # self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
-            shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
+            shutil.copy2(os.path.join(self.saver.SaveDir, f"val_{self._step}.ckpt"), os.path.join(self.saver.SaveDir, "best.ckpt"))
         self.saver.info("[%s] %s", self.PrettyStep, summary)
         self._model.train()
 
