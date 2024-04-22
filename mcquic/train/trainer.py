@@ -81,7 +81,7 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
-    def periodicSave(self):
+    def periodicSave(self, *_, **__):
         if int(os.environ['LOCAL_RANK']) == 0:
             self.save()
 
@@ -191,7 +191,7 @@ class _baseTrainer(Restorable):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
-        stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave)), stepFinishHook), "StepFinishHook", self.saver)
+        stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave), logger=self.saver), stepFinishHook), "StepFinishHook", self.saver)
         epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
         epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
@@ -363,7 +363,9 @@ class MainTrainer(_baseTrainer):
         if self._step % 10 != 0:
             return
         if self.rank == 0:
-            wandb.log({"Loss/{self.config.Train.Target}": distortionDB, "Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
+            wandb.log({f"Loss_{self.config.Train.Target}": distortionDB, "Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
+        if self._step % 100 == 0:
+            self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self.progress.get_task(self.epochBar).total)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.epochBar).time_remaining))
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         # self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
@@ -390,7 +392,7 @@ class MainTrainer(_baseTrainer):
         if self.rank != 0:
             return
         payload: Dict[str, Any] = {
-            'LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10()),
+            'LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10().detach().cpu().numpy()),
         }
         # self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
@@ -398,7 +400,7 @@ class MainTrainer(_baseTrainer):
         freq = self._model.Compressor.NormalizedFreq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
-            payload[f'FreqLv{lv}'] = wandb.Histogram(np_histogram=np.histogram(fr[0], bins=len(fr[0]), range=(0, len(fr[0]))), num_bins=len(fr[0]))
+            payload[f'FreqLv{lv}'] = wandb.Histogram(fr[0].detach().cpu().numpy(), num_bins=min(512, len(fr[0])))
             payload[f'CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
