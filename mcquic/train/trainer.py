@@ -350,6 +350,7 @@ class MainTrainer(_baseTrainer):
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
         super()._afterRun(hook, *args, **kwArgs)
+        self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
     def _stepFinishHook(self, *_, rate, distortion, **__):
@@ -440,7 +441,7 @@ class MainTrainer(_baseTrainer):
 
         rate, distortion = results["BPP"], results[self.config.Train.Target]
 
-        self.save()
+        self.save(os.path.join(self.saver.SaveDir, f"val_{self._step}.ckpt"))
 
         # TODO: Why d/r continously decrease?
         # if (distortion / rate) > (self.bestDistortion / self.bestRate):
