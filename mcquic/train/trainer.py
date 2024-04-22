@@ -14,7 +14,7 @@ import datetime
 import torch
 from torchvision.transforms.functional import to_pil_image
 from torch.cuda.amp import GradScaler
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, Dataset
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.logger import trackingFunctionCalls
@@ -179,7 +179,7 @@ class _baseTrainer(Restorable):
     #     hook(self._step, self, *args, logger=self.saver, **kwArgs)
 
 
-    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: Dataset, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
@@ -328,7 +328,7 @@ class MainTrainer(_baseTrainer):
             self.saver.info("[%s] Total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self.PrettyStep, self.bestRate, self.bestDistortion)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
-    def train(self, trainLoader: DataLoader, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: Dataset, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader,
             beforeRunHook=beforeRunHook,
             afterRunHook=ChainHook(
@@ -463,7 +463,7 @@ class PalTrainer(_baseTrainer):
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
-    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: Dataset, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
