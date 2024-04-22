@@ -9,6 +9,7 @@ import threading
 import gc
 import wandb
 import numpy as np
+import datetime
 
 import torch
 from torchvision.transforms.functional import to_pil_image
@@ -35,7 +36,7 @@ from mcquic.datasets.transforms import getTrainingTransform
 from mcquic.train.utils import checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
-    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
+    def __init__(self, configSource: str, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
         super().__init__()
         self.saver = saver
 
@@ -238,7 +239,7 @@ class _baseTrainer(Restorable):
 
 
 class MainTrainer(_baseTrainer):
-    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
+    def __init__(self, configSource: str, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         # global rank
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
@@ -251,9 +252,10 @@ class MainTrainer(_baseTrainer):
             wandb.login()
             self.run = wandb.init(
                 project='mcquic',
-                config={
-                    'lr': config.Train.Optim.Params['lr']
-                }
+                config=configSource,
+                save_code=True,
+                job_type='train',
+                name=datetime.datetime.now().strftime(r'%m%d-%H:%M'),
             )
 
         self.progress = getRichProgress().__enter__()
@@ -277,7 +279,7 @@ class MainTrainer(_baseTrainer):
         self.bestRate = 1e10
         self.bestDistortion = -1
 
-        super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
+        super().__init__(configSource, config, tmpFile, modelFn, optimizer, scheduler, saver)
 
         # signal.signal(signal.SIGTERM, self._terminatedHandler)
 
@@ -437,7 +439,7 @@ class MainTrainer(_baseTrainer):
 
 
 class PalTrainer(_baseTrainer):
-    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
+    def __init__(self, configSource: str, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         if dist.get_rank() == 0:
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
@@ -446,7 +448,7 @@ class PalTrainer(_baseTrainer):
         return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
-def getTrainer(rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
+def getTrainer(rank: int, configSource: str, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
     if rank == 0:
-        return MainTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
-    return PalTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
+        return MainTrainer(configSource, config, tmpFile, modelFn, optimizer, scheduler, saver)
+    return PalTrainer(configSource, config, tmpFile, modelFn, optimizer, scheduler, saver)
