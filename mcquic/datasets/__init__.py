@@ -35,18 +35,19 @@ class DummyLoader(DataLoader):
 
 
 def wdsDecode(sample):
-    sample = Image.open(io.BytesIO(sample['jpg'])).convert('RGB')
-    # sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(sample['jpg'])))
-    # UNCHANGED --- Slightly speedup
-    # No need to force RGB. Transforms will handle it.
-    # sample = decode_image(sample, ImageReadMode.UNCHANGED)
-    # if len(sample.shape) < 3:
-    #     sample = sample.expand(3, *sample.shape)
-    # if sample.shape[0] == 1:
-    #     sample = sample.repeat((3, 1, 1))
-    # elif sample.shape[0] == 4:
-    #     sample = sample[:3]
-    return sample
+    with io.BytesIO(sample['jpg']) as stream:
+        sample = Image.open(stream).convert('RGB')
+        # sample = torch.ByteTensor(torch.ByteStorage.from_buffer(bytearray(sample['jpg'])))
+        # UNCHANGED --- Slightly speedup
+        # No need to force RGB. Transforms will handle it.
+        # sample = decode_image(sample, ImageReadMode.UNCHANGED)
+        # if len(sample.shape) < 3:
+        #     sample = sample.expand(3, *sample.shape)
+        # if sample.shape[0] == 1:
+        #     sample = sample.repeat((3, 1, 1))
+        # elif sample.shape[0] == 4:
+        #     sample = sample[:3]
+        return sample
 
 def getTrainLoader(datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
     allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
@@ -59,7 +60,7 @@ def getTrainLoader(datasetPath: StrPath, batchSize: int, logger: Union[logging.L
     trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node).shuffle(10000).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
-    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=batchSize + 4, pin_memory=True, prefetch_factor=2, persistent_workers=True)
+    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=batchSize + 4, pin_memory=True, prefetch_factor=2, persistent_workers=False)
     return trainLoader
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):

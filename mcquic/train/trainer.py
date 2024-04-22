@@ -226,6 +226,7 @@ class _baseTrainer(Restorable):
                 # scaler.update()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, logits=logits, **trainingArgs)
+                del images
                 if self._step >= self._totalStep:
                     break
                 if self._step % 1000 == 0:
