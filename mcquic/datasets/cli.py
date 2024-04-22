@@ -46,9 +46,9 @@ def findAllWithSize(dirPath, ext):
     for e in ext:
         beforeLen = len(files)
         print(f'Searching {e} in {dirPath} ...')
-        finded = glob.glob(os.path.join(dirPath, '**', f'*{e.lower()}'))
+        finded = glob.glob(os.path.join(dirPath, '**', f'*{e.lower()}'), recursive=True)
         files.extend(finded)
-        finded = glob.glob(os.path.join(dirPath, '**', f'*{e.upper()}'))
+        finded = glob.glob(os.path.join(dirPath, '**', f'*{e.upper()}'), recursive=True)
         files.extend(finded)
         print(f'Added {len(files) - beforeLen} files.')
     return files
