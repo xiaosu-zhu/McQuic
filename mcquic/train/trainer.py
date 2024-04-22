@@ -48,8 +48,9 @@ class _baseTrainer(Restorable):
         torch.cuda.set_device(localRank)
         self.config = config
 
-        self._epoch = 0
         self._step = 0
+
+        self._totalStep = config.Train.TotalStep
 
         # Used for self.PrettyStep
         self.lastFormatted = -1
@@ -148,52 +149,43 @@ class _baseTrainer(Restorable):
     def _beforeRun(self, hook, *args, **kwArgs):
         if self.tmpFile is not None:
             self.restoreStates(self.tmpFile)
-            self.saver.info("[%s] Resume training at %s steps / %d epochs.", self.PrettyStep, self.PrettyStep, self._epoch)
+            self.saver.info("[%s] Resume training at %s steps.", self.PrettyStep, self.PrettyStep)
         self.saver.info("[%s] Start training.", self.PrettyStep)
 
-        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+        hook(self._step, 0, self, *args, logger=self.saver, **kwArgs)
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.saver.debug("[%s] Training loop finished.", self.PrettyStep)
-        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+        hook(self._step, 0, self, *args, logger=self.saver, **kwArgs)
 
     def _stepStart(self, hook, *args, **kwArgs):
-        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+        hook(self._step, 0, self, *args, logger=self.saver, **kwArgs)
         self.saver.debug("[%s] Call `stepStart` hooks done.", self.PrettyStep)
 
     def _stepFinish(self, hook, *args, **kwArgs):
         self._step += 1
         if self._step > 10:
             self._scheduler.step()
-        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+        hook(self._step, 0, self, *args, logger=self.saver, **kwArgs)
         self.saver.debug("[%s] Call `stepFinish` hooks done.", self.PrettyStep)
 
-    def _epochStart(self, hook, *args, **kwArgs):
-        # trainSampler.set_epoch(self._epoch)
+    # def _epochStart(self, hook, *args, **kwArgs):
+    #     # trainSampler.set_epoch(self._epoch)
 
-        self.saver.debug("[%s] Epoch %4d started.", self.PrettyStep, self._epoch + 1)
+    #     # self.saver.debug("[%s] Epoch %4d started.", self.PrettyStep, self._epoch + 1)
 
-        gc.collect()
-        gc.collect()
-        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
-
-    def _epochFinish(self, hook, *args, **kwArgs):
-        self._epoch += 1
-
-        self.saver.debug("[%s] Epoch %4d finished.", self.PrettyStep, self._epoch)
-
-        self.saver.debug("[%s] Lr is set to %.2e.", self.PrettyStep, self._scheduler.get_last_lr()[0])
-
-        hook(self._step, self._epoch, self, *args, logger=self.saver, **kwArgs)
+    #     gc.collect()
+    #     gc.collect()
+    #     hook(self._step, self, *args, logger=self.saver, **kwArgs)
 
 
-    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
         stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave), logger=self.saver), stepFinishHook), "StepFinishHook", self.saver)
-        epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
-        epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
+        # epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
+        # epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
         trainingArgs = {
             "trainLoader": trainLoader
@@ -207,8 +199,8 @@ class _baseTrainer(Restorable):
 
         localRank = int(os.environ['LOCAL_RANK'])
 
-        for _ in range(self._epoch, self.config.Train.Epoch):
-            self._epochStart(epochStartHook, **trainingArgs)
+        while True:
+            # self._epochStart(epochStartHook, **trainingArgs)
             for images in trainLoader:
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
                 images = self.transform(images.to(localRank, non_blocking=True))
@@ -234,7 +226,15 @@ class _baseTrainer(Restorable):
                 # scaler.update()
 
                 self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, logits=logits, **trainingArgs)
-            self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, **trainingArgs)
+                if self._step >= self._totalStep:
+                    break
+                if self._step % 1000 == 0:
+                    gc.collect()
+                    gc.collect()
+
+            if self._step >= self._totalStep:
+                break
+            # self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, **trainingArgs)
         self._afterRun(afterRunHook)
 
 
@@ -255,7 +255,7 @@ class MainTrainer(_baseTrainer):
                 config={
                     'model': config.Model.Params,
                     'batch_size': config.Train.BatchSize,
-                    'epoch': config.Train.Epoch,
+                    # 'epoch': config.Train.Epoch,
                     'target': config.Train.Target,
                     'optim': {
                         'key': config.Train.Optim.Key,
@@ -276,7 +276,7 @@ class MainTrainer(_baseTrainer):
 
         self.progress = getRichProgress().__enter__()
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
-        self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
+        # self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
         self.validator = Validator(self.config, int(os.environ['LOCAL_RANK']))
 
@@ -322,19 +322,17 @@ class MainTrainer(_baseTrainer):
 
     def summary(self):
         if abs(self.bestRate / self.bestDistortion) > 1e4:
-            self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: N/A.", self.PrettyStep, self._epoch, self.PrettyStep)
+            self.saver.info("[%s] Total steps: %s, best rate/distortion: N/A.", self.PrettyStep, self.PrettyStep)
         else:
-            self.saver.info("[%s] Total epoches: %d, total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self._epoch, self.PrettyStep, self.bestRate, self.bestDistortion)
+            self.saver.info("[%s] Total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self.PrettyStep, self.bestRate, self.bestDistortion)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
-    def train(self, trainLoader: DataLoader, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoader: DataLoader, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader,
             beforeRunHook=beforeRunHook,
             afterRunHook=ChainHook(
                 functools.partial(self.validate, valLoader=valLoader),
                 afterRunHook),
-            epochStartHook=epochStartHook,
-            epochFinishHook=epochFinishHook,
             stepStartHook=ChainHook(
                 functools.partial(self.stepStartCalls, valLoader=valLoader),
                 stepStartHook),
@@ -342,7 +340,9 @@ class MainTrainer(_baseTrainer):
 
     def _beforeRun(self, hook, *args, **kwargs):
         self.progress.start_task(self.trainingBar)
-        self.progress.start_task(self.epochBar)
+
+        self.progress.update(self.trainingBar, total=self._totalStep)
+        self.progress.reset(self.trainingBar)
 
         super()._beforeRun(hook, *args, **kwargs)
         # self.saver.info("[%s] See you at `%s`", self.PrettyStep, self.saver.TensorboardURL)
@@ -358,34 +358,33 @@ class MainTrainer(_baseTrainer):
 
         task = self.progress.get_task(self.trainingBar)
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
-        self.progress.update(self.epochBar, advance=1)
 
         if self._step % 10 != 0:
             return
         if self.rank == 0:
             wandb.log({f"Loss_{self.config.Train.Target}": distortionDB, "Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
         if self._step % 100 == 0:
-            self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self.progress.get_task(self.epochBar).total)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.epochBar).time_remaining))
+            self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         # self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
 
-    def _epochStart(self, hook, *args, trainLoader: DataLoader, **kwArgs):
-        import json
-        def parseLengthFromMetadata(path):
-            metadata = os.path.join(path, 'metadata.json')
-            with open(metadata, 'r') as fp:
-                metadata = json.load(fp)
-            return metadata['length']
+    # def _epochStart(self, hook, *args, trainLoader: DataLoader, **kwArgs):
+    #     import json
+    #     def parseLengthFromMetadata(path):
+    #         metadata = os.path.join(path, 'metadata.json')
+    #         with open(metadata, 'r') as fp:
+    #             metadata = json.load(fp)
+    #         return metadata['length']
 
-        length = parseLengthFromMetadata(self.config.Train.TrainSet)
-        totalBatches = length // (self.worldSize * self.config.Train.BatchSize)
-        self.progress.update(self.trainingBar, total=totalBatches)
-        self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
+    #     # length = parseLengthFromMetadata(self.config.Train.TrainSet)
+    #     # totalBatches = length // (self.worldSize * self.config.Train.BatchSize)
+    #     self.progress.update(self.trainingBar, total=self._totalStep)
+    #     # self.progress.update(self.epochBar, total=self.config.Train.Epoch * totalBatches, completed=self._step, description=f"[{self._epoch + 1:4d}/{self.config.Train.Epoch:4d}]")
 
-        self.progress.reset(self.trainingBar)
+    #     self.progress.reset(self.trainingBar)
 
-        super()._epochStart(hook, *args, **kwArgs)
+    #     # super()._epochStart(hook, *args, **kwArgs)
 
 
     def log(self, *_, images, restored, codes, logits, **__):
@@ -421,10 +420,10 @@ class MainTrainer(_baseTrainer):
     def validate(self, *_, valLoader: DataLoader, **__):
         torch.cuda.empty_cache()
 
-        self.saver.debug("[%s] Start validation at epoch %4d.", self.PrettyStep, self._epoch)
+        self.saver.debug("[%s] Start validation.", self.PrettyStep)
 
         self._model.eval()
-        results, summary = self.validator.validate(self._epoch, self._model.Compressor, valLoader, self.progress)
+        results, summary = self.validator.validate(0, self._model.Compressor, valLoader, self.progress)
 
 
         wandb.log({
@@ -448,12 +447,12 @@ class MainTrainer(_baseTrainer):
         if distortion > self.bestDistortion:
             self.bestDistortion = distortion
             self.bestRate = rate
-            self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
+            # self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
             shutil.copy2(self.saver.SavePath, os.path.join(self.saver.SaveDir, "best.ckpt"))
         self.saver.info("[%s] %s", self.PrettyStep, summary)
         self._model.train()
 
-        self.saver.debug("[%s] End validation at epoch %4d.", self.PrettyStep, self._epoch)
+        self.saver.debug("[%s] End validation.", self.PrettyStep)
 
 
 class PalTrainer(_baseTrainer):
@@ -462,8 +461,8 @@ class PalTrainer(_baseTrainer):
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
-    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, epochStartHook: Optional[Callable] = None, epochFinishHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, epochStartHook=epochStartHook, epochFinishHook=epochFinishHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
+    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+        return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
 def getTrainer(rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
