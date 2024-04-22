@@ -68,7 +68,7 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distor
     return compressor, criterion
 
 
-def ddpSpawnTraining(configSource: str, config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
+def ddpSpawnTraining(config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
     registerForTrain(config)
     rank = int(os.environ['LOCAL_RANK'])
 
@@ -101,7 +101,7 @@ def ddpSpawnTraining(configSource: str, config: Config, saveDir: str, resume: Un
     optimizerFn = OptimizerRegistry.get(config.Train.Optim.Key, logger=saver)
     schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.Key, logger=saver)
 
-    trainer = getTrainer(rank, configSource, config, tmpFile, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
+    trainer = getTrainer(rank, config, tmpFile, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
 
     # if tmpFile is not None:
     #     saver.info("Found ckpt to resume at %s", resume)

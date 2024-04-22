@@ -1,4 +1,3 @@
-$schema: "https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/configs/schema.json"
 model:
   key: Compressor
   params:
@@ -9,9 +8,9 @@ train:
   batchSize: 2
   epoch: 2
   valFreq: 10
-  trainSet: /mnt/nfs/CMG/mcquic/
-  valSet: valid
-  saveDir: saved
+  trainSet: /ssdfs/datahome/tj24011/dataset
+  valSet: /ssdfs/datahome/tj24011/kodak
+  saveDir: /share/home/tj24011/workspace/McQuic/saved
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py

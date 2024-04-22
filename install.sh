@@ -46,5 +46,5 @@ fi
 
 echo "Installation done!"
 
-echo "If you want to train models, please install NVIDIA/Apex manually."
+# echo "If you want to train models, please install NVIDIA/Apex manually."
 echo "If you want to use streamlit service, please install streamlit via pip."

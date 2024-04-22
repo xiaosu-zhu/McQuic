@@ -17,5 +17,8 @@ NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 torchrun --rdzv-backend=c10d --rdzv-endpoi
 
 使用 slurm 时：
 ```bash
-sbatch sbatch_run.sh
+sbatch singlenode.sh
+# 输出在 slurm-jobid.out, slurm-jobid.err
+# job 状态
+squeue --job JOB_ID
 ```
