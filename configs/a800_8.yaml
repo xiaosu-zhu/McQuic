@@ -1,0 +1,39 @@
+$schema: "https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/configs/schema.json"
+model:
+  key: Compressor
+  params:
+    channel: 128
+    k: [4096, 4096, 4096, 4096, 4096]
+    m: [1, 1, 1, 1, 1]
+train:
+  batchSize: 2
+  epoch: 2
+  valFreq: 10
+  trainSet: /mnt/nfs/CMG/mcquic/
+  valSet: valid
+  saveDir: saved
+  target: MsSSIM
+  externalLib: []
+    # - some/modules/to/be/registered1.py
+    # - some/modules/to/be/registered2.py
+  optim:
+    key: Adam
+    params:
+      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      # weight_decay: 0.0
+      # use_nvlamb: true
+  schdr:
+    # key: Placeholder
+    key: CosineAnnealingWarmupRestarts
+    params:
+      first_cycle_steps: 794348 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 2 * 2)
+      warmup_steps: 500
+      gamma: 1.0
+  gpu:
+    gpus: 8
+    vRam: -1
+    wantsMore: false
+  hooks:
+    - key: CodebookReassign
+      params:
+        freq: 4000
