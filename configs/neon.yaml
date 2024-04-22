@@ -6,6 +6,7 @@ model:
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
 train:
+  totalStep: 200 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 2
   epoch: 2
   valFreq: 10
@@ -26,9 +27,10 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 200000 # totalimage / gpus / batchsize * epochs
-      warmup_steps: 500
+      first_cycle_steps: 200 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 5
       gamma: 1.0
+      lrScaleRatio: 0.0
   gpu:
     gpus: 8
     vRam: -1
