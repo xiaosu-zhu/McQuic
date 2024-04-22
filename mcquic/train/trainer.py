@@ -360,7 +360,7 @@ class MainTrainer(_baseTrainer):
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
         self.progress.update(self.epochBar, advance=1)
 
-        if self._step % 100 != 0:
+        if self._step % 10 != 0:
             return
         if self.rank == 0:
             wandb.log({"Loss/{self.config.Train.Target}": distortionDB, "Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
@@ -409,7 +409,7 @@ class MainTrainer(_baseTrainer):
         payload['Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
-        payload['CodeUsage'] = self._model.Compressor.CodeUsage
+        payload['CodeUsage'] = float(self._model.Compressor.CodeUsage)
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
         wandb.log(payload, step=self._step)
