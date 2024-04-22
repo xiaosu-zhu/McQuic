@@ -12,7 +12,9 @@ quantizer 部分去除了 einsum，einsum 会导致 grad stride 与 bucket view 
 https://github.com/pytorch/pytorch/issues/116423
 ```
 ```bash
-NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 mcquic/train/__main__.py configs/neon.yaml
+# IF You don't want to resume training!
+rm -rf saved/latest
+NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=8 mcquic/train/__main__.py configs/neon.yaml
 ```
 
 使用 slurm 时：
