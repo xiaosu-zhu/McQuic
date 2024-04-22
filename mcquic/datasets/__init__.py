@@ -60,11 +60,11 @@ def getTrainLoader(datasetPath: StrPath, batchSize: int, logger: Union[logging.L
     # NOTE: shuffle as large as it can to ensure randomness
     # NOTE: they (wds) recommend to batch in advance, not in dataloader
     # NOTE: don't use their (wds) collate function, it is wrong.
-    trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node).shuffle(50).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
+    trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node).shuffle(500).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
     trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=batchSize + 4, pin_memory=True, prefetch_factor=2, persistent_workers=False)
-    return trainDataset
+    return trainLoader
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
     if disable:
