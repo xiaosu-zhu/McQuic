@@ -1,5 +1,5 @@
 model:
-  key: Compressor
+  key: Generator
   params:
     channel: 32
     k:
@@ -8,6 +8,7 @@ model:
     - 4096
     - 4096
     - 4096
+    loadFrom: compressor.ckpt
     m:
     - 1
     - 1

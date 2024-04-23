@@ -1,10 +1,11 @@
 $schema: "https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/configs/schema.json"
 model:
-  key: Compressor
+  key: Generator
   params:
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
+    loadFrom: compressor.ckpt
 train:
   totalStep: 200 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 2
