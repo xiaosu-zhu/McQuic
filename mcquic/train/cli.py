@@ -31,7 +31,7 @@ def main(debug: bool, quiet: bool, gen: bool, configPath: pathlib.Path) -> int:
     if os.path.exists(os.path.join(config.Train.SaveDir, 'latest', 'saved.ckpt')):
         resume = os.path.join(config.Train.SaveDir, 'latest', 'saved.ckpt')
         ckpt = torch.load(resume, "cpu")
-        config = Config.deserialize(ckpt["config"])
+        # config = Config.deserialize(ckpt["config"])
         logging.info("Resume training from %s.", resume)
         resume = pathlib.Path(resume)
     else:
