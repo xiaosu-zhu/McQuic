@@ -92,8 +92,8 @@ class _multiCodebookQuantization(nn.Module):
         self._permutationRate = permutationRate
 
     def reAssignCodebook(self, freq: torch.Tensor)-> torch.Tensor:
-        codebook = self._codebook.clone().detach()
-        freq = freq.to(self._codebook.device).clone().detach()
+        codebook = self._codebook.detach().clone()
+        freq = freq.to(self._codebook.device).detach().clone()
         #       [k, d],        [k]
         for m, (codebookGroup, freqGroup) in enumerate(zip(self._codebook, freq)):
             neverAssignedLoc = freqGroup < Consts.Eps
@@ -103,15 +103,15 @@ class _multiCodebookQuantization(nn.Module):
                 mask = torch.zeros((totalNeverAssigned, ), device=self._codebook.device)
                 maskIdx = torch.randperm(len(mask))[self._k // 2:]
                 # Random pick some never assigned loc and drop them.
-                mask[maskIdx] = 1.
+                mask[maskIdx] = -1.
                 freqGroup[neverAssignedLoc] = mask
                 # Update
-                neverAssignedLoc = freqGroup < Consts.Eps
+                neverAssignedLoc = (freqGroup < Consts.Eps) * (freqGroup > (-Consts.Eps))
                 totalNeverAssigned = int(neverAssignedLoc.sum())
-            argIdx = torch.argsort(freqGroup, descending=True)[:(self._k - totalNeverAssigned)]
+            argIdx = torch.argsort(freqGroup, descending=True)
             mostAssigned = codebookGroup[argIdx]
-            selectedIdx = torch.randperm(len(mostAssigned))[:totalNeverAssigned]
-            codebook.data[m, neverAssignedLoc] = mostAssigned[selectedIdx]
+            # selectedIdx = mostAssigned[:totalNeverAssigned]
+            codebook.data[m, neverAssignedLoc] = mostAssigned[:totalNeverAssigned]
         # [m, k] bool
         diff = ((codebook - self._codebook) ** 2).sum(-1) > 1e-4
         proportion = diff.flatten()
@@ -120,7 +120,7 @@ class _multiCodebookQuantization(nn.Module):
 
     def syncCodebook(self):
         # NOTE: don't directly broadcast parameters, this will mess up the autograd graph
-        codebook = self._codebook.clone().detach()
+        codebook = self._codebook.detach().clone()
         dist.broadcast(codebook, 0)
         self._codebook.data.copy_(codebook)
 
@@ -548,7 +548,7 @@ class NeonQuantizer(VariousMQuantizer):
 
 
 class ResidualBackwardQuantizer(VariousMQuantizer):
-    def __init__(self, m: List[int], k: List[int]):
+    def __init__(self, channel: int, m: List[int], k: List[int]):
         if not isinstance(k, list):
             raise AttributeError
 
@@ -567,27 +567,27 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         # reverse adding encoder, decoder and quantizer
         for i, (ki, mi) in enumerate(zip(k[::-1], m[::-1])):
             latentStageEncoder = nn.Sequential(
-                ResidualBlock(32, 32),
-                AttentionBlock(32),
-                ResidualBlockWithStride(32, 32),
-                conv1x1(32, 32, bias=False)
+                ResidualBlock(channel, channel),
+                AttentionBlock(channel),
+                ResidualBlockWithStride(channel, channel),
+                conv1x1(channel, channel, bias=False)
             )
-            codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, 32 // mi), std=math.sqrt(2 / (5 * 32 / float(mi)))))
+            codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, channel // mi), std=math.sqrt(2 / (5 * channel / float(mi)))))
             quantizer = _multiCodebookQuantization(codebook, 0.)
             dequantizer = _multiCodebookDeQuantization(codebook)
 
             backward = nn.Sequential(
-                conv1x1(32, 32, bias=False),
-                ResidualBlockShuffle(32, 32),
-                AttentionBlock(32),
-                ResidualBlock(32, 32)
+                conv1x1(channel, channel, bias=False),
+                ResidualBlockShuffle(channel, channel),
+                AttentionBlock(channel),
+                ResidualBlock(channel, channel)
             ) if i < len(k) - 1 else nn.Identity()
 
             restoreHead = nn.Sequential(
-                conv1x1(32, 32, bias=False),
-                ResidualBlockShuffle(32, 32),
-                AttentionBlock(32),
-                ResidualBlock(32, 32)
+                conv1x1(channel, channel, bias=False),
+                ResidualBlockShuffle(channel, channel),
+                AttentionBlock(channel),
+                ResidualBlock(channel, channel)
             )
 
             encoders.append(latentStageEncoder)
