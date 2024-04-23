@@ -217,7 +217,7 @@ class _baseTrainer(Restorable):
 
                 # scaler.unscale_(self._optimizer)
 
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 4.0)
 
                 self._optimizer.step()
                 self.saver.debug("[%s] Model backwarded.", self.PrettyStep)
@@ -367,7 +367,7 @@ class MainTrainer(_baseTrainer):
         if self.rank == 0:
             wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
         if self._step % 100 == 0:
-            if torch.isnan(moment):
+            if torch.isnan(moment) or moment < 0.1:
                 self.saver.critical('Loss becomes NAN. Train crashed.')
                 raise RuntimeError('Loss becomes NAN. Train crashed.')
             self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
