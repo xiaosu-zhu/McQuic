@@ -76,6 +76,17 @@ class BaseCompressor(nn.Module):
         header = [FileHeader(mcquic.__version__, self._qp, codeSize, ImageSize(height=h, width=w, channel=c)) for codeSize in codeSizes]
         return codes, binaries, header
 
+    def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
+        n, c, h, w = x.shape
+
+        x = self._padding(x)
+
+        y = self._encoder(x)
+        # codes: lv * [n, m, h, w]
+        # binaries: List of binary, len = n, len(binaries[0]) = level
+        codes = self._quantizer.encode(y)
+        return codes
+
     def decompress(self, binaries: List[List[bytes]], headers: List[FileHeader]) -> torch.Tensor:
         yHat = self._quantizer.decompress(binaries, [header.CodeSize for header in headers])
         restored = self._decoder(yHat)
@@ -99,6 +110,11 @@ class BaseCompressor(nn.Module):
             cropRight = -w
 
         return restored[..., cropTop:(-cropBottom), cropLeft:(-cropRight)]
+
+    def decode(self, codes: List[torch.Tensor]) -> torch.Tensor:
+        yHat = self._quantizer.decode(codes)
+        restored = self._decoder(yHat)
+        return restored
 
 
 class Compressor(BaseCompressor):
