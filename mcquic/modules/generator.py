@@ -1,7 +1,11 @@
+from typing import List, Union
+
 import torch
 from torch import nn
 import numpy as np
 import math
+import torch.nn.functional as F
+import random
 from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
 
 from mcquic.modules.compressor import Neon
@@ -12,9 +16,38 @@ def modulate(x, shift, scale):
 
 
 class Generator(nn.Module):
-    def __init__(self, ):
+    def __init__(self, channel: int, m: List[int], k: List[int]):
         super().__init__()
+        self.compressor = Neon(channel, m, k)
+        self.generator = AnyRes_S([2, 4, 8, 16, 32], 32)
+        self.level_embeddings = nn.ModuleList([nn.Embedding(ki, channel) for ki in k])
+        # we only need level - 1 final layers.
+        self.final_layers = nn.ModuleList([nn.Conv2d(channel, ki, 1, bias=False) for ki in k[1:]])
 
+    def reset_parameters(self):
+        # 用 codebook 初始化 embedding
+        raise NotImplementedError
+
+    def forward(self, image):
+        if self.training:
+            with torch.no_grad():
+                self.compressor.eval()
+                # list of [n, 1, h, w], len of list == levels
+                # from low resolution to high resolution
+                codes, _, _ = self.compressor.compress(image)
+            # convert code to embedding
+            embeddings = list()
+            for codebook, code in zip(self.level_embeddings, codes):
+                # [n, 1, h, w, d] -> [n, h, w, d]
+                embeddings.append(codebook(code)[:, 0, ...])
+            results = self.generator(embeddings)
+            # list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
+            predictions = list()
+            for final, result in zip(self.final_layers, results):
+                predictions.append(final(result))
+            return predictions
+        else:
+            raise NotImplementedError
 
 
 #################################################################################
@@ -89,31 +122,31 @@ class FinalLayer(nn.Module):
         return x
 
 
-class Var(nn.Module):
+class AnyResolutionBlock(nn.Module):
     """
     Next scale model with a Transformer backbone.
     """
     def __init__(
         self,
-        input_size=32,
-        patch_size=2,
-        in_channels=4,
+        canvas_size, # e.g.: 32, corresponding to raw pixels: 512
+        in_channels,
         hidden_size=1152,
         depth=28,
         num_heads=16,
         mlp_ratio=4.0,
-        learn_sigma=True,
+        # learn_sigma=True,
     ):
         super().__init__()
-        self.learn_sigma = learn_sigma
+        # self.learn_sigma = learn_sigma
         self.in_channels = in_channels
-        self.out_channels = in_channels * 2 if learn_sigma else in_channels
-        self.patch_size = patch_size
+        # self.out_channels = in_channels * 2 if learn_sigma else in_channels
+        self.out_channels = in_channels
+        self.canvas_size = canvas_size
         self.num_heads = num_heads
         self.hidden_size = hidden_size
 
         # self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
-        self.num_patches = 16384 # 2048/16 * 2048/16 -> 128x128 grids
+        self.num_patches = canvas_size * canvas_size * 64 # expand canvas to 8 * canvas, to support at least 8*resolution
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=False)
 
@@ -154,57 +187,104 @@ class Var(nn.Module):
         # nn.init.constant_(self.final_layer.linear.weight, 0)
         # nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    def unpatchify(self, x):
+    def random_pos_embed(self, h, w):
+        H = W = int(math.sqrt(self.num_patches))
+        # [H, W, D]
+        pos_embed = self.pos_embed.reshape(H, W, -1)
+        random_up = random.randint(0, H - h - 1)
+        random_left = random.randint(0, W - w - 1)
+        return pos_embed[random_up:random_up+h, random_left:random_left+w].reshape(h*w, -1)
+
+    def center_pos_embed(self, h, w):
+        H = W = int(math.sqrt(self.num_patches))
+        # [H, W, D]
+        pos_embed = self.pos_embed.reshape(H, W, -1)
+        up_start = h // 2
+        left_start = w // 2
+        return pos_embed[up_start:up_start+h, left_start:left_start+w].reshape(h*w, -1)
+
+    def unpatchify(self, x, h, w):
         """
         x: (bs, patch_size**2, 4 * D)
         imgs: (bs, H, W, D)
         """
-        bs, patch_num, dim = x.size()
-        h = w = int(x.shape[1] ** 0.5)
-        assert h * w == x.shape[1]
+        bs, hw, dim = x.shape
 
-        x = x.permute(0, 2, 1)
-        x = x.view(bs, dim, h, w) # [bs, 4 * D, h, w]
-        imgs = self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
-
-        # x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
-        # x = torch.einsum('nhwpqc->nchpwq', x)
-        # imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
-        return imgs
+        x = x.permute(0, 2, 1).reshape(bs, dim, h, w) # [bs, 4 * D, h, w]
+        return self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
 
     def forward(self, x):
         # 0, 1, 2, 3
-        bs, dim, h, w = x.size()
+        bs, dim, h, w = x.shape
+        # [n, h, w, c] -> [n, hw, c]
         x = x.permute(0, 2, 3, 1) # 要先 permute，否则直接 view 会把 dim, h 强行拆成 h * w
         x = x.view(bs, h * w, dim)
 
-        # todo: randomly put the image into a 2048x2048 canvas and rope
-        selected_pos_embed = self.pos_embed[:, :h * w, :]
-        x = x + selected_pos_embed # [bs, PxP, D]
+        if self.training:
+            # TODO: change to random
+            # selected_pos_embed = self.random_pos_embed(h, w)
+            selected_pos_embed = self.center_pos_embed(h, w)
+        else:
+            selected_pos_embed = self.center_pos_embed(h, w)
+
+        x = x + selected_pos_embed # [bs, hw, D]
         for block in self.blocks:
             x = block(x)
-        x = self.proj_layer(x) # [bs, PxP, 4D]
-        x = self.unpatchify(x)
+        x = self.proj_layer(x) # [bs, hw, 4D]
+        x = self.unpatchify(x, h ,w) # [bs, 2h, 2w, D]
         return x
 
-    def forward_with_cfg(self, x, t, y, cfg_scale):
-        """
-        Forward pass of DiT, but also batches the unconditional forward pass for classifier-free guidance.
-        """
-        # https://github.com/openai/glide-text2im/blob/main/notebooks/text2im.ipynb
-        half = x[: len(x) // 2]
-        combined = torch.cat([half, half], dim=0)
-        model_out = self.forward(combined, t, y)
-        # For exact reproducibility reasons, we apply classifier-free guidance on only
-        # three channels by default. The standard approach to cfg applies it to all channels.
-        # This can be done by uncommenting the following line and commenting-out the line following that.
-        # eps, rest = model_out[:, :self.in_channels], model_out[:, self.in_channels:]
-        eps, rest = model_out[:, :3], model_out[:, 3:]
-        cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
-        half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
-        eps = torch.cat([half_eps, half_eps], dim=0)
-        return torch.cat([eps, rest], dim=1)
+    # def forward_with_cfg(self, x, t, y, cfg_scale):
+    #     """
+    #     Forward pass of DiT, but also batches the unconditional forward pass for classifier-free guidance.
+    #     """
+    #     # https://github.com/openai/glide-text2im/blob/main/notebooks/text2im.ipynb
+    #     half = x[: len(x) // 2]
+    #     combined = torch.cat([half, half], dim=0)
+    #     model_out = self.forward(combined, t, y)
+    #     # For exact reproducibility reasons, we apply classifier-free guidance on only
+    #     # three channels by default. The standard approach to cfg applies it to all channels.
+    #     # This can be done by uncommenting the following line and commenting-out the line following that.
+    #     # eps, rest = model_out[:, :self.in_channels], model_out[:, self.in_channels:]
+    #     eps, rest = model_out[:, :3], model_out[:, 3:]
+    #     cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
+    #     half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
+    #     eps = torch.cat([half_eps, half_eps], dim=0)
+    #     return torch.cat([eps, rest], dim=1)
 
+
+class AnyResolutionTransformer(nn.Module):
+    def __init__(self,
+        # NOTE: from low resolution to high resolution. this list should be ascending.
+        canvas_size: List[int], # e.g.: 32, corresponding to raw pixels: 512
+        in_channels,
+        hidden_size=1152,
+        depth=28,
+        num_heads=16,
+        mlp_ratio=4.0):
+        super().__init__()
+        self.blocks = nn.ModuleList(
+            [AnyResolutionBlock(c, in_channels, hidden_size, depth, num_heads, mlp_ratio) for c in canvas_size]
+        )
+        # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
+
+    def forward(self, x):
+        if self.training:
+            if not isinstance(x, list):
+                raise RuntimeError('The given training input is not a list.')
+            results = list()
+            for current, block in zip(x, self.blocks):
+                results.append(block(current))
+            # NOTE: in training, the len of reuslts is level - 1
+            return results
+        else:
+            current = x
+            results = [x]
+            for block in self.blocks:
+                results.append(block(current))
+                current = results[-1]
+            # NOTE: in inference, the len of results is level
+            return results
 
 #################################################################################
 #                   Sine/Cosine Positional Embedding Functions                  #
@@ -262,55 +342,25 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 
 
 #################################################################################
-#                                   DiT Configs                                  #
+#                                 AnyRes Configs                                #
 #################################################################################
-
-def Var_XL_2(**kwargs):
-    return Var(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
-
-def Var_XL_4(**kwargs):
-    return Var(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
-
-def Var_XL_8(**kwargs):
-    return Var(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
-
-def Var_L_2(**kwargs):
-    return Var(depth=24, hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
-
-def Var_L_4(**kwargs):
-    return Var(depth=24, hidden_size=1024, patch_size=4, num_heads=16, **kwargs)
-
-def Var_L_8(**kwargs):
-    return Var(depth=24, hidden_size=1024, patch_size=8, num_heads=16, **kwargs)
-
-def Var_L_16(**kwargs):
-    return Var(depth=24, hidden_size=1024, patch_size=16, num_heads=16, **kwargs)
-
-def Var_L_32(**kwargs):
-    return Var(depth=24, hidden_size=1024, patch_size=32, num_heads=16, **kwargs)
-
-def Var_B_2(**kwargs):
-    return Var(depth=12, hidden_size=768, patch_size=2, num_heads=12, **kwargs)
-
-def Var_B_4(**kwargs):
-    return Var(depth=12, hidden_size=768, patch_size=4, num_heads=12, **kwargs)
-
-def Var_B_8(**kwargs):
-    return Var(depth=12, hidden_size=768, patch_size=8, num_heads=12, **kwargs)
-
-def Var_S_2(**kwargs):
-    return Var(depth=12, hidden_size=384, patch_size=2, num_heads=6, **kwargs)
-
-def Var_S_4(**kwargs):
-    return Var(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
-
-def Var_S_8(**kwargs):
-    return Var(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
+# 2.20B
+def AnyRes_XL(canvas_size, in_channel, **kwargs):
+    return AnyResolutionTransformer(canvas_size, in_channel, depth=28, hidden_size=1152, num_heads=16, **kwargs)
+# 1.51B
+def AnyRes_L(canvas_size, in_channel, **kwargs):
+    return AnyResolutionTransformer(canvas_size, in_channel, depth=24, hidden_size=1024, num_heads=16, **kwargs)
+# 480M
+def AnyRes_B(canvas_size, in_channel, **kwargs):
+    return AnyResolutionTransformer(canvas_size, in_channel, depth=12, hidden_size=768, num_heads=12, **kwargs)
+# 136M
+def AnyRes_S(canvas_size, in_channel, **kwargs):
+    return AnyResolutionTransformer(canvas_size, in_channel, depth=12, hidden_size=384, num_heads=6, **kwargs)
 
 
-Var_models = {
-    'Var-XL/2': Var_XL_2,  'Var-XL/4': Var_XL_4,  'Var-XL/8': Var_XL_8,
-    'Var-L/2':  Var_L_2,   'Var-L/4':  Var_L_4,   'Var-L/8':  Var_L_8,  "Var-L/16": Var_L_16, "Var-L/32": Var_L_32,
-    'Var-B/2':  Var_B_2,   'Var-B/4':  Var_B_4,   'Var-B/8':  Var_B_8,
-    'Var-S/2':  Var_S_2,   'Var-S/4':  Var_S_4,   'Var-S/8':  Var_S_8,
-}
+# AnyRes_models = {
+#     'AnyRes-XL/2': AnyRes_XL_2,  'AnyRes-XL/4': AnyRes_XL_4,  'AnyRes-XL/8': AnyRes_XL_8,
+#     'AnyRes-L/2':  AnyRes_L_2,   'AnyRes-L/4':  AnyRes_L_4,   'AnyRes-L/8':  AnyRes_L_8,  "AnyRes-L/16": AnyRes_L_16, "AnyRes-L/32": AnyRes_L_32,
+#     'AnyRes-B/2':  AnyRes_B_2,   'AnyRes-B/4':  AnyRes_B_4,   'AnyRes-B/8':  AnyRes_B_8,
+#     'AnyRes-S/2':  AnyRes_S_2,   'AnyRes-S/4':  AnyRes_S_4,   'AnyRes-S/8':  AnyRes_S_8,
+# }

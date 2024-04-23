@@ -51,7 +51,7 @@ class EntropyCoder(nn.Module):
         freq = list()
         for freqEMA in self._freqEMA:
             # normalized probs.
-            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).clone().detach())
+            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).detach().clone())
         cdfs = list()
         for fr in freq:
             cdfAtLv = list()
@@ -192,7 +192,7 @@ class PlainCoder(nn.Module):
         freq = list()
         for freqEMA in self._freqEMA:
             # normalized probs.
-            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).clone().detach())
+            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).detach().clone())
         cdfs = list()
         for fr in freq:
             cdfAtLv = list()
@@ -329,7 +329,7 @@ class VariousMCoder(nn.Module):
         freq = list()
         for freqEMA in self._freqEMA:
             # normalized probs.
-            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).clone().detach())
+            freq.append((freqEMA / freqEMA.sum(-1, keepdim=True)).detach().clone())
         cdfs = list()
         for fr in freq:
             cdfAtLv = list()

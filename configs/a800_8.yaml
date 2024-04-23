@@ -1,7 +1,7 @@
 model:
   key: Compressor
   params:
-    channel: 128
+    channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
 train:
