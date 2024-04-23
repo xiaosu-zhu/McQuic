@@ -21,7 +21,7 @@ def checkArgs(debug, quiet, configPath: pathlib.Path):
         return logging.DEBUG
     return logging.INFO
 
-def main(debug: bool, quiet: bool, configPath: pathlib.Path) -> int:
+def main(debug: bool, quiet: bool, gen: bool, configPath: pathlib.Path) -> int:
     # assert False, "You need to run `mcquic train` with Python optimized-mode. Try re-run me with `python -O -m mcquic.train ...`"
     loggingLevel = checkArgs(debug, quiet, configPath)
 
@@ -45,7 +45,7 @@ def main(debug: bool, quiet: bool, configPath: pathlib.Path) -> int:
 
     # `daemon` is True --- Way to handle SIGINT globally.
     # Give up handling SIGINT by yourself... PyTorch hacks it.
-    ddpSpawnTraining(config, config.Train.SaveDir, resume, loggingLevel)
+    ddpSpawnTraining(gen, config, config.Train.SaveDir, resume, loggingLevel)
     return 0
 
 
@@ -53,6 +53,7 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.command(context_settings=CONTEXT_SETTINGS)
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-G", "--gen", is_flag=True, help="Enable stage-2 generation training.")
 @click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def entryPoint(debug, quiet: bool, config: pathlib.Path):
-    main(debug, quiet, config)
+def entryPoint(debug, quiet: bool, gen: bool, config: pathlib.Path):
+    main(debug, quiet, gen, config)

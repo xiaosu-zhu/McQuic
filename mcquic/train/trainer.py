@@ -471,7 +471,14 @@ class PalTrainer(_baseTrainer):
         return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
 
 
-def getTrainer(rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
+def getTrainer(gen: bool, rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
+    if gen:
+        from mcquic.train.genTrainer import MainGenTrainer
+        from mcquic.train.genTrainer import PalGenTrainer
+        if rank == 0:
+            return MainGenTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
+        else:
+            return PalGenTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
     if rank == 0:
         return MainTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
     return PalTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)

@@ -19,10 +19,9 @@ class Generator(nn.Module):
     def __init__(self, channel: int, m: List[int], k: List[int]):
         super().__init__()
         self.compressor = Neon(channel, m, k)
-        self.generator = AnyRes_S([2, 4, 8, 16, 32], 32)
-        self.level_embeddings = nn.ModuleList([nn.Embedding(ki, channel) for ki in k])
-        # we only need level - 1 final layers.
-        self.final_layers = nn.ModuleList([nn.Conv2d(channel, ki, 1, bias=False) for ki in k[1:]])
+        # NOTE: we only need first (level - 1) codebook, and corresponding canvas.
+        # NOTE: remove first dim of codebook, since it is for product quantization
+        self.generator = AnyRes_S([2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
 
     def reset_parameters(self):
         # 用 codebook 初始化 embedding
@@ -34,18 +33,19 @@ class Generator(nn.Module):
                 self.compressor.eval()
                 # list of [n, 1, h, w], len of list == levels
                 # from low resolution to high resolution
-                codes, _, _ = self.compressor.compress(image)
-            # convert code to embedding
-            embeddings = list()
-            for codebook, code in zip(self.level_embeddings, codes):
-                # [n, 1, h, w, d] -> [n, h, w, d]
-                embeddings.append(codebook(code)[:, 0, ...])
-            results = self.generator(embeddings)
+                codes = self.compressor.encode(image)
+            # NOTE: remove product quantization artifacts, since we don't use product quantization
+            codes = [c.squeeze(1) for c in codes]
+            print('****** CODES:', [c.shape for c in codes], '********')
+            predictions = self.generator(codes)
+
+            # list of [n, 1, h, w], len of list == levels
+            restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
+            restoredCodes.insert(0, codes[0].unsqueeze(1))
+            with torch.no_grad():
+                restored = self.compressor.decode(restoredCodes)
             # list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
-            predictions = list()
-            for final, result in zip(self.final_layers, results):
-                predictions.append(final(result))
-            return predictions
+            return predictions, codes, restored
         else:
             raise NotImplementedError
 
@@ -128,8 +128,8 @@ class AnyResolutionBlock(nn.Module):
     """
     def __init__(
         self,
+        codebook: torch.Tensor,
         canvas_size, # e.g.: 32, corresponding to raw pixels: 512
-        in_channels,
         hidden_size=1152,
         depth=28,
         num_heads=16,
@@ -138,12 +138,16 @@ class AnyResolutionBlock(nn.Module):
     ):
         super().__init__()
         # self.learn_sigma = learn_sigma
-        self.in_channels = in_channels
-        # self.out_channels = in_channels * 2 if learn_sigma else in_channels
-        self.out_channels = in_channels
+        self.in_channels = codebook.shape[-1]
         self.canvas_size = canvas_size
         self.num_heads = num_heads
         self.hidden_size = hidden_size
+
+        self.input_embedding = nn.Parameter(codebook.detach().clone())
+        self.pre_layer = nn.Conv2d(codebook.shape[-1], hidden_size, 1, bias=False)
+        # we only need level - 1 final layers.
+        self.final_layer = nn.Conv2d(hidden_size, len(codebook), 1, bias=False)
+
 
         # self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
         self.num_patches = canvas_size * canvas_size * 64 # expand canvas to 8 * canvas, to support at least 8*resolution
@@ -199,8 +203,8 @@ class AnyResolutionBlock(nn.Module):
         H = W = int(math.sqrt(self.num_patches))
         # [H, W, D]
         pos_embed = self.pos_embed.reshape(H, W, -1)
-        up_start = h // 2
-        left_start = w // 2
+        up_start = (H - h) // 2
+        left_start = (W - w) // 2
         return pos_embed[up_start:up_start+h, left_start:left_start+w].reshape(h*w, -1)
 
     def unpatchify(self, x, h, w):
@@ -213,12 +217,13 @@ class AnyResolutionBlock(nn.Module):
         x = x.permute(0, 2, 1).reshape(bs, dim, h, w) # [bs, 4 * D, h, w]
         return self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
 
-    def forward(self, x):
+    def forward(self, code):
         # 0, 1, 2, 3
-        bs, dim, h, w = x.shape
-        # [n, h, w, c] -> [n, hw, c]
-        x = x.permute(0, 2, 3, 1) # 要先 permute，否则直接 view 会把 dim, h 强行拆成 h * w
-        x = x.view(bs, h * w, dim)
+        bs, h, w = code.shape
+        # [b, h, w, d]
+        x = self.input_embedding[code]
+        # [b, h*w, hidden]
+        x = self.pre_layer(x.permute(0, 3, 1, 2).contiguous()).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
 
         if self.training:
             # TODO: change to random
@@ -227,12 +232,13 @@ class AnyResolutionBlock(nn.Module):
         else:
             selected_pos_embed = self.center_pos_embed(h, w)
 
-        x = x + selected_pos_embed # [bs, hw, D]
+        x = x + selected_pos_embed # [bs, hw, hidden]
         for block in self.blocks:
             x = block(x)
-        x = self.proj_layer(x) # [bs, hw, 4D]
-        x = self.unpatchify(x, h ,w) # [bs, 2h, 2w, D]
-        return x
+        x = self.proj_layer(x) # [bs, hw, 4hidden]
+        x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
+        prediction = self.final_layer(x) # [bs, k, 2h, 2w]
+        return prediction
 
     # def forward_with_cfg(self, x, t, y, cfg_scale):
     #     """
@@ -257,27 +263,30 @@ class AnyResolutionTransformer(nn.Module):
     def __init__(self,
         # NOTE: from low resolution to high resolution. this list should be ascending.
         canvas_size: List[int], # e.g.: 32, corresponding to raw pixels: 512
-        in_channels,
+        codebooks,
         hidden_size=1152,
         depth=28,
         num_heads=16,
         mlp_ratio=4.0):
         super().__init__()
+        self.hidden_size = hidden_size
+        # NOTE: we only need first (level - 1) blocks
         self.blocks = nn.ModuleList(
-            [AnyResolutionBlock(c, in_channels, hidden_size, depth, num_heads, mlp_ratio) for c in canvas_size]
+            [AnyResolutionBlock(codebook, can, hidden_size, depth, num_heads, mlp_ratio) for can, codebook in zip(canvas_size, codebooks)]
         )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
-    def forward(self, x):
+    def forward(self, codes):
         if self.training:
-            if not isinstance(x, list):
+            if not isinstance(codes, list):
                 raise RuntimeError('The given training input is not a list.')
             results = list()
-            for current, block in zip(x, self.blocks):
+            for current, block in zip(codes, self.blocks):
                 results.append(block(current))
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
+            raise NotImplementedError
             current = x
             results = [x]
             for block in self.blocks:
@@ -345,17 +354,17 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                 AnyRes Configs                                #
 #################################################################################
 # 2.20B
-def AnyRes_XL(canvas_size, in_channel, **kwargs):
-    return AnyResolutionTransformer(canvas_size, in_channel, depth=28, hidden_size=1152, num_heads=16, **kwargs)
+def AnyRes_XL(canvas_size, codebooks, **kwargs):
+    return AnyResolutionTransformer(canvas_size, codebooks, depth=28, hidden_size=1152, num_heads=16, **kwargs)
 # 1.51B
-def AnyRes_L(canvas_size, in_channel, **kwargs):
-    return AnyResolutionTransformer(canvas_size, in_channel, depth=24, hidden_size=1024, num_heads=16, **kwargs)
+def AnyRes_L(canvas_size, codebooks, **kwargs):
+    return AnyResolutionTransformer(canvas_size, codebooks, depth=24, hidden_size=1024, num_heads=16, **kwargs)
 # 480M
-def AnyRes_B(canvas_size, in_channel, **kwargs):
-    return AnyResolutionTransformer(canvas_size, in_channel, depth=12, hidden_size=768, num_heads=12, **kwargs)
+def AnyRes_B(canvas_size, codebooks, **kwargs):
+    return AnyResolutionTransformer(canvas_size, codebooks, depth=12, hidden_size=768, num_heads=12, **kwargs)
 # 136M
-def AnyRes_S(canvas_size, in_channel, **kwargs):
-    return AnyResolutionTransformer(canvas_size, in_channel, depth=12, hidden_size=384, num_heads=6, **kwargs)
+def AnyRes_S(canvas_size, codebooks, **kwargs):
+    return AnyResolutionTransformer(canvas_size, codebooks, depth=12, hidden_size=384, num_heads=6, **kwargs)
 
 
 # AnyRes_models = {

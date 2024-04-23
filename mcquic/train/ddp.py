@@ -13,6 +13,7 @@ from vlutils.config import summary
 
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor, Neon
+from mcquic.modules.generator import Generator
 from mcquic.datasets import getTrainLoader, getValLoader
 from mcquic.train.hooks import getAllHooks
 from mcquic.utils.registry import *
@@ -67,8 +68,12 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distor
 
     return compressor, criterion
 
+def genModelFn(modelParams) -> Generator:
+    generator = Generator(**modelParams)
+    return generator
 
-def ddpSpawnTraining(config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
+
+def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
     registerForTrain(config)
     rank = int(os.environ['LOCAL_RANK'])
 
@@ -101,7 +106,7 @@ def ddpSpawnTraining(config: Config, saveDir: str, resume: Union[pathlib.Path, N
     optimizerFn = OptimizerRegistry.get(config.Train.Optim.Key, logger=saver)
     schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.Key, logger=saver)
 
-    trainer = getTrainer(rank, config, tmpFile, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
+    trainer = getTrainer(gen, rank, config, tmpFile, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
 
     # if tmpFile is not None:
     #     saver.info("Found ckpt to resume at %s", resume)

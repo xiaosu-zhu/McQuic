@@ -64,8 +64,9 @@ Args:
 @entryPoint.command()
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-G", "--gen", is_flag=True, help="Enable stage-2 generation training.")
 @click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def train(debug, quiet, config):
+def train(debug, quiet, gen config):
     """Train a model with automatic resuming.
 
 Args:
@@ -73,7 +74,7 @@ Args:
     config (str): Config file (yaml) path. If `-r/--resume` is present but config is still given, then this config will be used to update the resumed training.
     """
     from mcquic.train.cli import main
-    main(debug, quiet, config)
+    main(debug, quiet, gen config)
 
 
 @entryPoint.command()

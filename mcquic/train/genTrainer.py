@@ -15,12 +15,14 @@ import torch
 from torchvision.transforms.functional import to_pil_image
 from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
+from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.logger import trackingFunctionCalls
 from vlutils.base import Restorable, FrequecyHook
 from vlutils.runtime import relativePath
 from rich import filesize
+import torch.nn.functional as F
 
 from mcquic.train.utils import Saver
 from mcquic.consts import Consts
@@ -35,7 +37,7 @@ from mcquic.datasets.transforms import getTrainingTransform
 
 from mcquic.train.utils import checkHook, getRichProgress
 
-class _baseTrainer(Restorable):
+class _baseGenTrainer(Restorable):
     def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
         super().__init__()
         self.saver = saver
@@ -59,10 +61,10 @@ class _baseTrainer(Restorable):
         self.transform = getTrainingTransform().to(localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
-        compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
+        generator, loss = trackingFunctionCalls(modelFn, self.saver)()
 
 
-        self._model = Compound(compressor.to(localRank), distortion.to(localRank), device_ids=[localRank], output_device=localRank, find_unused_parameters=False)
+        self._model = DistributedDataParallel(generator.to(localRank), device_ids=[localRank], output_device=localRank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -195,7 +197,7 @@ class _baseTrainer(Restorable):
 
         # scaler = GradScaler()
 
-        images, xHat, codes, logits = None, None, None, None
+        images, xHat, codes = None, None, None
 
         localRank = int(os.environ['LOCAL_RANK'])
 
@@ -210,10 +212,11 @@ class _baseTrainer(Restorable):
                 self._optimizer.zero_grad()
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                xHat, (rate, distortion), codes, logits = self._model(images)
+                predictions, codes, xHat = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (rate + distortion).backward()
+                loss = sum([F.cross_entropy(pre, gt) for (pre, gt) in zip(predictions, codes[1:])])
+                loss.backward()
 
                 # scaler.unscale_(self._optimizer)
 
@@ -225,7 +228,7 @@ class _baseTrainer(Restorable):
 
                 # scaler.update()
 
-                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, logits=logits, **trainingArgs)
+                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, **trainingArgs)
                 del images
                 if self._step >= self._totalStep:
                     break
@@ -239,7 +242,7 @@ class _baseTrainer(Restorable):
         self._afterRun(afterRunHook)
 
 
-class MainTrainer(_baseTrainer):
+class MainGenTrainer(_baseGenTrainer):
     def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         # global rank
         if dist.get_rank() != 0:
@@ -252,7 +255,7 @@ class MainTrainer(_baseTrainer):
         if self.rank == 0:
             wandb.login(key=os.environ['MCQUIC_WANDB_LOGIN'])
             self.run = wandb.init(
-                project='mcquic',
+                project='mcquic_gen',
                 config={
                     'model': config.Model.Params,
                     'batch_size': config.Train.BatchSize,
@@ -294,8 +297,8 @@ class MainTrainer(_baseTrainer):
             logger=self.saver
         )
 
-        self.bestRate = 1e10
-        self.bestDistortion = -1
+        # self.bestRate = 1e10
+        # self.bestDistortion = -1
 
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
@@ -324,9 +327,9 @@ class MainTrainer(_baseTrainer):
 
     def summary(self):
         if abs(self.bestRate / self.bestDistortion) > 1e4:
-            self.saver.info("[%s] Total steps: %s, best rate/distortion: N/A.", self.PrettyStep, self.PrettyStep)
+            self.saver.info("[%s] Total steps: %s, loss: N/A.", self.PrettyStep, self.PrettyStep)
         else:
-            self.saver.info("[%s] Total steps: %s, best rate/distortion: %.4f / %.2fdB.", self.PrettyStep, self.PrettyStep, self.bestRate, self.bestDistortion)
+            self.saver.info("[%s] Total steps: %s, loss: %.2f.", self.PrettyStep, self.PrettyStep, 0.0)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoader: DataLoader, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
@@ -355,22 +358,21 @@ class MainTrainer(_baseTrainer):
         self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
-    def _stepFinishHook(self, *_, rate, distortion, **__):
-        distortionDB = self._model.formatDistortion(distortion)
-        moment = self.diffTracker(distortionDB)
+    def _stepFinishHook(self, *_, loss, **__):
+        moment = self.diffTracker(loss)
 
         task = self.progress.get_task(self.trainingBar)
-        self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
+        self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:.2f}[/]")
 
         if self._step % 10 != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
+            wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
         if self._step % 100 == 0:
             if torch.isnan(moment):
                 self.saver.critical('Loss becomes NAN. Train crashed.')
                 raise RuntimeError('Loss becomes NAN. Train crashed.')
-            self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
+            self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         # self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
@@ -393,19 +395,15 @@ class MainTrainer(_baseTrainer):
     #     # super()._epochStart(hook, *args, **kwArgs)
 
 
-    def log(self, *_, images, restored, codes, logits, **__):
+    def log(self, *_, images, restored, codes, **__):
         if self.rank != 0:
             return
-        payload: Dict[str, Any] = {
-            'Hist/LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10().detach().cpu().numpy()),
-        }
+        payload: Dict[str, Any] = dict()
         # self.saver.add_scalar("Stat/Epoch", self._epoch, self._step)
         # First level, first image, first group
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
-        freq = self._model.Compressor.NormalizedFreq
         # [m, ki]
-        for lv, (fr, c) in enumerate(zip(freq, codes)):
-            payload[f'Hist/FreqLv{lv}'] = wandb.Histogram(fr[0].detach().cpu().numpy(), num_bins=min(512, len(fr[0])))
+        for lv, c in enumerate(codes):
             payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
@@ -416,7 +414,6 @@ class MainTrainer(_baseTrainer):
         payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
-        payload['Stat/CodeUsage'] = float(self._model.Compressor.CodeUsage)
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
 
         wandb.log(payload, step=self._step)
@@ -424,6 +421,7 @@ class MainTrainer(_baseTrainer):
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
     def validate(self, *_, valLoader: DataLoader, **__):
+        return
         torch.cuda.empty_cache()
 
         self.saver.debug("[%s] Start validation.", self.PrettyStep)
@@ -461,7 +459,7 @@ class MainTrainer(_baseTrainer):
         self.saver.debug("[%s] End validation.", self.PrettyStep)
 
 
-class PalTrainer(_baseTrainer):
+class PalGenTrainer(_baseGenTrainer):
     def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver):
         if dist.get_rank() == 0:
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
@@ -469,9 +467,3 @@ class PalTrainer(_baseTrainer):
 
     def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
-
-
-def getTrainer(rank: int, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver) -> _baseTrainer:
-    if rank == 0:
-        return MainTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
-    return PalTrainer(config, tmpFile, modelFn, optimizer, scheduler, saver)
