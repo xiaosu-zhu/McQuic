@@ -8,6 +8,7 @@ import math
 import torch.nn.functional as F
 import random
 from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
+from fairscale.nn.checkpoint import checkpoint_wrapper
 
 from mcquic.modules.compressor import Neon
 
@@ -33,11 +34,11 @@ class Generator(nn.Module):
 
     def forward(self, image):
         if self.training:
-            with torch.no_grad():
+            with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 self.compressor.eval()
                 # list of [n, 1, h, w], len of list == levels
                 # from low resolution to high resolution
-                codes = self.compressor.encode(image)
+                codes = self.compressor.encode(image.float())
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
             # print('****** CODES:', [c.shape for c in codes], '********')
@@ -46,7 +47,7 @@ class Generator(nn.Module):
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
             restoredCodes.insert(0, codes[0].unsqueeze(1))
-            with torch.no_grad():
+            with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 restored = self.compressor.decode(restoredCodes)
             # list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
             return predictions, codes, restored
@@ -159,7 +160,7 @@ class AnyResolutionBlock(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList([
-            TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
+            checkpoint_wrapper(TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
         ])
         self.proj_layer = ProjLayer(hidden_size, scale_factor=4)
         # self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)

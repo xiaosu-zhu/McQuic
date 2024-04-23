@@ -5,12 +5,12 @@ model:
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
-    loadFrom: compressor.ckpt
+    loadFrom: compressor/compressor_10000.ckpt
 train:
-  totalStep: 200 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 2
+  totalStep: 20000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+  batchSize: 18
   epoch: 2
-  valFreq: 10
+  valFreq: 100
   trainSet: /mnt/nfs/CMG/mcquic/
   valSet: valid
   saveDir: generation_saved
@@ -21,22 +21,18 @@ train:
   optim:
     key: Adam
     params:
-      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      lr: 1.e-3 # PSNR: 5.e-3 # don't try to tune lr, it is best
       # weight_decay: 0.0
       # use_nvlamb: true
   schdr:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 200 # totalimage / gpus / batchsize * epochs
-      warmup_steps: 5
+      first_cycle_steps: 20000 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 500
       gamma: 1.0
       lrScaleRatio: 0.0
   gpu:
     gpus: 8
     vRam: -1
     wantsMore: false
-  hooks:
-    - key: CodebookReassign
-      params:
-        freq: 4000
