@@ -195,7 +195,7 @@ class _baseGenTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, **trainingArgs)
 
-        # scaler = GradScaler()
+        scaler = GradScaler()
 
         images, xHat, codes = None, None, None
 
@@ -211,22 +211,22 @@ class _baseGenTrainer(Restorable):
 
                 self._optimizer.zero_grad()
 
-                # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                predictions, codes, xHat = self._model(images)
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    predictions, codes, xHat = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
-                # scaler.scale(rate + distortion).backward()
                 loss = sum([F.cross_entropy(pre, gt) for (pre, gt) in zip(predictions, codes[1:])])
-                loss.backward()
+                scaler.scale(loss).backward()
+                # loss.backward()
 
-                # scaler.unscale_(self._optimizer)
+                scaler.unscale_(self._optimizer)
 
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 4.0)
 
-                self._optimizer.step()
+                # self._optimizer.step()
+                scaler.step(self._optimizer)
                 self.saver.debug("[%s] Model backwarded.", self.PrettyStep)
-                # scaler.step(self._optimizer)
 
-                # scaler.update()
+                scaler.update()
 
                 self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, **trainingArgs)
                 del images
