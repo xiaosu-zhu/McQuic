@@ -256,6 +256,7 @@ class MainTrainer(_baseTrainer):
                 config={
                     'model': config.Model.Params,
                     'batch_size': config.Train.BatchSize,
+                    'total_step': config.Train.TotalStep,
                     # 'epoch': config.Train.Epoch,
                     'target': config.Train.Target,
                     'optim': {
@@ -366,6 +367,9 @@ class MainTrainer(_baseTrainer):
         if self.rank == 0:
             wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
         if self._step % 100 == 0:
+            if torch.isnan(moment):
+                self.saver.critical('Loss becomes NAN. Train crashed.')
+                raise RuntimeError('Loss becomes NAN. Train crashed.')
             self.saver.info('[%s / %s] Loss (%s): %2.2fdB, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), self.config.Train.Target, moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
