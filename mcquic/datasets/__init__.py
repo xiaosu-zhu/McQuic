@@ -57,7 +57,7 @@ def getTrainLoader(datasetPath: StrPath, batchSize: int, logger: Union[logging.L
     # NOTE: no need to use disbtribued sampler, since shuffle have difference RNG over time and pid.
     # NOTE: do not call .repeat(), it hangs!
     # NOTE: if number of shard < nodes, do not use shardshuffle, it hangs!
-    # NOTE: shuffle as large as it can to ensure randomness
+    # NOTE: !!!! DON'T set shuffle too large, it will consume very much memory !!!!
     # NOTE: they (wds) recommend to batch in advance, not in dataloader
     # NOTE: don't use their (wds) collate function, it is wrong.
     trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node).shuffle(500).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
