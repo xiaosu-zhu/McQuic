@@ -61,7 +61,7 @@ class _baseGenTrainer(Restorable):
         self.transform = getTrainingTransform().to(localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
-        generator, loss = trackingFunctionCalls(modelFn, self.saver)()
+        generator = trackingFunctionCalls(modelFn, self.saver)()
 
 
         self._model = DistributedDataParallel(generator.to(localRank), device_ids=[localRank], output_device=localRank, find_unused_parameters=False)

@@ -14,6 +14,7 @@ version1/
 last_checkpoint/
 slurm-*.err
 slurm-*.out
+generation_saved/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,4 +1,5 @@
 from typing import List, Union
+import logging
 
 import torch
 from torch import nn
@@ -16,16 +17,19 @@ def modulate(x, shift, scale):
 
 
 class Generator(nn.Module):
-    def __init__(self, channel: int, m: List[int], k: List[int]):
+    def __init__(self, channel: int, m: List[int], k: List[int], loadFrom: str, *_, **__):
         super().__init__()
         self.compressor = Neon(channel, m, k)
+        state_dict = torch.load(loadFrom, map_location='cpu')
+        self.compressor.load_state_dict({k[len('module._compressor.'):]: v for k, v in state_dict['trainer']['_model'].items()})
+        logging.info('Load compressor checkpoint from %s.', loadFrom)
+
+        for params in self.compressor.parameters():
+            params.requires_grad_(False)
+
         # NOTE: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.generator = AnyRes_S([2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
-
-    def reset_parameters(self):
-        # 用 codebook 初始化 embedding
-        raise NotImplementedError
 
     def forward(self, image):
         if self.training:
@@ -36,7 +40,7 @@ class Generator(nn.Module):
                 codes = self.compressor.encode(image)
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
-            print('****** CODES:', [c.shape for c in codes], '********')
+            # print('****** CODES:', [c.shape for c in codes], '********')
             predictions = self.generator(codes)
 
             # list of [n, 1, h, w], len of list == levels

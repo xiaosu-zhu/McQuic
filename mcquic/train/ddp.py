@@ -106,7 +106,11 @@ def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[path
     optimizerFn = OptimizerRegistry.get(config.Train.Optim.Key, logger=saver)
     schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.Key, logger=saver)
 
-    trainer = getTrainer(gen, rank, config, tmpFile, lambda: modelFn(config.Model.Params, config.Train.Target), optimizerFn, schdrFn, saver)
+    if gen:
+        model = lambda: genModelFn(config.Model.Params)
+    else:
+        model = lambda: modelFn(config.Model.Params, config.Train.Target)
+    trainer = getTrainer(gen, rank, config, tmpFile, model, optimizerFn, schdrFn, saver)
 
     # if tmpFile is not None:
     #     saver.info("Found ckpt to resume at %s", resume)
