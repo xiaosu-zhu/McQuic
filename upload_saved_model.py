@@ -6,7 +6,7 @@ from pathlib import Path
 
 def main(file_path):
     api = HfApi(
-        endpoint='https://hf-mirror.com',
+        # endpoint='https://hf-mirror.com',
         token=os.environ['HF_TOKEN'],
     )
     api.upload_file(

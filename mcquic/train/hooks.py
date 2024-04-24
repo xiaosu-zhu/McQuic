@@ -121,17 +121,19 @@ class CodebookReassign(StepFinishHook):
     def stepFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
         if (step + 1) % self._freq != 0:
             return
-        logger.debug("[%s] Start refresh at epoch %4d.", trainer.PrettyStep, epoch)
+        if dist.get_rank() == 0:
+            logger.debug("[%s] Start refresh at epoch %4d.", trainer.PrettyStep, epoch)
 
         reAssignProportion = trainer._model.refresh(trainer.rank)
 
-        logger.debug("[%s] %.2f%% of codebook is re-assigned.", trainer.PrettyStep, reAssignProportion * 100)
+        if dist.get_rank() == 0:
+            logger.debug("[%s] %.2f%% of codebook is re-assigned.", trainer.PrettyStep, reAssignProportion * 100)
 
-        logger.debug("[%s] End refresh at epoch %4d.", trainer.PrettyStep, epoch)
+            logger.debug("[%s] End refresh at epoch %4d.", trainer.PrettyStep, epoch)
 
-        wandb.log({
-            "Stat/ReAssignProportion": float(reAssignProportion)
-        }, step=step)
+            wandb.log({
+                "Stat/ReAssignProportion": float(reAssignProportion)
+            }, step=step)
 
 @HookRegistry.register
 class FinetuneCodebook(EpochStartHook, BeforeRunHook):
