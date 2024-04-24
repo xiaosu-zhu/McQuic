@@ -7,8 +7,11 @@ import numpy as np
 import math
 import torch.nn.functional as F
 import random
-from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
+from timm.models.vision_transformer import Mlp
 from fairscale.nn.checkpoint import checkpoint_wrapper
+from flash_attn import flash_attn_qkvpacked_func, flash_attn_func, flash_attn_varlen_func
+import transformers
+import transformers.modeling_outputs
 
 from mcquic.modules.compressor import Neon
 
@@ -23,34 +26,52 @@ class Generator(nn.Module):
         self.compressor = Neon(channel, m, k)
         state_dict = torch.load(loadFrom, map_location='cpu')
         self.compressor.load_state_dict({k[len('module._compressor.'):]: v for k, v in state_dict['trainer']['_model'].items()})
-        logging.info('Load compressor checkpoint from %s.', loadFrom)
-
         for params in self.compressor.parameters():
             params.requires_grad_(False)
+        logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
+        self.text_encoder = transformers.CLIPModel.from_pretrained("openai/clip-vit-base-patch32").text_model
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+        # NOTE: This transforms text embeddings to the first level token
+        # TODO: 确定超参数
+        self.text_to_first_level = TextConditionedGenerator(clip_text_channels, self.compressor.Codebooks[0].shape[1], -1, -1, -1, -1)
         # NOTE: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
-        self.generator = AnyRes_S([2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
+        self.next_residual_predictor = AnyRes_S([2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
 
-    def forward(self, image, condition):
+    def forward(self, image, condition: List[str]):
+        if not isinstance(condition, list):
+            raise NotImplementedError
         if self.training:
+            ###################### Preparing inputs #########################
             with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 self.compressor.eval()
                 # list of [n, 1, h, w], len of list == levels
                 # from low resolution to high resolution
                 codes = self.compressor.encode(image.float())
+
+                # TODO: 检查这里对不对
+                batch_encoding = self.text_tokenizer(text=condition, return_attention_mask=True, return_tensors='pt')
+                text_embedding: transformers.modeling_outputs.BaseModelOutputWithPooling = self.text_encoder(batch_encoding.input_ids, attention_mask=batch_encoding.attention_mask, return_dict=True)
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
-            # print('****** CODES:', [c.shape for c in codes], '********')
-            predictions = self.generator(codes)
+
+            # given shape and condition, produce token with secified shape
+            first_level = self.text_to_first_level(text_embedding.pooler_output, text_embedding.last_hidden_state, codes[0].shape)
+
+            # TODO: 把 text embedding 的特征 D 维度 跟 visual token 的特征 D 维度对齐。见 AnyResolutionBlock 的 pre_layer
+            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output, text_embedding.last_hidden_state)
 
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
-            restoredCodes.insert(0, codes[0].unsqueeze(1))
+            # [n, 1, h, w]
+            restoredCodes.insert(0, first_level.detach().clone().argmax(1, keepdim=True))
             with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 restored = self.compressor.decode(restoredCodes)
-            # list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
-            return predictions, codes, restored
+            # first_level: [n, k, h, w]
+            # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
+            return first_level, predictions, codes, restored
         else:
             raise NotImplementedError
 
@@ -58,35 +79,138 @@ class Generator(nn.Module):
 #################################################################################
 #                            Core Transformer Model                             #
 #################################################################################
-class FlashAttention(nn.Module):
-    def __init__(self):
+class SelfAttention(nn.Module):
+    def __init__(
+            self,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            attn_drop: float = 0.,
+            proj_drop: float = 0.,
+    ) -> None:
         super().__init__()
+        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.scale = self.head_dim ** -0.5
+        self.attn_drop = attn_drop
 
+        # qkv packed attention
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        # self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        # self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        self.proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.Dropout(proj_drop) if proj_drop > 0.0 else nn.Identity()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)#.permute(2, 0, 3, 1, 4)
+        # q, k, v = qkv.unbind(0)
+        # q, k = self.q_norm(q), self.k_norm(k)
+
+        # [B, N, n_head, head_dim]
+        out: torch.Tensor = flash_attn_qkvpacked_func(qkv, self.attn_drop, self.scale)
+
+        return self.proj(out)
+
+class CrossAttention(nn.Module):
+    def __init__(
+            self,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            attn_drop: float = 0.,
+            proj_drop: float = 0.,
+    ) -> None:
+        super().__init__()
+        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.scale = self.head_dim ** -0.5
+        self.attn_drop = attn_drop
+
+        # qkv packed attention
+        self.wq = nn.Linear(dim, dim, bias=qkv_bias)
+        self.wk = nn.Linear(dim, dim, bias=qkv_bias)
+        self.wv = nn.Linear(dim, dim, bias=qkv_bias)
+        # self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        # self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        self.proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.Dropout(proj_drop) if proj_drop > 0.0 else nn.Identity()
+        )
+
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        # [B, N, C]
+        q = self.wq(q).reshape(q.shape[0], q.shape[1], self.num_heads, -1)
+        k = self.wk(k).reshape(k.shape[0], k.shape[1], self.num_heads, -1)
+        v = self.wv(v).reshape(v.shape[0], v.shape[1], self.num_heads, -1)
+        # q, k, v = qkv.unbind(0)
+        # q, k = self.q_norm(q), self.k_norm(k)
+
+        raise NotImplementedError
+        # TODO: 改成 varlen flash attention，因为 text 长度不定
+        # [B, N, n_head, head_dim]
+        flash_attn_varlen_func(q, k, v,)
+        out: torch.Tensor = flash_attn_varlen_func(q, k ,v, ...)
+
+        return self.proj(out)
 
 
 class TransformerBlock(nn.Module):
     """
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0.1, proj_drop=0.1):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
-        # self.cross_attn = CrossAttention(hidden_size, num_heads, qkv_bias=True, **block_kwargs)
+        self.attn = SelfAttention(hidden_size, num_heads=num_heads, qkv_bias=True, attn_drop=attn_drop, proj_drop=proj_drop)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
-        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
+        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=proj_drop)
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+        )
+
+        # Zero-out adaLN modulation layers in DiT blocks:
+        nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
+        nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
+
+    def forward(self, x, condition):
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(condition).chunk(6, dim=1)
+        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+        return x
+
+
+class CrossTransformerBlock(nn.Module):
+    """
+    A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
+    """
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0.1, proj_drop=0.1):
+        super().__init__()
+        self.normq = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.normk = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.normv = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, attn_drop=attn_drop, proj_drop=proj_drop)
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        mlp_hidden_dim = int(hidden_size * mlp_ratio)
+        approx_gelu = lambda: nn.GELU(approximate="tanh")
+        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=proj_drop)
         # self.adaLN_modulation = nn.Sequential(
         #     nn.SiLU(),
         #     nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         # )
 
-    def forward(self, x):
+    def forward(self, x, condition):
         # shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         # x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
         # x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
-        x = x + self.attn(self.norm1(x))
+        x = x + self.attn(self.normq(x), self.normk(condition), self.normv(condition))
 
         x = x + self.mlp(self.norm2(x))
         return x
@@ -114,16 +238,23 @@ class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
-    def __init__(self, hidden_size, patch_size, out_channels):
+    def __init__(self, hidden_size, prediction_num):
         super().__init__()
-        self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
-        # self.adaLN_modulation = nn.Sequential(
-        #     nn.SiLU(),
-        #     nn.Linear(hidden_size, 2 * hidden_size, bias=True)
-        # )
+        self.norm_final = nn.InstanceNorm2d(hidden_size, eps=1e-6)
+        self.linear = nn.Conv2d(hidden_size, prediction_num, 1)
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Conv2d(hidden_size, 2 * hidden_size, 1)
+        )
+
+        # Zero-out adaLN modulation layers in DiT blocks:
+        nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
+        nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
+
 
     def forward(self, x):
+        # TODO:
+        raise NotImplementedError('我把这的 AdaLN 给删了，你看看你那的实现，而且要改成 2D 的')
         x = self.norm_final(x)
         x = self.linear(x)
         return x
@@ -151,9 +282,17 @@ class AnyResolutionBlock(nn.Module):
         self.hidden_size = hidden_size
 
         self.input_embedding = nn.Parameter(codebook.detach().clone())
-        self.pre_layer = checkpoint_wrapper(nn.Conv2d(codebook.shape[-1], hidden_size, 1, bias=False))
+        # TODO: 这里要和 text_embedding 的维度对齐
+        self.pre_layer = checkpoint_wrapper(
+            FinalLayer(codebook.shape[-1], hidden_size)
+        )
+        self.skip_connection = checkpoint_wrapper(
+            nn.Conv2d(codebook.shape[-1], hidden_size, 1)
+        )
         # we only need level - 1 final layers.
-        self.final_layer = checkpoint_wrapper(nn.Conv2d(hidden_size, len(codebook), 1, bias=False))
+        self.final_layer = checkpoint_wrapper(
+            FinalLayer(hidden_size, len(codebook))
+        )
 
 
         # self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
@@ -164,8 +303,10 @@ class AnyResolutionBlock(nn.Module):
         self.blocks = nn.ModuleList([
             checkpoint_wrapper(TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
         ])
+        self.condition_blocks = nn.ModuleList([
+            checkpoint_wrapper(CrossTransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
+        ])
         self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=4))
-        # self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
         self._initialize_weights()
 
@@ -181,16 +322,6 @@ class AnyResolutionBlock(nn.Module):
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.num_patches ** 0.5))
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
-
-        # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        # w = self.x_embedder.proj.weight.data
-        # nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        # nn.init.constant_(self.x_embedder.proj.bias, 0)
-
-        # Zero-out adaLN modulation layers in DiT blocks:
-        # for block in self.blocks:
-            # nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
-            # nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
         # Zero-out output layers:
         # nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
@@ -224,7 +355,7 @@ class AnyResolutionBlock(nn.Module):
         x = x.permute(0, 2, 1).reshape(bs, dim, h, w) # [bs, 4 * D, h, w]
         return self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
 
-    def forward(self, code, condition):
+    def forward(self, code, pooled_condition, sequence_condition):
         # 0, 1, 2, 3
         bs, h, w = code.shape
         # [b, h, w, d]
@@ -232,7 +363,8 @@ class AnyResolutionBlock(nn.Module):
         with torch.autocast('cuda', torch.bfloat16):
             x = x.bfloat16()
             # [b, h*w, hidden]
-            x = self.pre_layer(x.permute(0, 3, 1, 2).contiguous()).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
+            x = x.permute(0, 3, 1, 2).contiguous()
+            x = (self.pre_layer(x) + self.skip_connection(x)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
 
             if self.training:
                 # TODO: change to random
@@ -242,8 +374,8 @@ class AnyResolutionBlock(nn.Module):
                 selected_pos_embed = self.center_pos_embed(h, w)
 
             x = x + selected_pos_embed # [bs, hw, hidden]
-            for block in self.blocks:
-                x = block(x)
+            for block, cross in zip(self.blocks, self.condition_blocks):
+                x = block(x, pooled_condition) + cross(x, sequence_condition)
             x = self.proj_layer(x) # [bs, hw, 4hidden]
             x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
             prediction = self.final_layer(x) # [bs, k, 2h, 2w]
@@ -285,13 +417,13 @@ class AnyResolutionTransformer(nn.Module):
         )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
-    def forward(self, codes, condition):
+    def forward(self, codes, pooled_condition, sequence_condition):
         if self.training:
             if not isinstance(codes, list):
                 raise RuntimeError('The given training input is not a list.')
             results = list()
             for current, block in zip(codes, self.blocks):
-                results.append(block(current, condition))
+                results.append(block(current, pooled_condition, sequence_condition))
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
@@ -304,6 +436,86 @@ class AnyResolutionTransformer(nn.Module):
             # NOTE: in inference, the len of results is level
             return results
 
+
+
+class TextConditionedGenerator(nn.Module):
+    def __init__(self,
+        in_channels: int,
+        prediction_num: int,
+        hidden_size=1152,
+        depth=28,
+        num_heads=16,
+        mlp_ratio=4.0):
+        super().__init__()
+        # self.learn_sigma = learn_sigma
+        self.in_channels = in_channels
+        self.canvas_size = 16 # 16 -> max resolution 4096
+        self.num_heads = num_heads
+        self.hidden_size = hidden_size
+
+        # we only need level - 1 final layers.
+        self.final_layer = checkpoint_wrapper(
+            FinalLayer(hidden_size, prediction_num)
+        )
+
+        self.num_patches = self.canvas_size * self.canvas_size
+        # Will use fixed sin-cos embedding:
+        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=False)
+
+        self.blocks = nn.ModuleList([
+            checkpoint_wrapper(TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
+        ])
+        self.condition_blocks = nn.ModuleList([
+            checkpoint_wrapper(CrossTransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
+        ])
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        # Initialize transformer layers and proj layer:
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+        self.apply(_basic_init)
+
+        # Initialize (and freeze) pos_embed by sin-cos embedding:
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.num_patches ** 0.5))
+        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+
+        # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
+        # w = self.x_embedder.proj.weight.data
+        # nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        # nn.init.constant_(self.x_embedder.proj.bias, 0)
+
+        # Zero-out adaLN modulation layers in DiT blocks:
+        # for block in self.blocks:
+            # nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
+            # nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+
+        # Zero-out output layers:
+        # nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
+        # nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
+        # nn.init.constant_(self.final_layer.linear.weight, 0)
+        # nn.init.constant_(self.final_layer.linear.bias, 0)
+
+
+    def forward(self, target_shape, pooled_condition, sequence_condition, ):
+        # 0, 1, 2, 3
+        bs, h, w = target_shape
+
+        if self.training:
+            # TODO: change to random
+            # selected_pos_embed = self.random_pos_embed(h, w)
+            selected_pos_embed = self.center_pos_embed(h, w)
+        else:
+            selected_pos_embed = self.center_pos_embed(h, w)
+
+        x = selected_pos_embed # [bs, hw, hidden]
+        for block, cross in zip(self.blocks, self.condition_blocks):
+            x = block(x, pooled_condition) + cross(x, sequence_condition)
+        prediction = self.final_layer(x) # [bs, k, h, w]
+        return prediction
 #################################################################################
 #                   Sine/Cosine Positional Embedding Functions                  #
 #################################################################################
