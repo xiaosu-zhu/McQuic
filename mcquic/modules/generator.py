@@ -149,9 +149,9 @@ class AnyResolutionBlock(nn.Module):
         self.hidden_size = hidden_size
 
         self.input_embedding = nn.Parameter(codebook.detach().clone())
-        self.pre_layer = nn.Conv2d(codebook.shape[-1], hidden_size, 1, bias=False)
+        self.pre_layer = checkpoint_wrapper(nn.Conv2d(codebook.shape[-1], hidden_size, 1, bias=False))
         # we only need level - 1 final layers.
-        self.final_layer = nn.Conv2d(hidden_size, len(codebook), 1, bias=False)
+        self.final_layer = checkpoint_wrapper(nn.Conv2d(hidden_size, len(codebook), 1, bias=False))
 
 
         # self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
@@ -162,7 +162,7 @@ class AnyResolutionBlock(nn.Module):
         self.blocks = nn.ModuleList([
             checkpoint_wrapper(TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
         ])
-        self.proj_layer = ProjLayer(hidden_size, scale_factor=4)
+        self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=4))
         # self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
         self._initialize_weights()
@@ -227,23 +227,25 @@ class AnyResolutionBlock(nn.Module):
         bs, h, w = code.shape
         # [b, h, w, d]
         x = self.input_embedding[code]
-        # [b, h*w, hidden]
-        x = self.pre_layer(x.permute(0, 3, 1, 2).contiguous()).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
+        with torch.autocast('cuda', torch.bfloat16):
+            x = x.bfloat16()
+            # [b, h*w, hidden]
+            x = self.pre_layer(x.permute(0, 3, 1, 2).contiguous()).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
 
-        if self.training:
-            # TODO: change to random
-            # selected_pos_embed = self.random_pos_embed(h, w)
-            selected_pos_embed = self.center_pos_embed(h, w)
-        else:
-            selected_pos_embed = self.center_pos_embed(h, w)
+            if self.training:
+                # TODO: change to random
+                # selected_pos_embed = self.random_pos_embed(h, w)
+                selected_pos_embed = self.center_pos_embed(h, w)
+            else:
+                selected_pos_embed = self.center_pos_embed(h, w)
 
-        x = x + selected_pos_embed # [bs, hw, hidden]
-        for block in self.blocks:
-            x = block(x)
-        x = self.proj_layer(x) # [bs, hw, 4hidden]
-        x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
-        prediction = self.final_layer(x) # [bs, k, 2h, 2w]
-        return prediction
+            x = x + selected_pos_embed # [bs, hw, hidden]
+            for block in self.blocks:
+                x = block(x)
+            x = self.proj_layer(x) # [bs, hw, 4hidden]
+            x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
+            prediction = self.final_layer(x) # [bs, k, 2h, 2w]
+            return prediction
 
     # def forward_with_cfg(self, x, t, y, cfg_scale):
     #     """
