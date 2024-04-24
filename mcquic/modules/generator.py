@@ -32,7 +32,7 @@ class Generator(nn.Module):
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.generator = AnyRes_S([2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
 
-    def forward(self, image):
+    def forward(self, image, condition):
         if self.training:
             with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 self.compressor.eval()
@@ -58,7 +58,9 @@ class Generator(nn.Module):
 #################################################################################
 #                            Core Transformer Model                             #
 #################################################################################
-
+class FlashAttention(nn.Module):
+    def __init__(self):
+        super().__init__()
 
 
 
@@ -222,7 +224,7 @@ class AnyResolutionBlock(nn.Module):
         x = x.permute(0, 2, 1).reshape(bs, dim, h, w) # [bs, 4 * D, h, w]
         return self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
 
-    def forward(self, code):
+    def forward(self, code, condition):
         # 0, 1, 2, 3
         bs, h, w = code.shape
         # [b, h, w, d]
@@ -283,13 +285,13 @@ class AnyResolutionTransformer(nn.Module):
         )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
-    def forward(self, codes):
+    def forward(self, codes, condition):
         if self.training:
             if not isinstance(codes, list):
                 raise RuntimeError('The given training input is not a list.')
             results = list()
             for current, block in zip(codes, self.blocks):
-                results.append(block(current))
+                results.append(block(current, condition))
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
