@@ -213,8 +213,8 @@ class _baseGenTrainer(Restorable):
 
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     predictions, codes, xHat = self._model(images)
+                    loss = sum([F.cross_entropy(pre, gt) for (pre, gt) in zip(predictions, codes[1:])])
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
-                loss = sum([F.cross_entropy(pre, gt) for (pre, gt) in zip(predictions, codes[1:])])
                 scaler.scale(loss).backward()
                 # loss.backward()
 
