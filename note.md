@@ -17,6 +17,11 @@ rm -rf saved/latest
 NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=8 mcquic/train/__main__.py configs/neon.yaml
 ```
 
+```bash
+# process dataset
+srun -N 1 -p amd -n 1 --cpus-per-task=32 --nodelist=cpua05 -J openimage_create /share/home/tj24011/software/miniconda3/envs/mcquic/bin/mcquic dataset /share/home/tj24011/ssd_datasets/openimages/ /share/home/tj24011/ssd_datasets/dataset/
+```
+
 使用 slurm 时：
 ```bash
 sbatch singlenode.sh
