@@ -69,7 +69,7 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
 
-        no_decay = ["bias", "LayerNorm.weight"]
+        no_decay = ["bias", "LayerNorm.weight", '_temperature', 'gamma', 'beta']
         optimizer_grouped_parameters = [
             {
                 "params": [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)],
