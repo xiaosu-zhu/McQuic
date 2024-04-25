@@ -6,7 +6,10 @@ import torch.nn.functional as F
 import torch
 
 def test():
-    generator = Generator(32, [1, 1, 1, 1, 1], [4096, 4096, 4096, 4096, 4096], loadFrom='compressor/compressor_19000.ckpt').cuda()
+    generator = Generator(32, [1, 1, 1, 1, 1], [4096, 4096, 4096, 4096, 4096], loadFrom='compressor/compressor_19000.ckpt')
+
+    print(list(name for name, _ in generator.named_parameters() if 'gamma' in name))
+    exit()
     # preprocess = getTrainingPreprocess()
     transform = getEvalTransform()
     # image = Image.open('valid/kodim01.png').convert('RGB')
