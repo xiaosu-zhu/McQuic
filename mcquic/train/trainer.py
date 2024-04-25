@@ -63,11 +63,12 @@ class _baseTrainer(Restorable):
 
         self._model = Compound(compressor.to(self.localRank), distortion.to(self.localRank), device_ids=[self.localRank], output_device=self.localRank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
-        self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
+        self.saver.info("[%s]           Model size: %s", self.PrettyStep, totalParameters(self._model.parameters()))
+        self.saver.info("[%s] Trainable parameters: %s", self.PrettyStep, totalParameters(self.trainableParams()))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-        self._optimizer = optimizer(self.trainable_params(), **self.config.Train.Optim.Params)
+        self._optimizer = optimizer(self.trainableParams(), **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -131,13 +132,13 @@ class _baseTrainer(Restorable):
 
         self.resetScheduler(self._scheduler.last_epoch)
 
-    def trainable_params(self):
+    def trainableParams(self):
         for param in self._model.parameters():
             if param.requires_grad:
                 yield param
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self.optimFn(self.trainable_params(), **self.config.Train.Optim.Params)
+        self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
@@ -220,7 +221,7 @@ class _baseTrainer(Restorable):
 
                 # scaler.unscale_(self._optimizer)
 
-                norm = torch.nn.utils.clip_grad_norm_(self.trainable_params(), 4.0)
+                norm = torch.nn.utils.clip_grad_norm_(self.trainableParams(), 4.0)
 
                 self._optimizer.step()
                 self.saver.debug("[%s] Model backwarded.", self.PrettyStep)
