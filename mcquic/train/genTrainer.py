@@ -70,7 +70,21 @@ class _baseGenTrainer(Restorable):
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-        self._optimizer = optimizer(self.trainableParams(), **self.config.Train.Optim.Params)
+
+
+        no_decay = ["bias", "LayerNorm.weight"]
+        optimizer_grouped_parameters = [
+            {
+                "params": [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)],
+                "weight_decay": self.config.Train.Optim.Params['weight_decay'],
+            },
+            {
+                "params": [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)],
+                "weight_decay": 0.0,
+            },
+        ]
+
+        self._optimizer = optimizer(optimizer_grouped_parameters, **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -133,6 +147,12 @@ class _baseGenTrainer(Restorable):
         self.resetOptimizer()
 
         self.resetScheduler(self._scheduler.last_epoch)
+
+    def named_parameters(self):
+        for name, param in self._model.named_parameters():
+            if param.requires_grad:
+                yield name, param
+
 
     def trainableParams(self):
         for param in self._model.parameters():
