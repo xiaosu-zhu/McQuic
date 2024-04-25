@@ -65,11 +65,26 @@ class _baseGenTrainer(Restorable):
 
         self._model = DistributedDataParallel(generator.to(self.localRank), device_ids=[self.localRank], output_device=self.localRank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
-        self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
+        self.saver.info("[%s]           Model size: %s", self.PrettyStep, totalParameters(self._model.parameters()))
+        self.saver.info("[%s] Trainable parameters: %s", self.PrettyStep, totalParameters(self.trainableParams()))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-        self._optimizer = optimizer(self.trainable_params(), **self.config.Train.Optim.Params)
+
+
+        no_decay = ["bias", "LayerNorm.weight"]
+        optimizer_grouped_parameters = [
+            {
+                "params": [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)],
+                "weight_decay": self.config.Train.Optim.Params['weight_decay'],
+            },
+            {
+                "params": [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)],
+                "weight_decay": 0.0,
+            },
+        ]
+
+        self._optimizer = optimizer(optimizer_grouped_parameters, **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -133,14 +148,20 @@ class _baseGenTrainer(Restorable):
 
         self.resetScheduler(self._scheduler.last_epoch)
 
-    def trainable_params(self):
+    def named_parameters(self):
+        for name, param in self._model.named_parameters():
+            if param.requires_grad:
+                yield name, param
+
+
+    def trainableParams(self):
         for param in self._model.parameters():
             if param.requires_grad:
                 yield param
 
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self.optimFn(self.trainable_params(), **self.config.Train.Optim.Params)
+        self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
@@ -222,7 +243,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.unscale_(self._optimizer)
 
-                norm = torch.nn.utils.clip_grad_norm_(self.trainable_params(), 4.0)
+                norm = torch.nn.utils.clip_grad_norm_(self.trainableParams(), 4.0)
 
                 # self._optimizer.step()
                 scaler.step(self._optimizer)
