@@ -44,6 +44,8 @@ else
     sed -i "1 s|$| -O|" "$(which mcquic)"*
 fi
 
+pip install flash-attn --no-build-isolation
+
 echo "Installation done!"
 
 # echo "If you want to train models, please install NVIDIA/Apex manually."
