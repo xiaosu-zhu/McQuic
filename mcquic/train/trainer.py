@@ -117,13 +117,15 @@ class _baseTrainer(Restorable):
 
         try:
             self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
-        except RuntimeError:
-            oldCkpt = torch.load(path, "cpu")
-            # Using a finetune config
-            if self.config.Model.Params["m"] != oldCkpt["config"]["model"]["params"]["m"]:
-                pass
-            else:
-                raise
+        except (RuntimeError, ValueError):
+            # force restoration
+            pass
+            # oldCkpt = torch.load(path, "cpu")
+            # # Using a finetune config
+            # if self.config.Model.Params["m"] != oldCkpt["config"]["model"]["params"]["m"]:
+            #     pass
+            # else:
+            #     raise
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
