@@ -12,7 +12,7 @@ import mcquic
 from mcquic.config import Config
 from mcquic.modules.compressor import Compressor
 from mcquic.train.utils import getRichProgress
-from mcquic.datasets import getValLoader
+from mcquic.data import getValLoader
 from mcquic.utils import hashOfFile, versionCheck
 
 from mcquic.validate.validator import Validator

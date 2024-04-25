@@ -14,7 +14,7 @@ from vlutils.config import summary
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor, Neon
 from mcquic.modules.generator import Generator
-from mcquic.datasets import getTrainLoader, getValLoader
+from mcquic.data import getTrainLoader, getValLoader
 from mcquic.train.hooks import getAllHooks
 from mcquic.utils.registry import *
 import mcquic.utils.registry

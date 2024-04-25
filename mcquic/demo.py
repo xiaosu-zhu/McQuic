@@ -110,7 +110,7 @@ def compressImage(image: torch.Tensor, model: BaseCompressor, crop: bool) -> Fil
     image = convert_image_dtype(image)
 
     if crop:
-        from mcquic.datasets.transforms import AlignedCrop
+        from mcquic.data.transforms import AlignedCrop
         image = AlignedCrop()(image)
 
     # [c, h, w]
