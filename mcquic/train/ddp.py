@@ -80,7 +80,8 @@ def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[path
 
     # load ckpt before create trainer, in case it moved to other place.
     if resume is not None:
-        if rank == 0:
+        # NOTE: here, we use local rank, since this checkpoint should be copied to each node's tmp dir.
+        if int(os.environ['LOCAL_RANK']) == 0:
             tmpFile = copy2(resume, os.path.join(Consts.TempDir, "resume.ckpt"), follow_symlinks=False)
         else:
             tmpFile = os.path.join(Consts.TempDir, "resume.ckpt")
