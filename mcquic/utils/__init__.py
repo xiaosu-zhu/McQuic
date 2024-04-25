@@ -20,8 +20,8 @@ def nop(*_, **__):
     pass
 
 
-def totalParameters(model: nn.Module) -> str:
-    allParams = sum(p.numel() for p in model.parameters())
+def totalParameters(paramsGenerator) -> str:
+    allParams = sum(p.numel() for p in paramsGenerator)
     unit, suffix = filesize.pick_unit_and_suffix(allParams, ["", "k", "M", "B"], 1000)
     return f"{(allParams / unit):.4f}{suffix}"
 
