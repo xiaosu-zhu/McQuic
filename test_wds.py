@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from typing import Union
 
-from mcquic.datasets.transforms import getTrainingPreprocess
+from mcquic.data.transforms import getTrainingPreprocess
 
 def wdsDecode(sample):
 

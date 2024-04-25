@@ -1,6 +1,6 @@
 from mcquic.modules.generator import Generator
 from PIL import Image
-from mcquic.datasets.transforms import getTrainingPreprocess, getTrainingTransform, getEvalTransform
+from mcquic.data.transforms import getTrainingPreprocess, getTrainingTransform, getEvalTransform
 from torchvision.transforms.functional import to_tensor
 import torch.nn.functional as F
 import torch
