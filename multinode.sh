@@ -1,23 +1,28 @@
 #!/bin/bash
 
-#SBATCH --job-name=multinode-example
-#SBATCH --nodes=4
-#SBATCH --ntasks=4
-#SBATCH --gpus-per-task=1
-#SBATCH --cpus-per-task=4
+#SBATCH -J mcquic_pretraining
+#SBATCH -p A800
+#SBATCH -N 2
+#SBATCH --ntasks=2
+#SBATCH --gres=gpu:a800:8
+#SBATCH --cpus-per-task=48
+#SBATCH --output=slurm-%j.out
+#SBATCH --error=slurm-%j.err
 
-nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )
-nodes_array=($nodes)
-head_node=${nodes_array[0]}
-head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
+# ntask should be equal to N
 
-echo Node IP: $head_node_ip
-export LOGLEVEL=INFO
+export HF_ENDPOINT="https://hf-mirror.com"
+export PYTHONPATH="/share/home/tj24011/workspace/McQuic"
 
-srun torchrun \
---nnodes 4 \
---nproc_per_node 1 \
+module load cuda/12.1
+source /share/home/tj24011/software/miniconda3/etc/profile.d/conda.sh
+conda activate mcquic
+
+
+NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=8 srun /share/home/tj24011/software/miniconda3/envs/mcquic/bin/torchrun \
+--nnodes 2 \
+--nproc_per_node 8 \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
---rdzv_endpoint $head_node_ip:29500 \
-/shared/examples/multinode_torchrun.py 50 10
+--rdzv_endpoint $HOSTNAME:19936 \
+/share/home/tj24011/workspace/McQuic/mcquic/train/__main__.py -D /share/home/tj24011/workspace/McQuic/configs/a800_8.yaml

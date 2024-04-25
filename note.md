@@ -31,3 +31,10 @@ squeue --job JOB_ID
 # 取消
 scancel JOB_ID
 ```
+
+
+如果多节点出现： The server socket has failed to listen on any local network address
+
+The server socket has failed to bind to [::]:19936
+
+是因为 ntask 比 N 多，要设置 ntask == N，这样一个 node 刚好启动一个 torchrun，不然后面每个 node 有多个 torchrun 冲突了
