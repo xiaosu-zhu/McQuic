@@ -41,11 +41,11 @@ class _baseTrainer(Restorable):
         self.saver = saver
 
         self.rank = dist.get_rank()
+        self.localRank = int(os.environ['LOCAL_RANK'])
 
         self.saver.debug("<%s> is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
-        localRank = int(os.environ['LOCAL_RANK'])
-        torch.cuda.set_device(localRank)
+        # localRank = int(os.environ['LOCAL_RANK'])
         self.config = config
 
         self._step = 0
@@ -56,13 +56,13 @@ class _baseTrainer(Restorable):
         self.lastFormatted = -1
         self.prettyStep = "......"
 
-        self.transform = getTrainingTransform().to(localRank)
+        self.transform = getTrainingTransform().to(self.localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
 
 
-        self._model = Compound(compressor.to(localRank), distortion.to(localRank), device_ids=[localRank], output_device=localRank, find_unused_parameters=False)
+        self._model = Compound(compressor.to(self.localRank), distortion.to(self.localRank), device_ids=[self.localRank], output_device=self.localRank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -83,7 +83,8 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
     def periodicSave(self, *_, **__):
-        if int(os.environ['LOCAL_RANK']) == 0:
+        # Only save once, since file-system is shared
+        if self.rank == 0:
             self.save()
 
     def save(self, path = None):
@@ -116,7 +117,7 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
         try:
-            self.saver.load(path, torch.device(f"cuda:{int(os.environ['LOCAL_RANK'])}"), logger=self.saver, trainer=self)
+            self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
         except RuntimeError:
             oldCkpt = torch.load(path, "cpu")
             # Using a finetune config
@@ -197,13 +198,13 @@ class _baseTrainer(Restorable):
 
         images, xHat, codes, logits = None, None, None, None
 
-        localRank = int(os.environ['LOCAL_RANK'])
+        # localRank = int(os.environ['LOCAL_RANK'])
 
         while True:
             # self._epochStart(epochStartHook, **trainingArgs)
             for images in trainLoader:
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
-                images = self.transform(images.to(localRank, non_blocking=True))
+                images = self.transform(images.to(self.localRank, non_blocking=True))
 
                 self._stepStart(stepStartHook, **trainingArgs)
 
@@ -245,6 +246,7 @@ class MainTrainer(_baseTrainer):
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
+        self.localRank = int(os.environ['LOCAL_RANK'])
         self.rank = dist.get_rank()
         self.config = config
         self.saver = saver
@@ -280,9 +282,9 @@ class MainTrainer(_baseTrainer):
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
         # self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
-        self.validator = Validator(self.config, int(os.environ['LOCAL_RANK']))
+        self.validator = Validator(self.config, self.localRank)
 
-        self.diffTracker = EMATracker((), 0.99).to(int(os.environ['LOCAL_RANK']))
+        self.diffTracker = EMATracker((), 0.99).to(self.localRank)
 
         # Call function at every X epoches.
         self.stepFinishCalls = FrequecyHook(

@@ -75,7 +75,8 @@ def genModelFn(modelParams) -> Generator:
 
 def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
     registerForTrain(config)
-    rank = int(os.environ['LOCAL_RANK'])
+    # NOTE: this is global rank
+    rank = int(os.environ['RANK'])
 
     # load ckpt before create trainer, in case it moved to other place.
     if resume is not None:
