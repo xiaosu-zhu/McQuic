@@ -9,7 +9,7 @@ import PIL
 
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor, Compressor
-from mcquic.datasets.transforms import AlignedCrop
+from mcquic.data.transforms import AlignedCrop
 from mcquic.utils.specification import File
 from mcquic.utils.vision import DeTransform
 
