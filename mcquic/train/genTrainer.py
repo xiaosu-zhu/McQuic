@@ -372,7 +372,10 @@ class MainGenTrainer(_baseGenTrainer):
             if torch.isnan(moment):
                 self.saver.critical('Loss becomes NAN. Train crashed.')
                 raise RuntimeError('Loss becomes NAN. Train crashed.')
-            self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
+            if self.progress.get_task(self.trainingBar).time_remaining is not None:
+                self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
+            else:
+                self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0])
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         # self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
