@@ -31,7 +31,7 @@ from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
 from mcquic.validate import Validator
 from mcquic.utils import StrPath, totalParameters
-from mcquic.datasets.transforms import getTrainingTransform
+from mcquic.data.transforms import getTrainingTransform
 
 from mcquic.train.utils import checkHook, getRichProgress
 

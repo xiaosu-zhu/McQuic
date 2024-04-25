@@ -4,7 +4,7 @@ from torch import nn
 
 import mcquic
 from mcquic.consts import Consts
-from mcquic.datasets.transforms import AlignedPadding
+from mcquic.data.transforms import AlignedPadding
 from mcquic.nn import pixelShuffle3x3
 from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
 from mcquic.nn.blocks import AttentionBlock

@@ -66,7 +66,7 @@ Args:
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
 @click.option("-G", "--gen", is_flag=True, help="Enable stage-2 generation training.")
 @click.argument('config', type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=pathlib.Path), required=False, nargs=1)
-def train(debug, quiet, gen config):
+def train(debug, quiet, gen, config):
     """Train a model with automatic resuming.
 
 Args:
@@ -74,7 +74,7 @@ Args:
     config (str): Config file (yaml) path. If `-r/--resume` is present but config is still given, then this config will be used to update the resumed training.
     """
     from mcquic.train.cli import main
-    main(debug, quiet, gen config)
+    main(debug, quiet, gen, config)
 
 
 @entryPoint.command()
@@ -103,10 +103,11 @@ Args:
 @entryPoint.command()
 @click.option("-D", "--debug", is_flag=True, help="Set logging level to DEBUG to print verbose messages.")
 @click.option("-q", "--quiet", is_flag=True, help="Silence all messages, this option has higher priority to `-D/--debug`.")
+@click.option("-G", "--gen", is_flag=True, help='Whether to create image-text pair dataset.')
 @click.option("-j", "--jobs", type=int, default=32, show_default=True, help="Parallelized processing jobs.")
 @click.argument("images", type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
 @click.argument("output", type=click.Path(exists=False, file_okay=False, resolve_path=True, path_type=pathlib.Path), required=True, nargs=1)
-def dataset(debug, quiet, jobs, images, output):
+def dataset(debug, quiet, gen, jobs, images, output):
     """Create training set from `images` dir to `output` dir.
 
 Args:
@@ -115,5 +116,9 @@ Args:
 
     output (str): Output dir to create training set.
     """
-    from mcquic.datasets.cli import main
-    main(images, output, jobs)
+    if gen:
+        from mcquic.data.cli_image_text import main
+        main(images, output, jobs)
+    else:
+        from mcquic.data.cli import main
+        main(images, output, jobs)
