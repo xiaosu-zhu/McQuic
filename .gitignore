@@ -1,8 +1,8 @@
 # User-defined paths
 .vscode/
 *ckpt*
-data/
-data
+*.mdb
+metadata.json
 *.mcquic
 *.mcq
 saved/

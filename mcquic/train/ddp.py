@@ -118,11 +118,11 @@ def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[path
     #     saver.info("Found ckpt to resume at %s", resume)
     #     trainer.restoreStates(tmpFile)
 
-    trainLoader = getTrainLoader(gen, config.Train.TrainSet, config.Train.BatchSize, logger=saver)
+    trainLoaderFn = lambda: getTrainLoader(gen, config.Train.TrainSet, config.Train.BatchSize, logger=saver)
     valLoader = getValLoader(config.Train.ValSet, disable=rank != 0, logger=saver)
     saver.debug("Train and validation datasets mounted.")
 
-    trainer.train(trainLoader, valLoader, **getAllHooks(config.Train.Hooks))
+    trainer.train(trainLoaderFn, valLoader, **getAllHooks(config.Train.Hooks))
 
     saver.debug(summary(config.serialize()))
     saver.info("Bye.")

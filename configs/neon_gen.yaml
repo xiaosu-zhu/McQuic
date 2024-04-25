@@ -8,7 +8,7 @@ model:
     loadFrom: compressor/compressor_19000.ckpt
 train:
   totalStep: 20000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 8
+  batchSize: 14
   epoch: 2
   valFreq: 100
   trainSet: /mnt/hdd1/zhuxiaosu/datasets/coyo-processed

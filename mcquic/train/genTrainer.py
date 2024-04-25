@@ -84,6 +84,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
     def periodicSave(self, *_, **__):
+        # Only save once, since file-system is shared
         if self.rank == 0:
             self.save()
 
@@ -117,7 +118,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
         try:
-            self.saver.load(path, torch.device(f"cuda:{int(os.environ['LOCAL_RANK'])}"), logger=self.saver, trainer=self)
+            self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
         except RuntimeError:
             oldCkpt = torch.load(path, "cpu")
             # Using a finetune config
@@ -185,7 +186,7 @@ class _baseGenTrainer(Restorable):
     #     hook(self._step, self, *args, logger=self.saver, **kwArgs)
 
 
-    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+    def train(self, trainLoaderFn: Callable[[], DataLoader], *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
         stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
@@ -193,9 +194,7 @@ class _baseGenTrainer(Restorable):
         # epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
         # epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
-        trainingArgs = {
-            "trainLoader": trainLoader
-        }
+        trainingArgs = { }
 
         self._beforeRun(beforeRunHook, **trainingArgs)
 
@@ -203,13 +202,12 @@ class _baseGenTrainer(Restorable):
 
         images, texts, xHat, codes = None, None, None, None
 
-        localRank = int(os.environ['LOCAL_RANK'])
-
         while True:
+            trainLoader = trainLoaderFn()
             # self._epochStart(epochStartHook, **trainingArgs)
             for images, texts in trainLoader:
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
-                images = self.transform(images.to(localRank, non_blocking=True))
+                images = self.transform(images.to(self.localRank, non_blocking=True))
 
                 self._stepStart(stepStartHook, **trainingArgs)
 
@@ -224,7 +222,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.unscale_(self._optimizer)
 
-                torch.nn.utils.clip_grad_norm_(self.trainable_params(), 4.0)
+                norm = torch.nn.utils.clip_grad_norm_(self.trainable_params(), 4.0)
 
                 # self._optimizer.step()
                 scaler.step(self._optimizer)
@@ -232,7 +230,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.update()
 
-                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, **trainingArgs)
+                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, norm=norm, **trainingArgs)
                 del images
                 if self._step >= self._totalStep:
                     break
@@ -240,6 +238,9 @@ class _baseGenTrainer(Restorable):
                     gc.collect()
                     gc.collect()
 
+            self.saver.info("[%s] All of dataset's sample consumed, start a new iteration.", self.PrettyStep)
+            gc.collect()
+            gc.collect()
             if self._step >= self._totalStep:
                 break
             # self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, **trainingArgs)
@@ -252,6 +253,7 @@ class MainGenTrainer(_baseGenTrainer):
         if dist.get_rank() != 0:
             raise AttributeError("A sub-process should not to be a <MainTrainer>, use <PalTrainer> instead.")
 
+        self.localRank = int(os.environ['LOCAL_RANK'])
         self.rank = dist.get_rank()
         self.config = config
         self.saver = saver
@@ -287,9 +289,9 @@ class MainGenTrainer(_baseGenTrainer):
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
         # self.epochBar = self.progress.add_task("[----/----]", start=False, progress="", suffix=Consts.CDot * 10)
 
-        self.validator = Validator(self.config, int(os.environ['LOCAL_RANK']))
+        self.validator = Validator(self.config, self.localRank)
 
-        self.diffTracker = EMATracker((), 0.99).to(int(os.environ['LOCAL_RANK']))
+        self.diffTracker = EMATracker((), 0.99).to(self.localRank)
 
         # Call function at every X epoches.
         self.stepFinishCalls = FrequecyHook(
@@ -336,8 +338,8 @@ class MainGenTrainer(_baseGenTrainer):
             self.saver.info("[%s] Total steps: %s, loss: %.2f.", self.PrettyStep, self.PrettyStep, 0.0)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
-    def train(self, trainLoader: DataLoader, valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        return super().train(trainLoader,
+    def train(self, trainLoaderFn: Callable[[], DataLoader], valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+        return super().train(trainLoaderFn,
             beforeRunHook=beforeRunHook,
             afterRunHook=ChainHook(
                 functools.partial(self.validate, valLoader=valLoader),
@@ -362,7 +364,7 @@ class MainGenTrainer(_baseGenTrainer):
         self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
-    def _stepFinishHook(self, *_, loss, **__):
+    def _stepFinishHook(self, *_, loss, norm, **__):
         moment = self.diffTracker(loss)
 
         task = self.progress.get_task(self.trainingBar)
@@ -371,15 +373,15 @@ class MainGenTrainer(_baseGenTrainer):
         if self._step % 10 != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0]}, step=self._step)
+            wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
         if self._step % 100 == 0:
             if torch.isnan(moment):
                 self.saver.critical('Loss becomes NAN. Train crashed.')
                 raise RuntimeError('Loss becomes NAN. Train crashed.')
             if self.progress.get_task(self.trainingBar).time_remaining is not None:
-                self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0], datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
+                self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e, Norm: %.1e, Est: %s', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0], norm, datetime.timedelta(seconds=self.progress.get_task(self.trainingBar).time_remaining))
             else:
-                self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0])
+                self.saver.info('[%s / %s] Loss (CE): %.2f, Lr: %.1e, Norm: %.1e', self.PrettyStep, self._formatStep(int(self._totalStep)), moment, self._scheduler.get_last_lr()[0], norm)
         # self.saver.add_scalar(f"Stat/{self.config.Train.Target}", distortionDB, global_step=self._step)
         # self.saver.add_scalar(f"Stat/Rate", rate, global_step=self._step)
         # self.saver.add_scalar("Stat/Lr", self._scheduler.get_last_lr()[0], global_step=self._step)
@@ -474,5 +476,5 @@ class PalGenTrainer(_baseGenTrainer):
             raise AttributeError("You should call <MainTrainer> for main process other than <PalTrainer> to save, log necessary information.")
         super().__init__(config, tmpFile, modelFn, optimizer, scheduler, saver)
 
-    def train(self, trainLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
-        return super().train(trainLoader, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
+    def train(self, trainLoaderFn: Callable[[], DataLoader], *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
+        return super().train(trainLoaderFn, beforeRunHook=beforeRunHook, afterRunHook=afterRunHook, stepStartHook=stepStartHook, stepFinishHook=stepFinishHook)
