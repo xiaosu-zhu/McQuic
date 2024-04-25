@@ -59,7 +59,9 @@ if "PYPI_BUILDING" in os.environ:
         "packaging",
         'webdataset',
         'wandb',
-        'fairscale'
+        'fairscale',
+        'transformers',
+        'datasets'
     ]
 
     setupArgs.update({

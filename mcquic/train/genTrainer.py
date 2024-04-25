@@ -46,8 +46,7 @@ class _baseGenTrainer(Restorable):
 
         self.saver.debug("<%s> is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
-        localRank = int(os.environ['LOCAL_RANK'])
-        torch.cuda.set_device(localRank)
+        self.localRank = int(os.environ['LOCAL_RANK'])
         self.config = config
 
         self._step = 0
@@ -58,13 +57,13 @@ class _baseGenTrainer(Restorable):
         self.lastFormatted = -1
         self.prettyStep = "......"
 
-        self.transform = getTrainingTransform().to(localRank)
+        self.transform = getTrainingTransform().to(self.localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         generator = trackingFunctionCalls(modelFn, self.saver)()
 
 
-        self._model = DistributedDataParallel(generator.to(localRank), device_ids=[localRank], output_device=localRank, find_unused_parameters=False)
+        self._model = DistributedDataParallel(generator.to(self.localRank), device_ids=[self.localRank], output_device=self.localRank, find_unused_parameters=False)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.info("[%s] Model size: %s", self.PrettyStep, totalParameters(self._model))
 
@@ -85,7 +84,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
     def periodicSave(self, *_, **__):
-        if int(os.environ['LOCAL_RANK']) == 0:
+        if self.rank == 0:
             self.save()
 
     def save(self, path = None):
