@@ -69,7 +69,7 @@ class _baseGenTrainer(Restorable):
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-        self._optimizer = optimizer(self._model.parameters(), **self.config.Train.Optim.Params)
+        self._optimizer = optimizer(self.trainable_params(), **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -132,9 +132,14 @@ class _baseGenTrainer(Restorable):
 
         self.resetScheduler(self._scheduler.last_epoch)
 
+    def trainable_params(self):
+        for param in self._model.parameters():
+            if param.requires_grad:
+                yield param
+
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self.optimFn(self._model.parameters(), **self.config.Train.Optim.Params)
+        self._optimizer = self.optimFn(self.trainable_params(), **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
@@ -196,13 +201,13 @@ class _baseGenTrainer(Restorable):
 
         scaler = GradScaler()
 
-        images, xHat, codes = None, None, None
+        images, texts, xHat, codes = None, None, None, None
 
         localRank = int(os.environ['LOCAL_RANK'])
 
         while True:
             # self._epochStart(epochStartHook, **trainingArgs)
-            for images in trainLoader:
+            for images, texts in trainLoader:
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
                 images = self.transform(images.to(localRank, non_blocking=True))
 
@@ -211,15 +216,15 @@ class _baseGenTrainer(Restorable):
                 self._optimizer.zero_grad()
 
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    predictions, codes, xHat = self._model(images)
-                    loss = sum([F.cross_entropy(pre, gt) for (pre, gt) in zip(predictions, codes[1:])])
+                    predictions, codes, xHat = self._model(images, texts)
+                    loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(images) for (pre, gt) in zip(predictions, codes)])
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
 
                 scaler.unscale_(self._optimizer)
 
-                torch.nn.utils.clip_grad_norm_(self._model.parameters(), 4.0)
+                torch.nn.utils.clip_grad_norm_(self.trainable_params(), 4.0)
 
                 # self._optimizer.step()
                 scaler.step(self._optimizer)
@@ -227,7 +232,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.update()
 
-                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, **trainingArgs)
+                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, **trainingArgs)
                 del images
                 if self._step >= self._totalStep:
                     break
@@ -397,7 +402,7 @@ class MainGenTrainer(_baseGenTrainer):
     #     # super()._epochStart(hook, *args, **kwArgs)
 
 
-    def log(self, *_, images, restored, codes, **__):
+    def log(self, *_, images, restored, codes, texts, **__):
         if self.rank != 0:
             return
         payload: Dict[str, Any] = dict()
@@ -414,6 +419,8 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
 
         payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
+
+        payload['Train/Text'] = wandb.Table(data=[[t] for t  in texts], columns=['text'])
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)

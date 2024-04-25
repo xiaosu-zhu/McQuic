@@ -30,10 +30,12 @@ class Generator(nn.Module):
             params.requires_grad_(False)
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
-        self.text_encoder = transformers.CLIPModel.from_pretrained("openai/clip-vit-base-patch32").text_model
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
         self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        for params in self.text_encoder.parameters():
+            params.requires_grad_(False)
 
-        clip_text_channels = self.text_encoder.config.hidden_size
+        clip_text_channels = self.text_encoder.text_model.config.hidden_size
 
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
@@ -41,11 +43,17 @@ class Generator(nn.Module):
         self.text_to_first_level, self.next_residual_predictor = AnyRes_S(clip_text_channels, [2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
 
 
+        self.compressor.eval()
+        self.text_encoder.eval()
         # Cast to bfloat16
         # self.text_encoder.float16()
-        self.text_to_first_level.bfloat16()
-        self.next_residual_predictor.bfloat16()
+        # self.text_to_first_level.bfloat16()
+        # self.next_residual_predictor.bfloat16()
 
+    def train(self, mode: bool = True):
+        self.compressor.eval()
+        self.text_encoder.eval()
+        return super().train(mode)
 
     def forward(self, image, condition: List[str]):
         if not isinstance(condition, list):
@@ -53,14 +61,13 @@ class Generator(nn.Module):
         if self.training:
             ###################### Preparing inputs #########################
             with torch.no_grad():
-                self.compressor.eval()
                 # list of [n, 1, h, w], len of list == levels
                 # from low resolution to high resolution
                 codes = self.compressor.encode(image.float())
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
-                batch_encoding = self.text_tokenizer(text=condition, return_attention_mask=True, padding=True, return_tensors='pt')
+                batch_encoding = self.text_tokenizer(text=condition, return_attention_mask=True, padding=True, truncation=True, return_tensors='pt')
 
                 input_ids = batch_encoding.input_ids.to(image.device)
                 attention_mask = batch_encoding.attention_mask.to(image.device)
@@ -73,9 +80,9 @@ class Generator(nn.Module):
             codes = [c.squeeze(1) for c in codes]
 
             # given shape and condition, produce token with secified shape
-            first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output, text_embedding.last_hidden_state, attention_mask)
+            first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone().bfloat16(), text_embedding.last_hidden_state.detach().clone().bfloat16(), attention_mask)
 
-            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output, text_embedding.last_hidden_state, attention_mask)
+            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output.detach().clone().bfloat16(), text_embedding.last_hidden_state.detach().clone().bfloat16(), attention_mask)
 
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
@@ -389,7 +396,7 @@ class AnyResolutionBlock(nn.Module):
         # 0, 1, 2, 3
         bs, h, w = code.shape
         # [b, h, w, d]
-        x = self.input_embedding[code]
+        x = self.input_embedding[code].bfloat16()
         # [b, h*w, hidden]
         x = self.input_transform(x.permute(0, 3, 1, 2).contiguous())
         x = (self.pre_layer(x, pooled_condition)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
@@ -407,7 +414,7 @@ class AnyResolutionBlock(nn.Module):
         x = self.proj_layer(x) # [bs, hw, 4hidden]
         x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
         prediction = self.final_layer(x, pooled_condition) # [bs, k, 2h, 2w]
-        return prediction
+        return prediction.bfloat16()
 
     # def forward_with_cfg(self, x, t, y, cfg_scale):
     #     """
