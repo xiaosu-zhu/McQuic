@@ -89,7 +89,7 @@ def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[path
         tmpFile = None
 
 
-    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel=loggingLevel, config=config.serialize(), reserve=False, disable=rank != 0)
+    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel=loggingLevel, config=config.serialize(), reserve=resume is not None, disable=rank != 0)
 
     saver.info("Here is the whole config during this run: \r\n%s", summary(config.serialize()))
 
