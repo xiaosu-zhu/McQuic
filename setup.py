@@ -61,7 +61,8 @@ if "PYPI_BUILDING" in os.environ:
         'wandb',
         'fairscale',
         'transformers',
-        'datasets'
+        'datasets',
+        'joblib'
     ]
 
     setupArgs.update({
