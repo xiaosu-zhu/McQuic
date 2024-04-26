@@ -224,7 +224,9 @@ class _baseGenTrainer(Restorable):
         images, texts, xHat, codes = None, None, None, None
 
         while True:
+            self.saver.info("[%s] Start a new iteration.", self.PrettyStep)
             trainLoader = trainLoaderFn()
+            self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for images, texts in trainLoader:
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
@@ -260,6 +262,8 @@ class _baseGenTrainer(Restorable):
                     gc.collect()
 
             self.saver.info("[%s] All of dataset's sample consumed, start a new iteration.", self.PrettyStep)
+            trainLoader.dataset.close()
+            del trainLoader
             gc.collect()
             gc.collect()
             if self._step >= self._totalStep:
