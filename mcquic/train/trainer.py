@@ -130,17 +130,16 @@ class _baseTrainer(Restorable):
     def restoreStates(self, path: StrPath):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
-        try:
-            self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
-        except (RuntimeError, ValueError):
-            # force restoration
-            pass
-            # oldCkpt = torch.load(path, "cpu")
-            # # Using a finetune config
-            # if self.config.Model.Params["m"] != oldCkpt["config"]["model"]["params"]["m"]:
-            #     pass
-            # else:
-            #     raise
+        self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
+        # except (RuntimeError, ValueError):
+        #     # force restoration
+        #     pass
+        #     # oldCkpt = torch.load(path, "cpu")
+        #     # # Using a finetune config
+        #     # if self.config.Model.Params["m"] != oldCkpt["config"]["model"]["params"]["m"]:
+        #     #     pass
+        #     # else:
+        #     #     raise
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 

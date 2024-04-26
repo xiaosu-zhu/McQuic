@@ -49,10 +49,9 @@ class LowerBound(nn.Module):
         return _lowerBound.apply(x, self.bound)
 
     def forward(self, x):
-        with torch.autocast(device_type='cuda', enabled=False):
-            if torch.jit.is_scripting():
-                return torch.max(x.float(), self.bound)
-            return self.lower_bound(x.float())
+        if torch.jit.is_scripting():
+            return torch.max(x, self.bound)
+        return self.lower_bound(x)
 
 
 class NonNegativeParametrizer(nn.Module):

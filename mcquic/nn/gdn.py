@@ -18,6 +18,7 @@ from torch import nn
 import torch.nn.functional as F
 
 from mcquic.nn.base import NonNegativeParametrizer
+from torch.nn import InstanceNorm2d
 
 __all__ = [
     "GenDivNorm",
@@ -33,7 +34,7 @@ class GenDivNorm(nn.Module):
        y[i] = \frac{x[i]}{\sqrt{\beta[i] + \sum_j(\gamma[j, i] * x[j]^2)}}
     """
 
-    def __init__(self, inChannels: int, groups: int = 1, biasBound: float = 1e-4, weightInit: float = 0.1):
+    def __init__(self, inChannels: int, groups: int = 1, biasBound: float = 1e-4, weightInit: float = 0.1, fuseNorm: bool = False):
         """Generalized Divisive Normalization layer.
 
         Args:
@@ -60,18 +61,19 @@ class GenDivNorm(nn.Module):
         gamma = torch.cat(gamma, 0)
         gamma = self.gamma_reparam.init(gamma)
         self.gamma = nn.Parameter(gamma)
+        # TODO: Test additional normalization
+        # self.preNorm = nn.GroupNorm(1, inChannels) if fuseNorm else nn.Identity()
 
     def forward(self, x):
-        with torch.autocast(device_type='cuda', enabled=False):
-            x = x.float()
-            # C = x.shape[-3]
-            beta = self.beta_reparam(self.beta)
-            gamma = self.gamma_reparam(self.gamma)
-            # [C, C // groups, 1, 1]
-            gamma = gamma[..., None, None]
-            std = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
+        # x = self.preNorm(x)
+        # C = x.shape[-3]
+        beta = self.beta_reparam(self.beta)
+        gamma = self.gamma_reparam(self.gamma)
+        # [C, C // groups, 1, 1]
+        gamma = gamma[..., None, None]
+        std = F.conv2d(x ** 2, gamma, beta, groups=self._groups)
 
-            return self._normalize(x, std)
+        return self._normalize(x, std)
 
     def _normalize(self, x: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
         return x * torch.rsqrt(std)
