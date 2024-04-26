@@ -291,6 +291,11 @@ def initializeBaseConfigs(logger: Union[logging.Logger, LoggerBase] = logging.ro
     torch.autograd.set_detect_anomaly(False)
     torch.backends.cudnn.benchmark = True
 
+    # Speedup via TensorFloat32
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_float32_matmul_precision('high')
+
     logger.debug("Autograd detect anomaly = `%s`", False)
     logger.debug("         CuDNN bechmark = `%s`", True)
     torch.manual_seed(3407)

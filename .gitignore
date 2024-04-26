@@ -16,6 +16,7 @@ slurm-*.err
 slurm-*.out
 generation_saved/
 compressor/
+clic/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
