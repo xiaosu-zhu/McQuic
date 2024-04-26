@@ -50,9 +50,11 @@ def _registerBuiltinFunctions():
     # Built-in pytorch modules to be registered.
     try:
         import apex
-        OptimizerRegistry.register("Lamb")(apex.optimizers.FusedLAMB)
+        OptimizerRegistry.register("FusedLAMB")(apex.optimizers.FusedLAMB)
     except:
-        pass
+        def _raise_func(*_, **__):
+            raise ImportError("You are trying to use FusedLAMB optimizer but Apex is not installed.")
+        OptimizerRegistry.register("FusedLAMB")(_raise_func)
         # raise ImportError("`import apex` failed. Apex not installed.")
     OptimizerRegistry.register("Adam")(torch.optim.AdamW)
 
