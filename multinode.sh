@@ -25,4 +25,4 @@ NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=8 srun /share/home/tj24011/software/miniconda
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint $HOSTNAME:19936 \
-/share/home/tj24011/workspace/McQuic/mcquic/train/__main__.py /share/home/tj24011/workspace/McQuic/configs/a800_8.yaml
+/share/home/tj24011/workspace/McQuic/mcquic/train/__main__.py /share/home/tj24011/workspace/McQuic/configs/a800_16.yaml
