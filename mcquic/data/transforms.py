@@ -14,7 +14,8 @@ from mcquic.utils.vision import RandomGamma, RandomPlanckianJitter, RandomAutoco
 def getTrainingPreprocess():
     return T.Compose([
         # T.ToTensor(),
-        T.RandomCrop(512, pad_if_needed=True),
+        T.Resize(512),
+        T.RandomResizedCrop((512, 512), (0.75, 1.3333)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])
@@ -22,7 +23,8 @@ def getTrainingPreprocess():
 def getTrainingPreprocessWithText():
     transform = T.Compose([
         # T.ToTensor(),
-        T.RandomCrop(512, pad_if_needed=True),
+        T.Resize(512),
+        T.RandomResizedCrop((512, 512), (0.75, 1.3333)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])
