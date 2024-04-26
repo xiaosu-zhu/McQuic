@@ -114,6 +114,7 @@ class ResidualBlockWithStride(_residulBlock):
         else:
             skip = None
         super().__init__(
+            # TODO: test additional norm
             nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
             GenDivNorm(outChannels, groups=groups),
@@ -150,6 +151,7 @@ class ResidualBlockShuffle(_residulBlock):
             groups (int): Group convolution (default: 1).
         """
         super().__init__(
+            # TODO: test additional norm
             nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
             InvGenDivNorm(outChannels, groups=groups),
@@ -190,6 +192,7 @@ class ResidualBlock(_residulBlock):
         else:
             skip = None
         super().__init__(
+            # TODO: test additional norm
             nn.SiLU(),
             conv3x3(inChannels, outChannels),
             nn.SiLU(),
@@ -276,15 +279,13 @@ class AttentionBlock(nn.Module):
         )
 
     def forward(self, x):
-        with torch.autocast('cuda', enabled=False):
-            x = x.float()
-            identity = x
-            a = self._mainBranch(x)
-            b = self._sideBranch(x)
-            mask = torch.sigmoid(b)
-            out = a * mask
-            out += identity
-            return out
+        identity = x
+        a = self._mainBranch(x)
+        b = self._sideBranch(x)
+        mask = torch.sigmoid(b)
+        out = a * mask
+        out += identity
+        return out
 
 
 @ModuleRegistry.register

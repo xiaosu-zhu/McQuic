@@ -201,15 +201,13 @@ class _multiCodebookQuantization(nn.Module):
         return sampled, logit
 
     def forward(self, x: torch.Tensor):
-        with torch.autocast('cuda', enabled=False):
-            x = x.float()
-            sample, logit = self._sample(x, 1.0)
-            # [n, m, h, w, 1]
-            code = logit.argmax(-1, keepdim=True)
-            # [n, m, h, w, k]
-            oneHot = torch.zeros_like(logit).scatter_(-1, code, 1).contiguous()
-            # [n, m, h, w, k]
-            return sample, code[..., 0].contiguous(), oneHot, logit
+        sample, logit = self._sample(x, 1.0)
+        # [n, m, h, w, 1]
+        code = logit.argmax(-1, keepdim=True)
+        # [n, m, h, w, k]
+        oneHot = torch.zeros_like(logit).scatter_(-1, code, 1).contiguous()
+        # [n, m, h, w, k]
+        return sample, code[..., 0].contiguous(), oneHot, logit
 
 
 class _multiCodebookDeQuantization(nn.Module):
@@ -233,18 +231,16 @@ class _multiCodebookDeQuantization(nn.Module):
 
     # NOTE: ALREADY CHECKED CONSISTENCY WITH NAIVE IMPL.
     def forward(self, sample: torch.Tensor):
-        with torch.autocast('cuda', enabled=False):
-            sample = sample.float()
-            n, _, h, w, _ = sample.shape
-            # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
-            # return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).contiguous().permute(0, 1, 4, 2, 3).contiguous().reshape(n, -1, h, w).contiguous()
-            # [nm, hw, k]
-            left = sample.reshape(n*self._m, h*w, self._k).contiguous()
-            # [nm, k, d]
-            right = self._codebook.expand(n, self._m, self._k, self._d).reshape(n*self._m, self._k, self._d).contiguous()
-            # [nm, hw, d]
-            result = torch.bmm(left, right)
-            return result.reshape(n, self._m, h, w, self._d).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w).contiguous()
+        n, _, h, w, _ = sample.shape
+        # [n, m, h, w, k, 1], [m, 1, 1, k, d] -sum-> [n, m, h, w, d] -> [n, m, d, h, w] -> [n, c, h, w]
+        # return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).contiguous().permute(0, 1, 4, 2, 3).contiguous().reshape(n, -1, h, w).contiguous()
+        # [nm, hw, k]
+        left = sample.reshape(n*self._m, h*w, self._k).contiguous()
+        # [nm, k, d]
+        right = self._codebook.expand(n, self._m, self._k, self._d).reshape(n*self._m, self._k, self._d).contiguous()
+        # [nm, hw, d]
+        result = torch.bmm(left, right)
+        return result.reshape(n, self._m, h, w, self._d).permute(0, 1, 4, 2, 3).reshape(n, -1, h, w).contiguous()
 
 
 class _quantizerEncoder(nn.Module):
