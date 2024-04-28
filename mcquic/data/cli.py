@@ -19,7 +19,8 @@ import PIL
 import click
 from mcquic.train.utils import getRichProgress
 
-from mcquic.utils import hashOfFile
+from piq import brisque, total_variation
+from torchvision.transforms.functional import to_tensor
 
 _EXT = [".png", ".jpg", ".jpeg"]
 
@@ -56,15 +57,24 @@ def findAllWithSize(dirPath, ext):
 
 def _joblibValidateImage(path, strict):
     try:
-        a = Image.open(path)
-    except (PIL.UnidentifiedImageError, PIL.Image.DecompressionBombError):
-        return None
-    w, h = a.size
-    if strict:
-        # force images size > 512.
-        if h < 512 or w < 512:
+        try:
+            a = Image.open(path).convert('RGB')
+        except (PIL.UnidentifiedImageError, PIL.Image.DecompressionBombError):
             return None
-    return path
+        w, h = a.size
+        if strict:
+            # force images size > 512.
+            if h < 512 or w < 512:
+                return None
+            img = to_tensor(a)
+            if total_variation(img.unsqueeze(0)) < 64.:
+                return None
+            # raise ValueError(total_variation(img.unsqueeze(0)))
+            # if  > 50.:
+            #     return None
+        return path
+    except OSError:
+        return None
 
 
 @contextlib.contextmanager
@@ -97,6 +107,8 @@ def getFilesFromDir(root, progress, strict: bool = False):
             self._current = self._current + advance
             progress.update(task, advance=advance, progress=f"{self._current / total * 100 :.2f}%")
 
+    # for f in files:
+    #     _joblibValidateImage(f, strict)
     with rich_joblib(updateFn()):
         result = Parallel(32)(delayed(_joblibValidateImage)(f, strict) for f in files)
     newFile = [x for x in result if x is not None]

@@ -11,7 +11,7 @@ train:
   valFreq: 10
   trainSet: /ssdfs/datahome/tj24011/dataset
   valSet: /ssdfs/datahome/tj24011/kodak
-  saveDir: /share/home/tj24011/workspace/McQuic/saved
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py
