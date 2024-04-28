@@ -62,7 +62,7 @@ class GenDivNorm(nn.Module):
         gamma = self.gamma_reparam.init(gamma)
         self.gamma = nn.Parameter(gamma)
         # TODO: Test additional normalization
-        # self.preNorm = nn.GroupNorm(1, inChannels) if fuseNorm else nn.Identity()
+        self.preNorm = nn.GroupNorm(1, inChannels) if fuseNorm else nn.Identity()
 
     def forward(self, x):
         # x = self.preNorm(x)

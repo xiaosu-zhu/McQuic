@@ -6,6 +6,14 @@ quantizer 部分去除了 einsum，einsum 会导致 grad stride 与 bucket view 
 
 不论是训练中还是推理，tokenizer 都必须用 float32，不然精度不够
 
+编译 apex：
+
+1. gcc 9.4, gxx 9.4 (conda)
+2. srun -N 1 -p amd -n 1 --cpus-per-task=32 --nodelist=cpua01 --pty /bin/bash
+3. module load cuda/12.1
+4. MAX_JOBS=32 pip install ...
+
+
 新运行命令：
 ```
 *********     不要使用 python 3.12     ************
@@ -20,7 +28,7 @@ TOKENIZERS_PARALLELISM=false NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 torchrun --rd
 
 ```bash
 # process dataset
-srun -N 1 -p amd -n 1 --cpus-per-task=32 --nodelist=cpua05 -J openimage_create /share/home/tj24011/software/miniconda3/envs/mcquic/bin/mcquic dataset /share/home/tj24011/ssd_datasets/openimages/ /share/home/tj24011/ssd_datasets/dataset/
+srun -N 1 -p amd -n 1 --cpus-per-task=32 --nodelist=cpua05 -J openimage_clean_create /ssdfs/datahome/tj24011/software/miniconda3/envs/mcquic/bin/mcquic dataset /ssdfs/datahome/tj24011/datasets/raw/openimages/ /ssdfs/datahome/tj24011/datasets/webdataset/openimages_HQ/
 ```
 
 使用 slurm 时：

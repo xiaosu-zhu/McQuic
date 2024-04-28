@@ -62,7 +62,8 @@ if "PYPI_BUILDING" in os.environ:
         'fairscale',
         'transformers',
         'datasets',
-        'joblib'
+        'joblib',
+        'piq'
     ]
 
     setupArgs.update({
