@@ -65,7 +65,7 @@ class GenDivNorm(nn.Module):
         self.preNorm = nn.GroupNorm(1, inChannels) if fuseNorm else nn.Identity()
 
     def forward(self, x):
-        # x = self.preNorm(x)
+        x = self.preNorm(x)
         # C = x.shape[-3]
         beta = self.beta_reparam(self.beta)
         gamma = self.gamma_reparam(self.gamma)
