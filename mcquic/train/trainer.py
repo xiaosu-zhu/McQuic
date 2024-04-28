@@ -235,6 +235,7 @@ class _baseTrainer(Restorable):
                 # scaler.unscale_(self._optimizer)
 
                 norm = torch.nn.utils.clip_grad_norm_(self.trainableParams(), 4.0)
+                # norm = 0.0
 
                 self._optimizer.step()
                 self.saver.debug("[%s] Model backwarded.", self.PrettyStep)

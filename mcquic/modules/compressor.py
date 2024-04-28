@@ -226,5 +226,5 @@ class Neon(BaseCompressor):
         encoder = checkpoint_wrapper(encoder)
         decoder = checkpoint_wrapper(decoder)
 
-        quantizer = ResidualBackwardQuantizer(channel, [1] * len(k), k)
+        quantizer = ResidualBackwardQuantizer(channel, [1] * len(k), k, denseNorm)
         super().__init__(encoder, quantizer, decoder)
