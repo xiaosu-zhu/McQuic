@@ -84,7 +84,7 @@ def getTrainLoader(gen: bool, datasetPath: StrPath, batchSize: int, logger: Unio
         trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node).shuffle(500).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
-    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=batchSize + 4, pin_memory=True, prefetch_factor=2, persistent_workers=False)
+    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=max(batchSize + 4, 4), pin_memory=True, persistent_workers=False)
     return trainLoader
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):
@@ -92,4 +92,4 @@ def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logg
         return DummyLoader()
     valDataset = Basic(datasetPath, transform=getEvalTransform())
     logger.debug("Create validation set: %s", valDataset)
-    return DataLoader(valDataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
+    return DataLoader(valDataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, drop_last=False)

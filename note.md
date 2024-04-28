@@ -4,6 +4,7 @@ quantizer 部分去除了 einsum，einsum 会导致 grad stride 与 bucket view 
 
 由于level太多，rans coder不能用
 
+不论是训练中还是推理，tokenizer 都必须用 float32，不然精度不够
 
 新运行命令：
 ```

@@ -191,8 +191,7 @@ class _baseTrainer(Restorable):
 
     def _stepFinish(self, hook, *args, **kwArgs):
         self._step += 1
-        if self._step > 10:
-            self._scheduler.step()
+        self._scheduler.step()
         hook(self._step, 0, self, *args, logger=self.saver, **kwArgs)
         self.saver.debug("[%s] Call `stepFinish` hooks done.", self.PrettyStep)
 
