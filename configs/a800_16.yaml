@@ -9,17 +9,17 @@ train:
   batchSize: 6
   epoch: 2
   valFreq: 10
-  trainSet: /ssdfs/datahome/tj24011/dataset
-  valSet: /ssdfs/datahome/tj24011/kodak
-  saveDir: /share/home/tj24011/workspace/McQuic/saved
+  trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw
+  valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py
     # - some/modules/to/be/registered2.py
   optim:
-    key: Adam
+    key: FusedLAMB
     params:
-      lr: 5.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      lr: 8.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
       weight_decay: 0.0
       # use_nvlamb: true
   schdr:
@@ -37,4 +37,4 @@ train:
   hooks:
     - key: CodebookReassign
       params:
-        freq: 20000
+        freq: 10000

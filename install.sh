@@ -24,7 +24,7 @@ eval "$(conda shell.bash hook)"
 
 conda activate mcquic
 
-conda install -y -n mcquic "pybind11>=2.6,<3" "pip>=22" "tensorboard>=2.3,<3" "rich>=10,<11" "python-lmdb>=1.2,<2" "pyyaml>=5.4,<7" "marshmallow>=3.14,<4" "click>=8,<9" "msgpack-python>=1,<2" packaging -c conda-forge
+conda install -y -n mcquic gcc==9.4 gxx==9.4 "pybind11>=2.6,<3" "pip>=22" "tensorboard>=2.3,<3" "rich>=10,<11" "python-lmdb>=1.2,<2" "pyyaml>=5.4,<7" "marshmallow>=3.14,<4" "click>=8,<9" "msgpack-python>=1,<2" ninja packaging -c conda-forge
 
 
 if [[ "$CONDA_DEFAULT_ENV" != "mcquic" ]]; then
@@ -48,5 +48,5 @@ pip install flash-attn --no-build-isolation
 
 echo "Installation done!"
 
-# echo "If you want to train models, please install NVIDIA/Apex manually."
+echo "If you want to train models, please install NVIDIA/Apex manually."
 echo "If you want to use streamlit service, please install streamlit via pip."

@@ -70,19 +70,8 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
-
-        no_decay = ["bias", "LayerNorm.weight", '_temperature', 'gamma', 'beta']
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": self.config.Train.Optim.Params['weight_decay'],
-            },
-            {
-                "params": [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-            },
-        ]
-        self._optimizer = optimizer(optimizer_grouped_parameters, **self.config.Train.Optim.Params)
+        # For generator, we set weight_deacy to 0, so there is no need to use params_group
+        self._optimizer = optimizer(self.trainableParams(), **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
