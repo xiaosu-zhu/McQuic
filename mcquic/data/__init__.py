@@ -68,7 +68,7 @@ def wdsDecodeWithText(sample):
         #     sample = sample.repeat((3, 1, 1))
         # elif sample.shape[0] == 4:
         #     sample = sample[:3]
-    return result, sample['text'].decode("utf-8")
+    return result, sample['txt'].decode("utf-8")
 
 def getTrainLoader(gen: bool, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
     allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
