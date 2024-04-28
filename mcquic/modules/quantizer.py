@@ -544,7 +544,7 @@ class NeonQuantizer(VariousMQuantizer):
 
 
 class ResidualBackwardQuantizer(VariousMQuantizer):
-    def __init__(self, channel: int, m: List[int], k: List[int]):
+    def __init__(self, channel: int, m: List[int], k: List[int], denseNorm: bool):
         if not isinstance(k, list):
             raise AttributeError
 
@@ -563,9 +563,9 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         # reverse adding encoder, decoder and quantizer
         for i, (ki, mi) in enumerate(zip(k[::-1], m[::-1])):
             latentStageEncoder = nn.Sequential(
-                ResidualBlock(channel, channel),
-                AttentionBlock(channel),
-                ResidualBlockWithStride(channel, channel),
+                ResidualBlock(channel, channel, 32, denseNorm),
+                AttentionBlock(channel, 32, denseNorm),
+                ResidualBlockWithStride(channel, channel, 2, 32, denseNorm),
                 conv1x1(channel, channel, bias=False)
             )
             codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, channel // mi), std=math.sqrt(2 / (5 * channel / float(mi)))))
@@ -574,16 +574,16 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
 
             backward = nn.Sequential(
                 conv1x1(channel, channel, bias=False),
-                ResidualBlockShuffle(channel, channel),
-                AttentionBlock(channel),
-                ResidualBlock(channel, channel)
+                ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
+                AttentionBlock(channel, 32, denseNorm),
+                ResidualBlock(channel, channel, 32, denseNorm)
             ) if i < len(k) - 1 else nn.Identity()
 
             restoreHead = nn.Sequential(
                 conv1x1(channel, channel, bias=False),
-                ResidualBlockShuffle(channel, channel),
-                AttentionBlock(channel),
-                ResidualBlock(channel, channel)
+                ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
+                AttentionBlock(channel, 32, denseNorm),
+                ResidualBlock(channel, channel, 32, denseNorm)
             )
 
             encoders.append(latentStageEncoder)
