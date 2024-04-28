@@ -37,7 +37,7 @@ def write(sink: wds.ShardWriter, i: int, path: str, text: str):
             {
                 '__key__': 'sample%08d' % i,
                 'jpg': fp.read(),
-                'text': text
+                'txt': text
             }
         )
 

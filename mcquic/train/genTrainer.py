@@ -445,7 +445,7 @@ class MainGenTrainer(_baseGenTrainer):
 
         payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
 
-        payload['Train/Text'] = wandb.Table(data=[[t] for t in texts], columns=['text'])
+        payload['Train/Text'] = wandb.Table(data=[[t] for t in texts], columns=['txt'])
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
