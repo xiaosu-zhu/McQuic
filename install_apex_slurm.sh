@@ -13,9 +13,9 @@ echo "Apex is not compatible with cuda 12.1, exiting"
 exit
 
 module load cuda/12.1
-source /share/home/tj24011/software/miniconda3/etc/profile.d/conda.sh
+source /ssdfs/datahome/tj24011/software/miniconda3/etc/profile.d/conda.sh
 conda activate mcquic
 
-cd /share/home/tj24011/workspace/apex
+cd /ssdfs/datahome/tj24011/workspace/apex
 
 pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./

@@ -95,7 +95,7 @@ class ResidualBlockWithStride(_residulBlock):
         +--------------+
     ```
     """
-    def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1):
+    def __init__(self, inChannels: int, outChannels: int, stride: int = 2, groups: int = 1, denseNorm: bool = False):
         """Usage:
         ```python
             # A block performs 2x down-sampling
@@ -115,9 +115,9 @@ class ResidualBlockWithStride(_residulBlock):
             skip = None
         super().__init__(
             # TODO: test additional norm
-            nn.SiLU(),
+            nn.Sequential(nn.GroupNorm(groups, inChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
-            GenDivNorm(outChannels, groups=groups),
+            GenDivNorm(outChannels, fuseNorm=denseNorm),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -138,7 +138,7 @@ class ResidualBlockShuffle(_residulBlock):
         +--------------+
     ```
     """
-    def __init__(self, inChannels: int, outChannels: int, upsample: int = 2, groups: int = 1):
+    def __init__(self, inChannels: int, outChannels: int, upsample: int = 2, groups: int = 1, denseNorm: bool = False):
         """Usage:
         ```python
             # A block performs 2x up-sampling
@@ -152,9 +152,9 @@ class ResidualBlockShuffle(_residulBlock):
         """
         super().__init__(
             # TODO: test additional norm
-            nn.SiLU(),
+            nn.Sequential(nn.GroupNorm(groups, inChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
-            InvGenDivNorm(outChannels, groups=groups),
+            InvGenDivNorm(outChannels, fuseNorm=denseNorm),
             conv3x3(outChannels, outChannels),
             pixelShuffle3x3(inChannels, outChannels, upsample))
 
@@ -176,7 +176,7 @@ class ResidualBlock(_residulBlock):
         +--------------+
     ```
     """
-    def __init__(self, inChannels: int, outChannels: int, groups: int = 1):
+    def __init__(self, inChannels: int, outChannels: int, groups: int = 1, denseNorm: bool = False):
         """Usage:
         ```python
             # A block with "same" feature map
@@ -193,9 +193,9 @@ class ResidualBlock(_residulBlock):
             skip = None
         super().__init__(
             # TODO: test additional norm
-            nn.SiLU(),
+            nn.Sequential(nn.GroupNorm(groups, inChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
             conv3x3(inChannels, outChannels),
-            nn.SiLU(),
+            nn.Sequential(nn.GroupNorm(groups, outChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -263,18 +263,18 @@ class AttentionBlock(nn.Module):
         +----------------------+
     ```
     """
-    def __init__(self, channel, groups=1):
+    def __init__(self, channel, groups=1, denseNorm: bool = False):
         super().__init__()
         self._mainBranch = nn.Sequential(
-            ResidualBlock(channel, channel, groups),
-            ResidualBlock(channel, channel, groups),
-            ResidualBlock(channel, channel, groups)
+            ResidualBlock(channel, channel, groups, denseNorm),
+            ResidualBlock(channel, channel, groups, denseNorm),
+            ResidualBlock(channel, channel, groups, denseNorm)
         )
 
         self._sideBranch = nn.Sequential(
-            ResidualBlock(channel, channel, groups),
-            ResidualBlock(channel, channel, groups),
-            ResidualBlock(channel, channel, groups),
+            ResidualBlock(channel, channel, groups, denseNorm),
+            ResidualBlock(channel, channel, groups, denseNorm),
+            ResidualBlock(channel, channel, groups, denseNorm),
             conv1x1(channel, channel)
         )
 
