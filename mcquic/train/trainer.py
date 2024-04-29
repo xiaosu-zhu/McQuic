@@ -295,10 +295,11 @@ class MainTrainer(_baseTrainer):
                         {'key': h.Key, 'params': h.Params} for h in config.Train.Hooks
                     ]
                 },
-                save_code=True,
                 job_type='train',
                 name=datetime.datetime.now().strftime(r'%m%d-%H:%M'),
             )
+            self.run.log_code(pathlib.Path(__file__).parent.parent)
+
 
         self.progress = getRichProgress().__enter__()
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
