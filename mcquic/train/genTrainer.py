@@ -374,12 +374,10 @@ class MainGenTrainer(_baseGenTrainer):
             stepFinishHook=ChainHook(self._stepFinishHook, self.stepFinishCalls, stepFinishHook))
 
     def _beforeRun(self, hook, *args, **kwargs):
-        self.progress.start_task(self.trainingBar)
-
-        self.progress.update(self.trainingBar, total=self._totalStep, completed=self._step, progress=f"[{self._step + 1:4d}/{self._totalStep:4d}]")
-
         super()._beforeRun(hook, *args, **kwargs)
-        # self.saver.info("[%s] See you at `%s`", self.PrettyStep, self.saver.TensorboardURL)
+
+        self.progress.start_task(self.trainingBar)
+        self.progress.update(self.trainingBar, total=self._totalStep, completed=self._step, progress=f"[{self._step + 1:4d}/{self._totalStep:4d}]")
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
