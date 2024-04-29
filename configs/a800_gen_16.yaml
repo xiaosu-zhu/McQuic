@@ -7,8 +7,8 @@ model:
     denseNorm: false
     loadFrom: compressor/compressor_58000.ckpt
 train:
-  totalStep: 198587 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 24
+  totalStep: 50000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+  batchSize: 48
   epoch: 2
   valFreq: 100
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/cc3m-wds/*train*.tar
@@ -28,7 +28,7 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 198587 # totalimage / gpus / batchsize * epochs
+      first_cycle_steps: 50000 # totalimage / gpus / batchsize * epochs
       warmup_steps: 2000
       gamma: 1.0
       lrScaleRatio: 0.0
