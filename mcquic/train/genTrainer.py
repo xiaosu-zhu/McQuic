@@ -24,7 +24,7 @@ from vlutils.runtime import relativePath
 from rich import filesize
 import torch.nn.functional as F
 
-from mcquic.train.utils import Saver
+from mcquic.train.utils import Saver, parseOptimGroup
 from mcquic.consts import Consts
 from mcquic.loss import Distortion
 from mcquic.validate.utils import EMATracker
@@ -71,15 +71,15 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         optimizer = trackingFunctionCalls(optimizer, self.saver)
 
+        included, excluded = parseOptimGroup(self._model.named_modules(), self._model.named_parameters(), (torch.nn.LayerNorm, torch.nn.Embedding), ['pos_embed', 'bias'])
 
-        no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
             {
-                "params": [p for n, p in self.named_parameters() if not any(nd in n for nd in no_decay)],
+                "params": included,
                 "weight_decay": self.config.Train.Optim.Params['weight_decay'],
             },
             {
-                "params": [p for n, p in self.named_parameters() if any(nd in n for nd in no_decay)],
+                "params": excluded,
                 "weight_decay": 0.0,
             },
         ]
@@ -228,6 +228,7 @@ class _baseGenTrainer(Restorable):
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for images, texts in trainLoader:
+                print(texts)
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
                 images = self.transform(images.to(self.localRank, non_blocking=True))
 
@@ -304,10 +305,10 @@ class MainGenTrainer(_baseGenTrainer):
                         {'key': h.Key, 'params': h.Params} for h in config.Train.Hooks
                     ]
                 },
-                save_code=True,
                 job_type='train',
                 name=datetime.datetime.now().strftime(r'%m%d-%H:%M'),
             )
+            self.run.log_code(pathlib.Path(__file__).parent.parent)
 
         self.progress = getRichProgress().__enter__()
         self.trainingBar = self.progress.add_task("", start=False, progress="[----/----]", suffix=Consts.CDot * 10)
@@ -445,7 +446,7 @@ class MainGenTrainer(_baseGenTrainer):
 
         payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
 
-        payload['Train/Text'] = wandb.Table(data=[[t] for t in texts], columns=['txt'])
+        self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
