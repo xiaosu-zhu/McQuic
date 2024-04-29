@@ -19,7 +19,7 @@ train:
     # - some/modules/to/be/registered1.py
     # - some/modules/to/be/registered2.py
   optim:
-    key: Adam
+    key: FusedLAMB
     params:
       lr: 7.5e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
       weight_decay: 0.01
