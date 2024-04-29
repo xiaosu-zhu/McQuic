@@ -57,7 +57,7 @@ class _baseGenTrainer(Restorable):
         self.lastFormatted = -1
         self.prettyStep = "......"
 
-        self.transform = getTrainingTransform().to(self.localRank)
+        self.transform = getTrainingTransform(gen=True).to(self.localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
         generator = trackingFunctionCalls(modelFn, self.saver)()
