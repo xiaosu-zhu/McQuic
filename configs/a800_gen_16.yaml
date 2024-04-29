@@ -1,17 +1,19 @@
 model:
-  key: Compressor
+  key: Generator
   params:
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
+    denseNorm: false
+    loadFrom: compressor/compressor_58000.ckpt
 train:
   totalStep: 198587 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 6
+  batchSize: 24
   epoch: 2
-  valFreq: 10
-  trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
-  valSet: /ssdfs/datahome/tj24011/kodak
-  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved
+  valFreq: 100
+  trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/cc3m-wds/*train*.tar
+  valSet: valid
+  saveDir: generation_saved
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py
@@ -19,14 +21,14 @@ train:
   optim:
     key: Adam
     params:
-      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
-      weight_decay: 0.0
+      lr: 7.5e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      weight_decay: 0.01
       # use_nvlamb: true
   schdr:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 198587 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+      first_cycle_steps: 198587 # totalimage / gpus / batchsize * epochs
       warmup_steps: 2000
       gamma: 1.0
       lrScaleRatio: 0.0
@@ -34,7 +36,3 @@ train:
     gpus: 8
     vRam: -1
     wantsMore: false
-  hooks:
-    - key: CodebookReassign
-      params:
-        freq: 20000

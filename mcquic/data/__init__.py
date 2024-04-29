@@ -71,7 +71,7 @@ def wdsDecodeWithText(sample):
     return result, sample['txt'].decode("utf-8")
 
 def getTrainLoader(gen: bool, datasetPath: StrPath, batchSize: int, logger: Union[logging.Logger, LoggerBase] = logging.root):
-    allTarGZ = glob.glob(os.path.join(datasetPath, '*.tar.gz'))
+    allTarGZ = glob.glob(str(datasetPath))
     # NOTE: no need to use disbtribued sampler, since shuffle have difference RNG over time and pid.
     # NOTE: do not call .repeat(), it hangs!
     # NOTE: if number of shard < nodes, do not use shardshuffle, it hangs!

@@ -5,13 +5,14 @@ model:
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
-    loadFrom: compressor/compressor_19000.ckpt
+    denseNorm: false
+    loadFrom: compressor/compressor_58000.ckpt
 train:
   totalStep: 20000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 14
+  batchSize: 2
   epoch: 2
   valFreq: 100
-  trainSet: /mnt/hdd1/zhuxiaosu/datasets/coyo-processed
+  trainSet: /mnt/hdd1/zhuxiaosu/datasets/cc3m-wds/*train*.tar
   valSet: valid
   saveDir: generation_saved
   target: MsSSIM
