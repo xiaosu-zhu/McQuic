@@ -228,7 +228,6 @@ class _baseGenTrainer(Restorable):
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for images, texts in trainLoader:
-                print(texts)
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
                 images = self.transform(images.to(self.localRank, non_blocking=True))
 
@@ -286,7 +285,7 @@ class MainGenTrainer(_baseGenTrainer):
         if self.rank == 0:
             wandb.login(key=os.environ['MCQUIC_WANDB_LOGIN'])
             self.run = wandb.init(
-                project='mcquic_gen',
+                project='mcquic-stage-2',
                 config={
                     'model': config.Model.Params,
                     'batch_size': config.Train.BatchSize,
