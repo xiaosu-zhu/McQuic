@@ -24,7 +24,7 @@ def getTrainingPreprocessWithText():
     transform = T.Compose([
         # T.ToTensor(),
         T.Resize(512),
-        T.RandomResizedCrop((512, 512), (0.75, 1.3333)),
+        T.RandomResizedCrop((512, 512), (0.75, 1.3333), (0.95, 1.05)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])
@@ -33,11 +33,11 @@ def getTrainingPreprocessWithText():
         return transform(img), text
     return call
 
-def getTrainingTransform():
+def getTrainingTransform(gen: bool = False):
     return nn.Sequential(
         RandomPlanckianJitter(p=1.0),
-        RandomHorizontalFlip(p=0.5),
-        RandomVerticalFlip(p=0.5),
+        nn.Identity() if gen else RandomHorizontalFlip(p=0.5),
+        nn.Identity() if gen else RandomVerticalFlip(p=0.5),
         T.Normalize(0.5, 0.5),
     )
 
