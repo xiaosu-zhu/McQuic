@@ -39,9 +39,9 @@ to_ntuple = _ntuple
 
 
 class Generator(nn.Module):
-    def __init__(self, channel: int, m: List[int], k: List[int], loadFrom: str, *_, **__):
+    def __init__(self, channel: int, k: List[int], denseNorm: bool, loadFrom: str, *_, **__):
         super().__init__()
-        self.compressor = Neon(channel, m, k)
+        self.compressor = Neon(channel, k, denseNorm)
         state_dict = torch.load(loadFrom, map_location='cpu')
         self.compressor.load_state_dict({k[len('module._compressor.'):]: v for k, v in state_dict['trainer']['_model'].items()})
         for params in self.compressor.parameters():

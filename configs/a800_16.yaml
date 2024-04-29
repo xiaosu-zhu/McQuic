@@ -10,7 +10,7 @@ train:
   batchSize: 6
   epoch: 2
   valFreq: 10
-  trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw
+  trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
   saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved
   target: MsSSIM
