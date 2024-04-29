@@ -276,7 +276,7 @@ class MainTrainer(_baseTrainer):
         if self.rank == 0:
             wandb.login(key=os.environ['MCQUIC_WANDB_LOGIN'])
             self.run = wandb.init(
-                project='mcquic',
+                project='mcquic-stage-1',
                 config={
                     'model': config.Model.Params,
                     'batch_size': config.Train.BatchSize,
