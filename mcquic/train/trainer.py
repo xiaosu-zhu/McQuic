@@ -92,12 +92,14 @@ class _baseTrainer(Restorable):
 
     def periodicSave(self, *_, **__):
         # Used for OSS state_dict updation
-        self._optimizer.consolidate_state_dict(-1)
+        self._optimizer.consolidate_state_dict(0)
         # Only save once, since file-system is shared
         if self.rank == 0:
             self.save()
 
     def save(self, path = None):
+        if self.rank != 0:
+            raise RuntimeError('You must call `save()` on the main worker.')
         self.saver.save(path, trainer=self, config=self.config.serialize())
 
     @property
@@ -200,7 +202,7 @@ class _baseTrainer(Restorable):
     #     hook(self._step, self, *args, logger=self.saver, **kwArgs)
 
     def consolidate(self, *_, **__):
-        self._optimizer.consolidate_state_dict(-1)
+        self._optimizer.consolidate_state_dict(0)
 
 
     def train(self, trainLoaderFn: Callable[[], DataLoader], *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
