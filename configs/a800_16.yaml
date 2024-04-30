@@ -9,7 +9,7 @@ train:
   totalStep: 198587 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 6
   epoch: 2
-  valFreq: 10
+  valFreq: 10000
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
   saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved

@@ -97,21 +97,6 @@ class StepFinishHook(abc.ABC):
         raise NotImplementedError
 
 
-# Some built-in hooks START
-@HookRegistry.register
-class DisablePostProcessAfterEpoch(EpochStartHook):
-    def __init__(self, epoch: int) -> None:
-        super().__init__()
-        self._epoch = epoch
-
-    def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any) -> Any:
-        if epoch >= self._epoch >= 0:
-            trainer._model.PostProcessEnabled = False
-            logger.debug(f"Set PostProcessEnabled to `False` at epoch {epoch}.")
-        else:
-            trainer._model.PostProcessEnabled = True
-            logger.debug(f"Set PostProcessEnabled to `True` at epoch {epoch}.")
-
 @HookRegistry.register
 class CodebookReassign(StepFinishHook):
     def __init__(self, freq) -> None:
@@ -124,7 +109,7 @@ class CodebookReassign(StepFinishHook):
         if dist.get_rank() == 0:
             logger.debug("[%s] Start refresh at epoch %4d.", trainer.PrettyStep, epoch)
 
-        reAssignProportion = trainer._model.refresh(trainer.rank)
+        reAssignProportion = trainer._model.module.refresh(trainer.rank)
 
         if dist.get_rank() == 0:
             logger.debug("[%s] %.2f%% of codebook is re-assigned.", trainer.PrettyStep, reAssignProportion * 100)
@@ -134,25 +119,6 @@ class CodebookReassign(StepFinishHook):
             wandb.log({
                 "Stat/ReAssignProportion": float(reAssignProportion)
             }, step=step)
-
-@HookRegistry.register
-class FinetuneCodebook(EpochStartHook, BeforeRunHook):
-    def __init__(self, codebookPath):
-        super().__init__()
-        self.codebooks = torch.load(codebookPath)
-
-    @torch.no_grad()
-    def beforeRun(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
-        codebooks = trainer._model.Compressor.Codebooks
-        for c, target in zip(codebooks, self.codebooks):
-            c.copy_(target)
-
-    def epochStart(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
-        for name, param in trainer._model.named_parameters():
-            if "codebook" not in name:
-                param.requires_grad_(False)
-            else:
-                param.requires_grad_(True)
 
 @HookRegistry.register
 class CountingCodes(StepFinishHook, EpochFinishHook):
@@ -166,7 +132,7 @@ class CountingCodes(StepFinishHook, EpochFinishHook):
             allCodeAtLevel.append(codeAtLevel.detach().cpu())
 
     def epochFinish(self, step: int, epoch: int, trainer: _baseTrainer, *args: Any, logger: Saver, **kwds: Any):
-        codebooks = trainer._model.Compressor.Codebooks
+        codebooks = trainer._model.module.Compressor.Codebooks
         if dist.get_rank() != 0:
             return
         for i, (allCodeAtLevel, codebook) in enumerate(zip(self.allCodes, codebooks)):
