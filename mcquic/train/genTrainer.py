@@ -13,9 +13,8 @@ import datetime
 
 import torch
 from torchvision.transforms.functional import to_pil_image
-from torch.cuda.amp import GradScaler
+from fairscale.optim.grad_scaler import ShardedGradScaler
 from torch.utils.data import DataLoader, DistributedSampler
-from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from vlutils.base.freqHook import ChainHook
 from vlutils.logger import trackingFunctionCalls
@@ -23,6 +22,8 @@ from vlutils.base import Restorable, FrequecyHook
 from vlutils.runtime import relativePath
 from rich import filesize
 import torch.nn.functional as F
+from fairscale.optim.oss import OSS
+from fairscale.nn.data_parallel import ShardedDataParallel as SDP
 
 from mcquic.train.utils import Saver, parseOptimGroup
 from mcquic.consts import Consts
@@ -63,15 +64,15 @@ class _baseGenTrainer(Restorable):
         generator = trackingFunctionCalls(modelFn, self.saver)()
 
 
-        self._model = DistributedDataParallel(generator.to(self.localRank), device_ids=[self.localRank], output_device=self.localRank, find_unused_parameters=False)
+        model = generator.to(self.localRank)
         self.saver.debug("[%s] Model created.", self.PrettyStep)
-        self.saver.info("[%s]           Model size: %s", self.PrettyStep, totalParameters(self._model.parameters()))
-        self.saver.info("[%s] Trainable parameters: %s", self.PrettyStep, totalParameters(self.trainableParams()))
+        self.saver.info("[%s]           Model size: %s", self.PrettyStep, totalParameters(model.parameters()))
+        self.saver.info("[%s] Trainable parameters: %s", self.PrettyStep, totalParameters([p for p in model.parameters() if p.requires_grad]))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
-        optimizer = trackingFunctionCalls(optimizer, self.saver)
+        # optimizer = trackingFunctionCalls(optimizer, self.saver)
 
-        included, excluded = parseOptimGroup(self._model.named_modules(), self._model.named_parameters(), (torch.nn.LayerNorm, torch.nn.Embedding), ['pos_embed', 'bias'])
+        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.LayerNorm, torch.nn.Embedding), ['pos_embed', 'bias'])
 
         optimizer_grouped_parameters = [
             {
@@ -84,7 +85,7 @@ class _baseGenTrainer(Restorable):
             },
         ]
 
-        self._optimizer = optimizer(optimizer_grouped_parameters, **self.config.Train.Optim.Params)
+        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -94,11 +95,17 @@ class _baseGenTrainer(Restorable):
         self.schdrFn = scheduler
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
+        self.saver.debug("[%s] Creating Sharded DDP...", self.PrettyStep)
+        self._model = SDP(model, self._optimizer)
+        self.saver.debug("[%s] Sharded DDP created.", self.PrettyStep)
+
         self.tmpFile = tmpFile
 
         self.saver.debug("[%s] <%s> created.", self.PrettyStep, self.__class__.__name__)
 
     def periodicSave(self, *_, **__):
+        # Used for OSS state_dict updation
+        self._optimizer.consolidate_state_dict(-1)
         # Only save once, since file-system is shared
         if self.rank == 0:
             self.save()
@@ -132,15 +139,7 @@ class _baseGenTrainer(Restorable):
     def restoreStates(self, path: StrPath):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
-        try:
-            self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
-        except RuntimeError:
-            oldCkpt = torch.load(path, "cpu")
-            # Using a finetune config
-            if self.config.Model.Params["m"] != oldCkpt["config"]["model"]["params"]["m"]:
-                pass
-            else:
-                raise
+        self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
@@ -161,12 +160,18 @@ class _baseGenTrainer(Restorable):
 
     def resetOptimizer(self):
         del self._optimizer
-        self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
+
+        model = self._model.module
+        # self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
+        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
 
         self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
+
+        self._model = SDP(model, self._optimizer)
+        self.saver.debug("[%s] Sharded DDP reset.", self.PrettyStep)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
@@ -179,6 +184,8 @@ class _baseGenTrainer(Restorable):
             self.restoreStates(self.tmpFile)
             self.saver.info("[%s] Resume training at %s steps.", self.PrettyStep, self.PrettyStep)
         self.saver.info("[%s] Start training.", self.PrettyStep)
+
+        self._model.train()
 
         hook(self._step, 0, self, *args, logger=self.saver, **kwArgs)
 
@@ -205,12 +212,26 @@ class _baseGenTrainer(Restorable):
     #     gc.collect()
     #     hook(self._step, self, *args, logger=self.saver, **kwArgs)
 
+    def consolidate(self, *_, **__):
+        self._optimizer.consolidate_state_dict(-1)
+
 
     def train(self, trainLoaderFn: Callable[[], DataLoader], *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
         beforeRunHook = checkHook(beforeRunHook, "BeforeRunHook", self.saver)
         afterRunHook = checkHook(afterRunHook, "AfterRunHook", self.saver)
-        stepStartHook = checkHook(stepStartHook, "StepStartHook", self.saver)
-        stepFinishHook = checkHook(ChainHook(FrequecyHook((1000, self.periodicSave), logger=self.saver), stepFinishHook), "StepFinishHook", self.saver)
+        stepStartHook = checkHook(
+            ChainHook(
+                FrequecyHook(
+                    (self.config.Train.ValFreq, self.consolidate),
+                    logger=self.saver
+                ),
+                stepStartHook
+            ), "StepStartHook", self.saver)
+        stepFinishHook = checkHook(
+            ChainHook(
+                FrequecyHook((self.config.Train.ValFreq // 10, self.periodicSave), logger=self.saver),
+                stepFinishHook
+            ), "StepFinishHook", self.saver)
         # epochStartHook = checkHook(epochStartHook, "EpochStartHook", self.saver)
         # epochFinishHook = checkHook(epochFinishHook, "EpochFinishHook", self.saver)
 
@@ -218,7 +239,7 @@ class _baseGenTrainer(Restorable):
 
         self._beforeRun(beforeRunHook, **trainingArgs)
 
-        scaler = GradScaler()
+        scaler = ShardedGradScaler()
 
         images, texts, xHat, codes = None, None, None, None
 
@@ -233,7 +254,7 @@ class _baseGenTrainer(Restorable):
 
                 self._stepStart(stepStartHook, **trainingArgs)
 
-                self._optimizer.zero_grad()
+                self._model.zero_grad()
 
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     predictions, codes, xHat = self._model(images, texts)
@@ -244,7 +265,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.unscale_(self._optimizer)
 
-                norm = torch.nn.utils.clip_grad_norm_(self.trainableParams(), 4.0)
+                norm = self._optimizer.clip_grad_norm(4.0)
 
                 # self._optimizer.step()
                 scaler.step(self._optimizer)
@@ -253,7 +274,6 @@ class _baseGenTrainer(Restorable):
                 scaler.update()
 
                 self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, norm=norm, **trainingArgs)
-                del images
                 if self._step >= self._totalStep:
                     break
                 if self._step % 1000 == 0:
@@ -319,11 +339,11 @@ class MainGenTrainer(_baseGenTrainer):
 
         # Call function at every X epoches.
         self.stepFinishCalls = FrequecyHook(
-            (1000, self.log),
+            (self.config.Train.ValFreq // 10, self.log),
             logger=self.saver
         )
         self.stepStartCalls = FrequecyHook(
-            (10000, self.validate),
+            (self.config.Train.ValFreq, self.validate),
             logger=self.saver
         )
 
@@ -356,10 +376,7 @@ class MainGenTrainer(_baseGenTrainer):
     #     signal.raise_signal(signal.SIGTERM)
 
     def summary(self):
-        if abs(self.bestRate / self.bestDistortion) > 1e4:
-            self.saver.info("[%s] Total steps: %s, loss: N/A.", self.PrettyStep, self.PrettyStep)
-        else:
-            self.saver.info("[%s] Total steps: %s, loss: %.2f.", self.PrettyStep, self.PrettyStep, 0.0)
+        self.saver.info("[%s] Total steps: %s, loss: %.2f.", self.PrettyStep, self.PrettyStep, 0.0)
         self.saver.info("[%s] Test this model by `python -m mcquic.validate --path %s`.", self.PrettyStep, relativePath(os.path.join(self.saver.SaveDir, "[ONE_OF_A].ckpt")))
 
     def train(self, trainLoaderFn: Callable[[], DataLoader], valLoader: DataLoader, *_, beforeRunHook: Optional[Callable] = None, afterRunHook: Optional[Callable] = None, stepStartHook: Optional[Callable] = None, stepFinishHook: Optional[Callable] = None, **__):
@@ -377,7 +394,7 @@ class MainGenTrainer(_baseGenTrainer):
         super()._beforeRun(hook, *args, **kwargs)
 
         self.progress.start_task(self.trainingBar)
-        self.progress.update(self.trainingBar, total=self._totalStep, completed=self._step, progress=f"[{self._step + 1:4d}/{self._totalStep:4d}]")
+        self.progress.update(self.trainingBar, total=self._totalStep, completed=self._step, progress=f"[{self._step:4d}/{self._totalStep:4d}]")
 
     def _afterRun(self, hook, *args, **kwArgs):
         self.progress.__exit__(None, None, None)
@@ -395,7 +412,7 @@ class MainGenTrainer(_baseGenTrainer):
             return
         if self.rank == 0:
             wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
-        if self._step % 100 == 0:
+        if self._step % (self.config.Train.ValFreq // 100) == 0:
             if torch.isnan(moment):
                 self.saver.critical('Loss becomes NAN. Train crashed.')
                 raise RuntimeError('Loss becomes NAN. Train crashed.')
@@ -434,7 +451,7 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         # [m, ki]
         for lv, c in enumerate(codes):
-            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
+            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x), mode='L') for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
