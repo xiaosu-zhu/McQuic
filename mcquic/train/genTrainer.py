@@ -96,7 +96,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
         self.saver.debug("[%s] Creating Sharded DDP...", self.PrettyStep)
-        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False, reduce_fp16=True)
+        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False)
         self.saver.debug("[%s] Sharded DDP created.", self.PrettyStep)
 
         self.tmpFile = tmpFile

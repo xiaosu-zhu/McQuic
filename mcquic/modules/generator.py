@@ -81,7 +81,13 @@ class Generator(nn.Module):
             with torch.no_grad():
                 # list of [n, 1, h, w], len of list == levels
                 # from low resolution to high resolution
-                codes = self.compressor.encode(image.float())
+                # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
+                # NOTE: therefore, we manually split image into batch 16
+                splitted = torch.split(image, 16)
+                allCodes = list()
+                for sp in splitted:
+                    allCodes.append(self.compressor.encode(sp.float()))
+                codes = [torch.cat(x) for x in zip(*allCodes)]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -107,7 +113,13 @@ class Generator(nn.Module):
             # [n, 1, h, w]
             restoredCodes.insert(0, first_level.detach().clone().argmax(1, keepdim=True))
             with torch.no_grad():
-                restored = self.compressor.decode(restoredCodes)
+                splitted = list(zip(*list(torch.split(x, 16) for x in restoredCodes)))
+
+                allRestored = list()
+                for sp in splitted:
+                    allRestored.append(self.compressor.decode(sp))
+                restored = torch.cat(allRestored)
+
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
             return [first_level, *predictions], codes, restored
