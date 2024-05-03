@@ -1,4 +1,3 @@
-$schema: "https://raw.githubusercontent.com/xiaosu-zhu/McQuic/main/configs/schema.json"
 model:
   key: Generator
   params:

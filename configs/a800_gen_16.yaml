@@ -5,9 +5,9 @@ model:
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
     denseNorm: false
-    loadFrom: compressor/compressor_58000.ckpt
+    loadFrom: compressor.ckpt
 train:
-  totalStep: 50000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+  totalStep: 100000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 48
   epoch: 2
   valFreq: 100
@@ -28,7 +28,7 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 50000 # totalimage / gpus / batchsize * epochs
+      first_cycle_steps: 100000 # totalimage / gpus / batchsize * epochs
       warmup_steps: 2000
       gamma: 1.0
       lrScaleRatio: 0.0
