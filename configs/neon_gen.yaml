@@ -10,7 +10,7 @@ train:
   totalStep: 20000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 24
   epoch: 2
-  valFreq: 100
+  valFreq: 10000
   trainSet: /mnt/hdd1/zhuxiaosu/datasets/cc3m-wds/*train*.tar
   valSet: valid
   saveDir: generation_saved
@@ -19,7 +19,7 @@ train:
     # - some/modules/to/be/registered1.py
     # - some/modules/to/be/registered2.py
   optim:
-    key: FusedLAMB
+    key: Adam
     params:
       lr: 5.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
       weight_decay: 0.01

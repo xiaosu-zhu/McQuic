@@ -9,8 +9,8 @@ train:
   totalStep: 200 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 2
   epoch: 2
-  valFreq: 10
-  trainSet: /mnt/nfs/CMG/mcquic/
+  valFreq: 10000
+  trainSet: /mnt/nfs/CMG/mcquic/*.tar.gz
   valSet: valid
   saveDir: saved
   target: MsSSIM
