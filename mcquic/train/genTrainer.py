@@ -72,7 +72,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         # optimizer = trackingFunctionCalls(optimizer, self.saver)
 
-        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.LayerNorm, torch.nn.Embedding), ['pos_embed', 'bias'])
+        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.Embedding, ), ['norm', 'pos_embed', 'bias'])
 
         optimizer_grouped_parameters = [
             {
@@ -258,9 +258,8 @@ class _baseGenTrainer(Restorable):
 
                 self._model.zero_grad()
 
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    predictions, codes, xHat = self._model(images, texts)
-                    loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(images) for (pre, gt) in zip(predictions, codes)])
+                predictions, codes, xHat, gtXHat = self._model(images, texts)
+                loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(images) for (pre, gt) in zip(predictions, codes)])
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
@@ -275,7 +274,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.update()
 
-                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, norm=norm, **trainingArgs)
+                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, gtRestored=gtXHat, texts=texts, norm=norm, **trainingArgs)
                 if self._step >= self._totalStep:
                     break
                 if self._step % 1000 == 0:
@@ -444,7 +443,7 @@ class MainGenTrainer(_baseGenTrainer):
     #     # super()._epochStart(hook, *args, **kwArgs)
 
 
-    def log(self, *_, images, restored, codes, texts, **__):
+    def log(self, *_, images, restored, gtRestored, codes, texts, **__):
         if self.rank != 0:
             return
         payload: Dict[str, Any] = dict()
@@ -461,6 +460,7 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
 
         payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
+        payload['Train/GT'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
@@ -472,42 +472,32 @@ class MainGenTrainer(_baseGenTrainer):
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
     def validate(self, *_, valLoader: DataLoader, **__):
-        return
         torch.cuda.empty_cache()
 
         self.saver.debug("[%s] Start validation.", self.PrettyStep)
 
         self._model.eval()
-        results, summary = self.validator.validate(0, self._model.Compressor, valLoader, self.progress)
+
+        texts = ['A big horse running over a river.', 'Mountainview with beautiful grass land and river aside.']
+
+        prediction, restored = self._model.module(None, texts)
 
 
         wandb.log({
-            'Eval/MsSSIM': results["MsSSIM"],
-            'Eval/PSNR': results["PSNR"],
-            'Eval/BPP': results['BPP'],
-            'Eval/Visualization': [wandb.Image(to_pil_image(x)) for x in results["Visualization"]]
+            'Eval/Visualization': [wandb.Image(to_pil_image(x)) for x in restored]
         }, step=self._step)
+
+        self.run.log({'Eval/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
 
         # self.saver.add_scalar(f"Eval/MsSSIM", results["MsSSIM"], global_step=self._step)
         # self.saver.add_scalar(f"Eval/PSNR", results["PSNR"], global_step=self._step)
         # self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
         # self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
 
-        rate, distortion = results["BPP"], results[self.config.Train.Target]
-
         self.save(os.path.join(self.saver.SaveDir, f"val_{self._step}.ckpt"))
-
-        # TODO: Why d/r continously decrease?
-        # if (distortion / rate) > (self.bestDistortion / self.bestRate):
-        if distortion > self.bestDistortion:
-            self.bestDistortion = distortion
-            self.bestRate = rate
-            # self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
-            shutil.copy2(os.path.join(self.saver.SaveDir, f"val_{self._step}.ckpt"), os.path.join(self.saver.SaveDir, "best.ckpt"))
-        self.saver.info("[%s] %s", self.PrettyStep, summary)
         self._model.train()
 
-        self.saver.debug("[%s] End validation.", self.PrettyStep)
+        self.saver.info("[%s] End validation.", self.PrettyStep)
 
 
 class PalGenTrainer(_baseGenTrainer):

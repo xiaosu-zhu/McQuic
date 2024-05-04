@@ -291,30 +291,29 @@ def parseOptimGroup(namedModules, namedParams, excludeClass, excludeName):
             fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
 
             continueFlag = False
-
             for excName in excludeName:
                 if excName in pn:
                     excluded.add(fpn)
                     continueFlag = True
                     break
-            if isinstance(m, excludeClass):
-                excluded.add(fpn)
-                continueFlag = True
-                break
             if continueFlag:
                 continue
 
-            included.add(fpn)
+            if isinstance(m, excludeClass):
+                excluded.add(fpn)
+            else:
+                included.add(fpn)
 
 
     # validate that we considered every parameter
     param_dict = {pn: p for pn, p in namedParams if p.requires_grad}
-    inter_params = included & excluded
-    union_params = included | excluded
-    if not len(inter_params) == 0:
-        raise ValueError(f"parameters {str(inter_params)} made it into both decay/no_decay sets!")
-    if not len(param_dict.keys() - union_params) == 0:
-        raise ValueError(f"parameters {(str(param_dict.keys() - union_params))} were not separated into either decay/no_decay set!")
+    # inter_params = included & excluded
+    # union_params = included | excluded
+    # if not len(inter_params) == 0:
+    #     raise ValueError(f"parameters {str(inter_params)} made it into both decay/no_decay sets!")
+    # if not len(param_dict.keys() - union_params) == 0:
+    #     raise ValueError(f"parameters {(str(param_dict.keys() - union_params))} were not separated into either decay/no_decay set!")
+    included = set(param_dict.keys()) - excluded
 
     # create the pytorch optimizer object
     return [param_dict[pn] for pn in sorted(list(included))], [param_dict[pn] for pn in sorted(list(excluded))]
