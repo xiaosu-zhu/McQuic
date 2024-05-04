@@ -21,7 +21,7 @@ train:
   optim:
     key: Adam
     params:
-      lr: 3.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      lr: 7.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
       weight_decay: 0.01
       # use_nvlamb: true
   schdr:

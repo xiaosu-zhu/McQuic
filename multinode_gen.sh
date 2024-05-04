@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH -J mcquic_pretraining
+#SBATCH -J mcquic_stage_2
 #SBATCH -p A800
 #SBATCH -N 1
 #SBATCH --ntasks=1

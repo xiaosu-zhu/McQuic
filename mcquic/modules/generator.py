@@ -85,9 +85,14 @@ class Generator(nn.Module):
                 # NOTE: therefore, we manually split image into batch 16
                 splitted = torch.split(image, 16)
                 allCodes = list()
+                gtRestoreds = list()
                 for sp in splitted:
-                    allCodes.append(self.compressor.encode(sp.float()))
+                    codes = self.compressor.encode(sp)
+                    gtRestored = self.compressor.decode(codes)
+                    allCodes.append(codes)
+                    gtRestoreds.append(gtRestored)
                 codes = [torch.cat(x) for x in zip(*allCodes)]
+                gtRestoreds = torch.cat(gtRestoreds)
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -103,10 +108,11 @@ class Generator(nn.Module):
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
 
-            # given shape and condition, produce token with secified shape
-            first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone().bfloat16(), text_embedding.last_hidden_state.detach().clone().bfloat16(), attention_mask)
 
-            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output.detach().clone().bfloat16(), text_embedding.last_hidden_state.detach().clone().bfloat16(), attention_mask)
+            # given shape and condition, produce token with secified shape
+            first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone().float(), text_embedding.last_hidden_state.detach().clone().float(), attention_mask)
+
+            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output.detach().clone().float(), text_embedding.last_hidden_state.detach().clone().float(), attention_mask)
 
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
@@ -122,9 +128,38 @@ class Generator(nn.Module):
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
-            return [first_level, *predictions], codes, restored
+            return [first_level, *predictions], codes, restored, gtRestored
         else:
-            raise NotImplementedError
+            ###################### Preparing inputs #########################
+            with torch.no_grad():
+                device = next(self.parameters()).device
+                # input_ids: [B, max_len] int ids, where `49407` for padding
+                # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
+                batch_encoding = self.text_tokenizer(text=condition, return_attention_mask=True, padding=True, truncation=True, return_tensors='pt')
+
+                input_ids = batch_encoding.input_ids.to(device)
+                attention_mask = batch_encoding.attention_mask.to(device)
+
+                # last_hidden_state: [B, max_len, D]
+                # pooler_output: [B, D]
+                text_embedding: transformers.modeling_outputs.BaseModelOutputWithPooling = self.text_encoder(input_ids, attention_mask=attention_mask, return_dict=True)
+                # given shape and condition, produce token with secified shape
+                first_level = self.text_to_first_level([len(text_embedding), 2, 2], text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
+
+                predictions = self.next_residual_predictor(first_level, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
+
+                # list of [bs, hi, wi]
+                predictions.insert(0, first_level)
+                # list of [bs, 1, hi, wi]
+                predictions = [p.unsqueeze(1) for p in predictions]
+
+                splitted = list(zip(*list(torch.split(x, 16) for x in predictions)))
+
+                allRestored = list()
+                for sp in splitted:
+                    allRestored.append(self.compressor.decode(sp))
+                restored = torch.cat(allRestored)
+                return predictions, restored
 
 
 #################################################################################
@@ -199,8 +234,10 @@ class SelfAttention(nn.Module):
         # q, k, v = qkv.unbind(0)
         # q, k = self.q_norm(q), self.k_norm(k)
 
-        # [B, N, n_head, head_dim]
-        out: torch.Tensor = flash_attn_qkvpacked_func(qkv, self.attn_drop, self.scale).reshape(B, N, C)
+
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            # [B, N, n_head, head_dim]
+            out: torch.Tensor = flash_attn_qkvpacked_func(qkv.to(torch.float16), self.attn_drop, self.scale).to(torch.float32).reshape(B, N, C).contiguous()
 
         return self.proj(out)
 
@@ -256,8 +293,9 @@ class CrossAttention(nn.Module):
         # insert a 0 at start
         cum_k_len = torch.cat([torch.zeros([1], dtype=cum_seq_len.dtype, device=cum_seq_len.device), cum_seq_len])
 
-        # [B*N, n_head, head_dim]
-        out: torch.Tensor = flash_attn_varlen_func(q, k ,v, cum_q_len, cum_k_len, N, attention_mask.sum(-1).max(), self.attn_drop, self.scale)
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            # [B*N, n_head, head_dim]
+            out: torch.Tensor = flash_attn_varlen_func(q.to(torch.float16), k.to(torch.float16) ,v.to(torch.float16), cum_q_len, cum_k_len, N, attention_mask.sum(-1).max(), self.attn_drop, self.scale).to(torch.float32)
 
         out = out.reshape(B, N, nhead, ndim).reshape(B, N, -1)
 
@@ -268,7 +306,7 @@ class TransformerBlock(nn.Module):
     """
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0.1, proj_drop=0.1):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = SelfAttention(hidden_size, num_heads=num_heads, qkv_bias=True, attn_drop=attn_drop, proj_drop=proj_drop)
@@ -296,13 +334,13 @@ class CrossTransformerBlock(nn.Module):
     """
     A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0.1, proj_drop=0.1):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0., proj_drop=0.):
         super().__init__()
-        self.normq = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.normk = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.normv = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        # self.normq = nn.LayerNorm(hidden_size, eps=1e-6)
+        # self.normk = nn.LayerNorm(hidden_size, eps=1e-6)
+        # self.normv = nn.LayerNorm(hidden_size, eps=1e-6)
         self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, attn_drop=attn_drop, proj_drop=proj_drop)
-        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.norm2 = nn.LayerNorm(hidden_size, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=proj_drop)
@@ -316,7 +354,7 @@ class CrossTransformerBlock(nn.Module):
         # shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         # x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
         # x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
-        x = x + self.attn(self.normq(x), self.normk(condition), self.normv(condition), attention_mask)
+        x = x + self.attn(x, condition, condition, attention_mask)
 
         x = x + self.mlp(self.norm2(x))
         return x
@@ -330,7 +368,7 @@ class ProjLayer(nn.Module):
     def __init__(self, hidden_size, scale_factor=4):
         super().__init__()
         self.hidden_size = hidden_size
-        self.norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.norm = nn.LayerNorm(hidden_size, eps=1e-6)
         self.proj = nn.Linear(hidden_size, scale_factor * hidden_size, bias=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -346,7 +384,7 @@ class FinalLayer(nn.Module):
     """
     def __init__(self, hidden_size, prediction_num):
         super().__init__()
-        self.norm_final = nn.InstanceNorm2d(hidden_size, eps=1e-6)
+        self.norm_final = nn.InstanceNorm2d(hidden_size, affine=False, eps=1e-6)
         self.linear = nn.Conv2d(hidden_size, prediction_num, 1)
         self.skip_connection = nn.Conv2d(hidden_size, prediction_num, 1)
         self.adaLN_modulation = nn.Sequential(
@@ -464,7 +502,7 @@ class AnyResolutionBlock(nn.Module):
         # 0, 1, 2, 3
         bs, h, w = code.shape
         # [b, h, w, d]
-        x = self.input_embedding[code].bfloat16()
+        x = self.input_embedding[code]
         # [b, h*w, hidden]
         x = self.input_transform(x.permute(0, 3, 1, 2).contiguous())
         x = (self.pre_layer(x, pooled_condition)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
@@ -482,7 +520,7 @@ class AnyResolutionBlock(nn.Module):
         x = self.proj_layer(x) # [bs, hw, 4hidden]
         x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
         prediction = self.final_layer(x, pooled_condition) # [bs, k, 2h, 2w]
-        return prediction.bfloat16()
+        return prediction
 
     # def forward_with_cfg(self, x, t, y, cfg_scale):
     #     """
@@ -531,18 +569,20 @@ class AnyResolutionTransformer(nn.Module):
             if not isinstance(codes, list):
                 raise RuntimeError('The given training input is not a list.')
             results = list()
+            # [bs, h, w]
             for current, block, text_lift in zip(codes, self.blocks, self.text_lift):
                 results.append(block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask))
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
-            raise NotImplementedError
-            current = x
-            results = [x]
-            for block in self.blocks:
-                results.append(block(current))
+            # [bs, h, w]
+            current = codes
+            results = list()
+            for block, text_lift in zip(self.blocks, self.text_lift):
+                predict = block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask)
+                results.append(predict.argmax(1))
                 current = results[-1]
-            # NOTE: in inference, the len of results is level
+            # NOTE: in training, the len of reuslts is level - 1
             return results
 
 
@@ -627,7 +667,7 @@ class TextConditionedGenerator(nn.Module):
         return pos_embed[up_start:up_start+h, left_start:left_start+w].reshape(h*w, -1)
 
     def forward(self, target_shape, pooled_condition, sequence_condition, attention_mask):
-        # 0, 1, 2, 3
+        # 0, 1, 2
         bs, h, w = target_shape
 
         pooled_condition = self.pre_layer(pooled_condition)
@@ -646,7 +686,7 @@ class TextConditionedGenerator(nn.Module):
         x = x.reshape(bs, h, w, -1).permute(0, 3, 1, 2).contiguous()
         # x = x.permute(0, )
         prediction = self.final_layer(x, pooled_condition) # [bs, k, h, w]
-        return prediction
+        return prediction if self.training else prediction.argmax(1)
 
 
 
