@@ -406,7 +406,7 @@ class MainTrainer(_baseTrainer):
         task = self.progress.get_task(self.trainingBar)
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:2.2f}[/]dB")
 
-        if self._step % 10 != 0:
+        if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
             wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)

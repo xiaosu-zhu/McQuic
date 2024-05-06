@@ -24,6 +24,7 @@ from rich import filesize
 import torch.nn.functional as F
 from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as SDP
+from fairscale.optim import AdaScale
 
 from mcquic.train.utils import Saver, parseOptimGroup
 from mcquic.consts import Consts
@@ -258,8 +259,7 @@ class _baseGenTrainer(Restorable):
 
                 self._model.zero_grad()
 
-                predictions, codes, xHat, gtXHat = self._model(images, texts)
-                loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(images) for (pre, gt) in zip(predictions, codes)])
+                predictions, loss, codes, xHat = self._model(images, texts)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
@@ -274,7 +274,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.update()
 
-                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, gtRestored=gtXHat, texts=texts, norm=norm, **trainingArgs)
+                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, norm=norm, **trainingArgs)
                 if self._step >= self._totalStep:
                     break
                 if self._step % 1000 == 0:
@@ -409,7 +409,7 @@ class MainGenTrainer(_baseGenTrainer):
         task = self.progress.get_task(self.trainingBar)
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:.2f}[/]")
 
-        if self._step % 10 != 0:
+        if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
             wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
@@ -442,8 +442,11 @@ class MainGenTrainer(_baseGenTrainer):
 
     #     # super()._epochStart(hook, *args, **kwArgs)
 
+    def decode(self, codes):
+        pass
 
-    def log(self, *_, images, restored, gtRestored, codes, texts, **__):
+
+    def log(self, *_, images, restored, codes, texts, **__):
         if self.rank != 0:
             return
         payload: Dict[str, Any] = dict()
@@ -452,15 +455,15 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         # [m, ki]
         for lv, c in enumerate(codes):
-            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x), mode='L') for x in self.validator.visualizeIntermediate(c)]
+            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
-        payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
+        payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images[:8])]
         # self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
 
-        payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
-        payload['Train/GT'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
+        payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
+        # payload['Train/GT'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
