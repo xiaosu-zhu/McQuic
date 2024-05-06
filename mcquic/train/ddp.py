@@ -57,6 +57,7 @@ def _registerBuiltinFunctions():
         OptimizerRegistry.register("FusedLAMB")(_raise_func)
         # raise ImportError("`import apex` failed. Apex not installed.")
     OptimizerRegistry.register("Adam")(torch.optim.AdamW)
+    OptimizerRegistry.register("SGD")(torch.optim.SGD)
 
     LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
     LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)

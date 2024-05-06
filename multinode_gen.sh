@@ -2,8 +2,8 @@
 
 #SBATCH -J mcquic_stage_2
 #SBATCH -p A800
-#SBATCH -N 1
-#SBATCH --ntasks=1
+#SBATCH -N 2
+#SBATCH --ntasks=2
 #SBATCH --gres=gpu:a800:8
 #SBATCH --cpus-per-task=48
 #SBATCH --output=slurm-%j.out
@@ -20,7 +20,7 @@ conda activate mcquic
 
 # Graceful restart = 3, for handling data issue
 TOKENIZERS_PARALLELISM=false NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 srun /ssdfs/datahome/tj24011/software/miniconda3/envs/mcquic/bin/torchrun \
---nnodes 1 \
+--nnodes 2 \
 --max_restarts 3 \
 --nproc_per_node 8 \
 --rdzv_id $RANDOM \

@@ -11,7 +11,7 @@ import math
 import torch.nn.functional as F
 import random
 from fairscale.nn.checkpoint import checkpoint_wrapper
-from flash_attn import flash_attn_qkvpacked_func, flash_attn_func, flash_attn_varlen_func
+# from flash_attn import flash_attn_qkvpacked_func, flash_attn_func, flash_attn_varlen_func
 import transformers
 import transformers.modeling_outputs
 
@@ -48,8 +48,8 @@ class Generator(nn.Module):
             params.requires_grad_(False)
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
-        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
-        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("/ssdfs/datahome/tj24011/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268/", local_files_only=True)
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("/ssdfs/datahome/tj24011/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268/", local_files_only=True)
         for params in self.text_encoder.parameters():
             params.requires_grad_(False)
 
@@ -85,14 +85,10 @@ class Generator(nn.Module):
                 # NOTE: therefore, we manually split image into batch 16
                 splitted = torch.split(image, 16)
                 allCodes = list()
-                gtRestoreds = list()
                 for sp in splitted:
                     codes = self.compressor.encode(sp)
-                    gtRestored = self.compressor.decode(codes)
                     allCodes.append(codes)
-                    gtRestoreds.append(gtRestored)
                 codes = [torch.cat(x) for x in zip(*allCodes)]
-                gtRestoreds = torch.cat(gtRestoreds)
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -108,11 +104,11 @@ class Generator(nn.Module):
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
 
-
             # given shape and condition, produce token with secified shape
-            first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone().float(), text_embedding.last_hidden_state.detach().clone().float(), attention_mask)
+            first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
 
-            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output.detach().clone().float(), text_embedding.last_hidden_state.detach().clone().float(), attention_mask)
+            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
+            loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(image) for (pre, gt) in zip([first_level, *predictions], codes)])
 
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
@@ -128,7 +124,7 @@ class Generator(nn.Module):
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
-            return [first_level, *predictions], codes, restored, gtRestored
+            return [first_level, *predictions], loss, codes, restored
         else:
             ###################### Preparing inputs #########################
             with torch.no_grad():
@@ -143,6 +139,7 @@ class Generator(nn.Module):
                 # last_hidden_state: [B, max_len, D]
                 # pooler_output: [B, D]
                 text_embedding: transformers.modeling_outputs.BaseModelOutputWithPooling = self.text_encoder(input_ids, attention_mask=attention_mask, return_dict=True)
+
                 # given shape and condition, produce token with secified shape
                 first_level = self.text_to_first_level([len(text_embedding), 2, 2], text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
 
@@ -203,103 +200,101 @@ class Mlp(nn.Module):
         x = self.drop2(x)
         return x
 
-class SelfAttention(nn.Module):
-    def __init__(
-            self,
-            dim: int,
-            num_heads: int = 8,
-            qkv_bias: bool = False,
-            attn_drop: float = 0.,
-            proj_drop: float = 0.,
-    ) -> None:
-        super().__init__()
-        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.scale = self.head_dim ** -0.5
-        self.attn_drop = attn_drop
+# class SelfAttention(nn.Module):
+#     def __init__(
+#             self,
+#             dim: int,
+#             num_heads: int = 8,
+#             attn_drop: float = 0.,
+#     ) -> None:
+#         super().__init__()
+#         self.attention = nn.MultiheadAttention(dim, num_heads, attn_drop, batch_first=True)
 
-        # qkv packed attention
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        # self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        # self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        self.proj = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.Dropout(proj_drop) if proj_drop > 0.0 else nn.Identity()
-        )
+#         # qkv packed attention
+#         # self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+#         # # self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+#         # # self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+#         # self.proj = nn.Sequential(
+#         #     nn.Linear(dim, dim),
+#         #     nn.Dropout(proj_drop) if proj_drop > 0.0 else nn.Identity()
+#         # )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)#.permute(2, 0, 3, 1, 4)
-        # q, k, v = qkv.unbind(0)
-        # q, k = self.q_norm(q), self.k_norm(k)
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         out = self.attention(x, x, x)
+#         # qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)#.permute(2, 0, 3, 1, 4)
+#         # # q, k, v = qkv.unbind(0)
+#         # # q, k = self.q_norm(q), self.k_norm(k)
 
+#         # if USE_FLASH_ATTN:
 
-        with torch.autocast(device_type="cuda", dtype=torch.float16):
-            # [B, N, n_head, head_dim]
-            out: torch.Tensor = flash_attn_qkvpacked_func(qkv.to(torch.float16), self.attn_drop, self.scale).to(torch.float32).reshape(B, N, C).contiguous()
+#         #     with torch.autocast(device_type="cuda", dtype=torch.float16):
+#         #         # [B, N, n_head, head_dim]
+#         #         out: torch.Tensor = flash_attn_qkvpacked_func(qkv.to(torch.float16), self.attn_drop, self.scale).to(torch.float32).reshape(B, N, C).contiguous()
+#         # else:
+#         #     # [B, N, nheads, head_dim]
+#         #     query, key, value = torch.chunk(qkv, 3, 2)
+#         #     F.scaled_dot_product_attention()
 
-        return self.proj(out)
+#         return out
 
-class CrossAttention(nn.Module):
-    def __init__(
-            self,
-            dim: int,
-            num_heads: int = 8,
-            qkv_bias: bool = False,
-            attn_drop: float = 0.,
-            proj_drop: float = 0.,
-    ) -> None:
-        super().__init__()
-        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.scale = self.head_dim ** -0.5
-        self.attn_drop = attn_drop
+# class CrossAttention(nn.Module):
+#     def __init__(
+#             self,
+#             dim: int,
+#             num_heads: int = 8,
+#             attn_drop: float = 0.,
+#             proj_drop: float = 0.,
+#     ) -> None:
+#         super().__init__()
+#         assert dim % num_heads == 0, 'dim should be divisible by num_heads'
+#         self.num_heads = num_heads
+#         self.head_dim = dim // num_heads
+#         self.scale = self.head_dim ** -0.5
+#         self.attn_drop = attn_drop
 
-        # qkv packed attention
-        self.wq = nn.Linear(dim, dim, bias=qkv_bias)
-        self.wk = nn.Linear(dim, dim, bias=qkv_bias)
-        self.wv = nn.Linear(dim, dim, bias=qkv_bias)
-        # self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        # self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        self.proj = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.Dropout(proj_drop) if proj_drop > 0.0 else nn.Identity()
-        )
+#         # qkv packed attention
+#         self.wq = nn.Linear(dim, dim, bias=qkv_bias)
+#         self.wk = nn.Linear(dim, dim, bias=qkv_bias)
+#         self.wv = nn.Linear(dim, dim, bias=qkv_bias)
+#         # self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+#         # self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+#         self.proj = nn.Sequential(
+#             nn.Linear(dim, dim),
+#             nn.Dropout(proj_drop) if proj_drop > 0.0 else nn.Identity()
+#         )
 
-    # attention_mask: [B, max_len] {1, 0}, `1` for valid, `0` for masked
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attention_mask) -> torch.Tensor:
-        # [B, N, nheads, ndims]
-        q = self.wq(q).reshape(q.shape[0], q.shape[1], self.num_heads, -1)
-        k = self.wk(k).reshape(k.shape[0], k.shape[1], self.num_heads, -1)
-        v = self.wv(v).reshape(v.shape[0], v.shape[1], self.num_heads, -1)
+#     # attention_mask: [B, max_len] {1, 0}, `1` for valid, `0` for masked
+#     def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attention_mask) -> torch.Tensor:
+#         # [B, N, nheads, ndims]
+#         q = self.wq(q).reshape(q.shape[0], q.shape[1], self.num_heads, -1)
+#         k = self.wk(k).reshape(k.shape[0], k.shape[1], self.num_heads, -1)
+#         v = self.wv(v).reshape(v.shape[0], v.shape[1], self.num_heads, -1)
 
-        ##### Concat query ####
-        B, N, nhead, ndim = q.shape
-        q = q.reshape(B*N, nhead, ndim)
-        # [B+1], cumulative sequence length
-        # start from 0, end to [B * q_len]
-        cum_q_len = torch.arange(0, (B+1)*N, step=N, dtype=torch.int32, device=q.device)
+#         ##### Concat query ####
+#         B, N, nhead, ndim = q.shape
+#         q = q.reshape(B*N, nhead, ndim)
+#         # [B+1], cumulative sequence length
+#         # start from 0, end to [B * q_len]
+#         cum_q_len = torch.arange(0, (B+1)*N, step=N, dtype=torch.int32, device=q.device)
 
-        ##### Concat valid key and value ####
-        indexing = attention_mask.bool()
-        # [B, max_len] to [sum(seq_len)]
-        k = k[indexing]
-        v = v[indexing]
-        # [B+1], cumulative sequence length
-        # start from 0, end to [sum(k_len)]
-        cum_seq_len = attention_mask.sum(-1).cumsum(0, dtype=torch.int32)
-        # insert a 0 at start
-        cum_k_len = torch.cat([torch.zeros([1], dtype=cum_seq_len.dtype, device=cum_seq_len.device), cum_seq_len])
+#         ##### Concat valid key and value ####
+#         indexing = attention_mask.bool()
+#         # [B, max_len] to [sum(seq_len)]
+#         k = k[indexing]
+#         v = v[indexing]
+#         # [B+1], cumulative sequence length
+#         # start from 0, end to [sum(k_len)]
+#         cum_seq_len = attention_mask.sum(-1).cumsum(0, dtype=torch.int32)
+#         # insert a 0 at start
+#         cum_k_len = torch.cat([torch.zeros([1], dtype=cum_seq_len.dtype, device=cum_seq_len.device), cum_seq_len])
 
-        with torch.autocast(device_type="cuda", dtype=torch.float16):
-            # [B*N, n_head, head_dim]
-            out: torch.Tensor = flash_attn_varlen_func(q.to(torch.float16), k.to(torch.float16) ,v.to(torch.float16), cum_q_len, cum_k_len, N, attention_mask.sum(-1).max(), self.attn_drop, self.scale).to(torch.float32)
+#         with torch.autocast(device_type="cuda", dtype=torch.float16):
+#             # [B*N, n_head, head_dim]
+#             out: torch.Tensor = flash_attn_varlen_func(q.to(torch.float16), k.to(torch.float16) ,v.to(torch.float16), cum_q_len, cum_k_len, N, attention_mask.sum(-1).max(), self.attn_drop, self.scale).to(torch.float32)
 
-        out = out.reshape(B, N, nhead, ndim).reshape(B, N, -1)
+#         out = out.reshape(B, N, nhead, ndim).reshape(B, N, -1)
 
-        return self.proj(out)
+#         return self.proj(out)
 
 
 class TransformerBlock(nn.Module):
@@ -309,7 +304,7 @@ class TransformerBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = SelfAttention(hidden_size, num_heads=num_heads, qkv_bias=True, attn_drop=attn_drop, proj_drop=proj_drop)
+        self.attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, dropout=attn_drop, batch_first=True)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
@@ -325,7 +320,8 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x, condition):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(condition).chunk(6, dim=1)
-        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
+        attn_qkv = modulate(self.norm1(x), shift_msa, scale_msa)
+        x = x + gate_msa.unsqueeze(1) * self.attn(attn_qkv, attn_qkv, attn_qkv, need_weights=False)[0]
         x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
         return x
 
@@ -339,7 +335,7 @@ class CrossTransformerBlock(nn.Module):
         # self.normq = nn.LayerNorm(hidden_size, eps=1e-6)
         # self.normk = nn.LayerNorm(hidden_size, eps=1e-6)
         # self.normv = nn.LayerNorm(hidden_size, eps=1e-6)
-        self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, attn_drop=attn_drop, proj_drop=proj_drop)
+        self.attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, dropout=attn_drop, batch_first=True)
         self.norm2 = nn.LayerNorm(hidden_size, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
@@ -354,7 +350,7 @@ class CrossTransformerBlock(nn.Module):
         # shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
         # x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
         # x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
-        x = x + self.attn(x, condition, condition, attention_mask)
+        x = x + self.attn(x, condition, condition, key_padding_mask=(attention_mask!=1), need_weights=False)[0]
 
         x = x + self.mlp(self.norm2(x))
         return x
