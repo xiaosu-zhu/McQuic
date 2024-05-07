@@ -262,7 +262,7 @@ class _baseGenTrainer(Restorable):
 
                 self._model.zero_grad()
 
-                predictions, loss, codes, xHat = self._model(images, texts)
+                predictions, loss, codes, xHat, subLosses = self._model(images, texts)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
@@ -277,7 +277,7 @@ class _baseGenTrainer(Restorable):
 
                 scaler.update()
 
-                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, norm=norm, **trainingArgs)
+                self._stepFinish(stepFinishHook, loss=loss, codes=codes, images=images, restored=xHat, texts=texts, norm=norm, allLoss=subLosses, **trainingArgs)
                 if self._step >= self._totalStep:
                     break
                 if self._step % 1000 == 0:
@@ -406,7 +406,7 @@ class MainGenTrainer(_baseGenTrainer):
         self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
-    def _stepFinishHook(self, *_, loss, norm, **__):
+    def _stepFinishHook(self, *_, loss, norm, allLoss, **__):
         moment = self.diffTracker(loss)
 
         task = self.progress.get_task(self.trainingBar)
@@ -415,7 +415,10 @@ class MainGenTrainer(_baseGenTrainer):
         if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
+            payload = {f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}
+            for i, l in enumerate(allLoss):
+                payload.update({f"Stat/Loss[{i}]": l})
+            wandb.log(payload, step=self._step)
         if self._step % (self.config.Train.ValFreq // 100) == 0:
             if torch.isnan(moment):
                 self.saver.critical('Loss becomes NAN. Train crashed.')
@@ -458,7 +461,7 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         # [m, ki]
         for lv, c in enumerate(codes):
-            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
+            payload[f'Hist/Code[{lv}]'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c.unsqueeze(1))]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images[:8])]
@@ -468,7 +471,7 @@ class MainGenTrainer(_baseGenTrainer):
         payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
         # payload['Train/GT'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
-        self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
+        self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts[:8]], columns=['txt'])}, step=self._step)
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
 
         # self.saver.add_scalar("Stat/CodeUsage", self._model.Compressor.CodeUsage, global_step=self._step)
