@@ -47,6 +47,9 @@ class _baseTrainer(Restorable):
         self.saver.debug("<%s> is located at rank `%d`", self.__class__.__name__, self.rank)
         self.worldSize = dist.get_world_size()
         self.localRank = int(os.environ['LOCAL_RANK'])
+
+        usingMultiNode = self.worldSize > torch.cuda.device_count()
+
         self.config = config
 
         self._step = 0
@@ -69,6 +72,21 @@ class _baseTrainer(Restorable):
         self.saver.info("[%s] Trainable parameters: %s", self.PrettyStep, totalParameters([p for p in model.parameters() if p.requires_grad]))
 
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
+
+        # NOTE: setting different lr will cause OSS hang.
+        # included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (), ['_codebook'])
+
+        # optimizer_grouped_parameters = [
+        #     {
+        #         "params": included,
+        #         "lr": self.config.Train.Optim.Params['lr'],
+        #     },
+        #     {
+        #         "params": excluded,
+        #         "lr": 0.01 * self.config.Train.Optim.Params['lr'],
+        #     },
+        # ]
+
         # optimizer = trackingFunctionCalls(optimizer, self.saver)
         # For generator, we set weight_deacy to 0, so there is no need to use params_group
         # self._optimizer = optimizer(self.trainableParams(), **self.config.Train.Optim.Params)
@@ -83,7 +101,7 @@ class _baseTrainer(Restorable):
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
         self.saver.debug("[%s] Creating Sharded DDP...", self.PrettyStep)
-        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False)
+        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False, reduce_buffer_size=2**23 if usingMultiNode else 0)
         self.saver.debug("[%s] Sharded DDP created.", self.PrettyStep)
 
         self.tmpFile = tmpFile

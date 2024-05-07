@@ -50,6 +50,8 @@ class _baseGenTrainer(Restorable):
         self.localRank = int(os.environ['LOCAL_RANK'])
         self.config = config
 
+        usingMultiNode = self.worldSize > torch.cuda.device_count()
+
         self._step = 0
 
         self._totalStep = config.Train.TotalStep
@@ -85,7 +87,8 @@ class _baseGenTrainer(Restorable):
             },
         ]
 
-        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params)
+        # NOTE: tokenizer can't use fp16
+        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -96,7 +99,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
 
         self.saver.debug("[%s] Creating Sharded DDP...", self.PrettyStep)
-        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False, reduce_fp16=True)
+        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False, reduce_buffer_size=2 ** 23 if usingMultiNode else 0)
         self.saver.debug("[%s] Sharded DDP created.", self.PrettyStep)
 
         self.tmpFile = tmpFile
