@@ -228,3 +228,7 @@ class Neon(BaseCompressor):
 
         quantizer = ResidualBackwardQuantizer(channel, [1] * len(k), k, denseNorm)
         super().__init__(encoder, quantizer, decoder)
+
+    def residual_backward(self, code, level):
+        # [n, c, h*2, w*2] <- ([n, m, h, w], int)
+        return self._quantizer.residual_backward(code, level)
