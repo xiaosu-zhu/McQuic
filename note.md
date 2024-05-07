@@ -6,6 +6,8 @@ quantizer 部分去除了 einsum，einsum 会导致 grad stride 与 bucket view 
 
 不论是训练中还是推理，tokenizer 都必须用 float32，不然精度不够
 
+Cross-entropy 出现几千的情况，最后一层之前加一个 normalization
+
 编译 apex：
 
 1. gcc 9.4, gxx 9.4 (conda)
