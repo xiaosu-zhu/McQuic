@@ -461,7 +461,7 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         # [m, ki]
         for lv, c in enumerate(codes):
-            payload[f'Hist/Code[{lv}]'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c.unsqueeze(1))]
+            payload[f'Hist/Code[{lv}]'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c[:8].unsqueeze(1))]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images[:8])]
