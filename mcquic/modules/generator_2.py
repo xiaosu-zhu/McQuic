@@ -529,9 +529,11 @@ class AnyResolutionBlock(nn.Module):
         x = x + selected_pos_embed # [bs, hw, hidden]
         for block, cross in zip(self.blocks, self.condition_blocks):
             x = block(x, pooled_condition) + cross(x, sequence_condition, attention_mask)
+            # print(x.mean(), x.std())
         x = self.proj_layer(x) # [bs, hw, hidden]
         x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
         prediction = self.final_layer(x, pooled_condition) # [bs, k, 2h, 2w]
+        # print(prediction[0, :, 0, 0].min(), prediction[0, :, 0, 0].max(), prediction[0, :, 0, 0].softmax(-1).min(), prediction[0, :, 0, 0].softmax(-1).max())
         return prediction
 
     # def forward_with_cfg(self, x, t, y, cfg_scale):
@@ -614,7 +616,9 @@ class TextConditionedGenerator(nn.Module):
         self.num_heads = num_heads
         self.hidden_size = hidden_size
 
-        self.pre_layer = nn.Linear(text_dimension, hidden_size, bias=False)
+        self.text_lift = nn.Linear(text_dimension, hidden_size, bias=False)
+        self.pre_layer = checkpoint_wrapper(FinalLayer(hidden_size, hidden_size))
+        self.post_layer = checkpoint_wrapper(ProjLayer(hidden_size, 1))
 
         # we only need level - 1 final layers.
         self.final_layer = checkpoint_wrapper(
@@ -685,8 +689,8 @@ class TextConditionedGenerator(nn.Module):
         # 0, 1, 2
         bs, h, w = target_shape
 
-        pooled_condition = self.pre_layer(pooled_condition)
-        sequence_condition = self.pre_layer(sequence_condition)
+        pooled_condition = self.text_lift(pooled_condition)
+        sequence_condition = self.text_lift(sequence_condition)
 
         if self.training:
             # TODO: change to random
@@ -696,11 +700,14 @@ class TextConditionedGenerator(nn.Module):
             selected_pos_embed = self.center_pos_embed(h, w)
 
         x = selected_pos_embed.expand(bs, h*w, self.hidden_size) # [bs, hw, hidden]
+        x = self.pre_layer(x.permute(0, 2, 1).reshape(bs, self.hidden_size, h, w).contiguous(), pooled_condition).permute(0, 2, 3, 1).reshape(bs, h*w, self.hidden_size).contiguous()
         for block, cross in zip(self.blocks, self.condition_blocks):
             x = block(x, pooled_condition) + cross(x, sequence_condition, attention_mask)
+        x = self.post_layer(x)
         x = x.reshape(bs, h, w, -1).permute(0, 3, 1, 2).contiguous()
         # x = x.permute(0, )
         prediction = self.final_layer(x, pooled_condition) # [bs, k, h, w]
+        # print(prediction[0, :, 0, 0].min(), prediction[0, :, 0, 0].max(), prediction[0, :, 0, 0].softmax(-1).min(), prediction[0, :, 0, 0].softmax(-1).max())
         return prediction if self.training else prediction.argmax(1)
 
 
