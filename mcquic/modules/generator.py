@@ -48,8 +48,8 @@ class Generator(nn.Module):
             params.requires_grad_(False)
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
-        self.text_encoder = transformers.CLIPTextModel.from_pretrained("/ssdfs/datahome/tj24011/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268/", local_files_only=True)
-        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("/ssdfs/datahome/tj24011/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268/", local_files_only=True)
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
         for params in self.text_encoder.parameters():
             params.requires_grad_(False)
 

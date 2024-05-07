@@ -48,8 +48,8 @@ class Generator(nn.Module):
             params.requires_grad_(False)
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
-        self.text_encoder = transformers.CLIPTextModel.from_pretrained("/ssdfs/datahome/tj24011/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268/", local_files_only=True)
-        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("/ssdfs/datahome/tj24011/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268/", local_files_only=True)
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
         for params in self.text_encoder.parameters():
             params.requires_grad_(False)
 
@@ -113,7 +113,9 @@ class Generator(nn.Module):
             first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
 
             predictions = self.next_residual_predictor(all_backwards_for_residual, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
-            loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(image) for (pre, gt) in zip([first_level, *predictions], codes)])
+
+            loss = [F.cross_entropy(pre, gt, reduction='none') for pre, gt in zip([first_level, *predictions], codes)]
+            # loss = [F.cross_entropy(pre, gt, reduction='none') for (pre, gt) in zip([first_level, *predictions], codes)]
 
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
@@ -129,7 +131,7 @@ class Generator(nn.Module):
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
-            return [first_level, *predictions], loss, codes, restored
+            return [first_level, *predictions], sum([l.sum() / len(image) for l in loss]), codes, restored, [l.mean() for l in loss]
         else:
             ###################### Preparing inputs #########################
             with torch.no_grad():
@@ -148,7 +150,15 @@ class Generator(nn.Module):
                 # given shape and condition, produce token with secified shape
                 first_level = self.text_to_first_level([len(text_embedding), 2, 2], text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
 
-                predictions = self.next_residual_predictor(first_level, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
+                backward_for_reidual = self.compressor.residual_backward(first_level.unsqueeze(1), 0)
+
+
+                predictions = list()
+                predictions.append(self.next_residual_predictor((backward_for_reidual, 0), text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask))
+
+                for i in range(1, len(self.compressor.Codebooks) - 1):
+                    backward_for_reidual = self.compressor.residual_backward(predictions[-1].unsqueeze(1), i)
+                    predictions.append(self.next_residual_predictor((backward_for_reidual, i), text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask))
 
                 # list of [bs, hi, wi]
                 predictions.insert(0, first_level)
@@ -502,11 +512,11 @@ class AnyResolutionBlock(nn.Module):
 
     def forward(self, input_embedding, pooled_condition, sequence_condition, attention_mask):
         # 0, 1, 2, 3
-        bs, h, w, d = input_embedding.shape
+        bs, c, h, w = input_embedding.shape
         # [b, h, w, d]
         # x = self.input_embedding[code]
         # [b, h*w, hidden]
-        x = self.input_transform(input_embedding.permute(0, 3, 1, 2).contiguous())
+        x = self.input_transform(input_embedding)
         x = (self.pre_layer(x, pooled_condition)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
 
         if self.training:
@@ -612,8 +622,9 @@ class TextConditionedGenerator(nn.Module):
         )
 
         self.num_patches = self.canvas_size * self.canvas_size
-        # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=False)
+        # For first level, we need to pick random trainable embedding for startup
+        # self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=True)
+        self.pos_embed = nn.Parameter(nn.init.uniform_(torch.empty(1, self.num_patches, hidden_size), a=-math.sqrt(2 / (5 * hidden_size)), b=math.sqrt(2 / (5 * hidden_size))))
 
         self.blocks = nn.ModuleList([
             checkpoint_wrapper(TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
@@ -632,9 +643,11 @@ class TextConditionedGenerator(nn.Module):
                     nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
 
+        # nn.init.xavier_normal_(self.pos_embed)
+
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.num_patches ** 0.5))
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        # pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.num_patches ** 0.5))
+        # self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         # w = self.x_embedder.proj.weight.data
