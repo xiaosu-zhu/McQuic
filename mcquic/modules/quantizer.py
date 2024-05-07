@@ -569,6 +569,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                 conv1x1(channel, channel, bias=False)
             )
             codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, channel // mi), std=math.sqrt(2 / (5 * channel / float(mi)))))
+            # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
             quantizer = _multiCodebookQuantization(codebook, 0.)
             dequantizer = _multiCodebookDeQuantization(codebook)
 
