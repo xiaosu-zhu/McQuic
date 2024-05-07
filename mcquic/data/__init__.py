@@ -84,7 +84,7 @@ def getTrainLoader(gen: bool, datasetPath: StrPath, batchSize: int, logger: Unio
         trainDataset = wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node).shuffle(500).map(wdsDecode).map(getTrainingPreprocess()).batched(batchSize, collation_fn=default_collate, partial=False)
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
-    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=(batchSize // 2) if gen else max(batchSize + 4, 4), pin_memory=True, persistent_workers=False)
+    trainLoader = DataLoader(trainDataset, batch_size=None, num_workers=min(batchSize // 2, 48) if gen else min(batchSize + 4, 16), pin_memory=True, persistent_workers=False)
     return trainLoader
 
 def getValLoader(datasetPath: StrPath, disable: bool = False, logger: Union[logging.Logger, LoggerBase] = logging.root):

@@ -58,7 +58,7 @@ class Generator(nn.Module):
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
-        self.text_to_first_level, self.next_residual_predictor = AnyRes_S(clip_text_channels, [2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
+        self.text_to_first_level, self.next_residual_predictor = AnyRes_S(clip_text_channels, [4, 8, 16, 32], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
 
 
         self.compressor.eval()
@@ -85,10 +85,15 @@ class Generator(nn.Module):
                 # NOTE: therefore, we manually split image into batch 16
                 splitted = torch.split(image, 16)
                 allCodes = list()
+                all_backwards_for_residual = list()
                 for sp in splitted:
                     codes = self.compressor.encode(sp)
                     allCodes.append(codes)
+                    # list of [n, c, 2h, 2w]
+                    all_backwards_for_residual.append([self.compressor.residual_backward(code, level) for level, code in enumerate(codes[:-1])])
                 codes = [torch.cat(x) for x in zip(*allCodes)]
+                # list - 1 of [n, c, 2h, 2w]
+                all_backwards_for_residual = [torch.cat(x) for x in zip(*all_backwards_for_residual)]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -107,7 +112,7 @@ class Generator(nn.Module):
             # given shape and condition, produce token with secified shape
             first_level = self.text_to_first_level(codes[0].shape, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
 
-            predictions = self.next_residual_predictor(codes, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
+            predictions = self.next_residual_predictor(all_backwards_for_residual, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
             loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(image) for (pre, gt) in zip([first_level, *predictions], codes)])
 
             # list of [n, 1, h, w], len of list == levels
@@ -408,7 +413,8 @@ class AnyResolutionBlock(nn.Module):
     """
     def __init__(
         self,
-        codebook: torch.Tensor,
+        prediction_num: int,
+        input_dim: int,
         canvas_size, # e.g.: 32, corresponding to raw pixels: 512
         hidden_size=1152,
         depth=28,
@@ -418,19 +424,19 @@ class AnyResolutionBlock(nn.Module):
     ):
         super().__init__()
         # self.learn_sigma = learn_sigma
-        self.in_channels = codebook.shape[-1]
+        self.in_channels = input_dim
         self.canvas_size = canvas_size
         self.num_heads = num_heads
         self.hidden_size = hidden_size
 
-        self.input_embedding = nn.Parameter(codebook.detach().clone())
-        self.input_transform = nn.Conv2d(codebook.shape[-1], hidden_size, 1, bias=False)
+        # self.input_embedding = nn.Parameter(codebook.detach().clone())
+        self.input_transform = nn.Conv2d(input_dim, hidden_size, 1, bias=False)
         self.pre_layer = checkpoint_wrapper(
             FinalLayer(hidden_size, hidden_size)
         )
         # we only need level - 1 final layers.
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, len(codebook))
+            FinalLayer(hidden_size, prediction_num)
         )
 
 
@@ -445,8 +451,8 @@ class AnyResolutionBlock(nn.Module):
         self.condition_blocks = nn.ModuleList([
             checkpoint_wrapper(CrossTransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
         ])
-        self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=4))
-        self.pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
+        self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=1))
+        # self.pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -491,16 +497,16 @@ class AnyResolutionBlock(nn.Module):
         """
         bs, hw, dim = x.shape
 
-        x = x.permute(0, 2, 1).reshape(bs, dim, h, w) # [bs, 4 * D, h, w]
+        return x.permute(0, 2, 1).reshape(bs, dim, h, w).contiguous() # [bs, 4 * D, h, w]
         return self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
 
-    def forward(self, code, pooled_condition, sequence_condition, attention_mask):
+    def forward(self, input_embedding, pooled_condition, sequence_condition, attention_mask):
         # 0, 1, 2, 3
-        bs, h, w = code.shape
+        bs, h, w, d = input_embedding.shape
         # [b, h, w, d]
-        x = self.input_embedding[code]
+        # x = self.input_embedding[code]
         # [b, h*w, hidden]
-        x = self.input_transform(x.permute(0, 3, 1, 2).contiguous())
+        x = self.input_transform(input_embedding.permute(0, 3, 1, 2).contiguous())
         x = (self.pre_layer(x, pooled_condition)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
 
         if self.training:
@@ -513,7 +519,7 @@ class AnyResolutionBlock(nn.Module):
         x = x + selected_pos_embed # [bs, hw, hidden]
         for block, cross in zip(self.blocks, self.condition_blocks):
             x = block(x, pooled_condition) + cross(x, sequence_condition, attention_mask)
-        x = self.proj_layer(x) # [bs, hw, 4hidden]
+        x = self.proj_layer(x) # [bs, hw, hidden]
         x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
         prediction = self.final_layer(x, pooled_condition) # [bs, k, 2h, 2w]
         return prediction
@@ -543,7 +549,8 @@ class AnyResolutionTransformer(nn.Module):
         text_dimension,
         # NOTE: from low resolution to high resolution. this list should be ascending.
         canvas_size: List[int], # e.g.: 32, corresponding to raw pixels: 512
-        codebooks,
+        prediction_nums,
+        input_dims,
         hidden_size=1152,
         depth=28,
         num_heads=16,
@@ -553,33 +560,32 @@ class AnyResolutionTransformer(nn.Module):
         self.hidden_size = hidden_size
         # NOTE: we only need first (level - 1) blocks
         self.blocks = nn.ModuleList(
-            [AnyResolutionBlock(codebook, can, hidden_size, depth, num_heads, mlp_ratio) for can, codebook in zip(canvas_size, codebooks)]
+            [AnyResolutionBlock(prediction_num, input_dim, can, hidden_size, depth, num_heads, mlp_ratio) for (can, prediction_num, input_dim) in zip(canvas_size, prediction_nums, input_dims)]
         )
         self.text_lift = nn.ModuleList(
-            [nn.Linear(text_dimension, hidden_size) for _ in codebooks]
+            [nn.Linear(text_dimension, hidden_size) for _ in prediction_nums]
         )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
-    def forward(self, codes, pooled_condition, sequence_condition, attention_mask):
+    def forward(self, all_backwards_for_residual, pooled_condition, sequence_condition, attention_mask):
         if self.training:
-            if not isinstance(codes, list):
+            if not isinstance(all_backwards_for_residual, list):
                 raise RuntimeError('The given training input is not a list.')
             results = list()
-            # [bs, h, w]
-            for current, block, text_lift in zip(codes, self.blocks, self.text_lift):
+            # [bs, c, h*2, w*2]
+            for current, block, text_lift in zip(all_backwards_for_residual, self.blocks, self.text_lift):
+                # [bs, k, h*2, w*2]
                 results.append(block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask))
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
-            # [bs, h, w]
-            current = codes
+            # [bs, c, h*2, w*2]
+            current, level = all_backwards_for_residual
             results = list()
-            for block, text_lift in zip(self.blocks, self.text_lift):
-                predict = block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask)
-                results.append(predict.argmax(1))
-                current = results[-1]
+            block, text_lift = self.blocks[level], self.text_lift[level]
+            predict = block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask)
             # NOTE: in training, the len of reuslts is level - 1
-            return results
+            return predict.argmax(1)
 
 
 
@@ -750,16 +756,16 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #################################################################################
 # 2.20B
 def AnyRes_XL(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=1024, depth=28, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks, depth=28, hidden_size=1024, num_heads=16, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=1024, depth=28, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=28, hidden_size=1024, num_heads=16, **kwargs)
 # 1.51B
 def AnyRes_L(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=768, depth=24, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks, depth=24, hidden_size=768, num_heads=16, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=768, depth=24, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=24, hidden_size=768, num_heads=16, **kwargs)
 # 480M
 def AnyRes_B(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=576, depth=12, num_heads=12, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks, depth=12, hidden_size=576, num_heads=12, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=576, depth=12, num_heads=12, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=12, hidden_size=576, num_heads=12, **kwargs)
 # 136M
 def AnyRes_S(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=288, depth=12, num_heads=6, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks, depth=12, hidden_size=288, num_heads=6, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=288, depth=12, num_heads=6, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=12, hidden_size=288, num_heads=6, **kwargs)
 
 
 # AnyRes_models = {

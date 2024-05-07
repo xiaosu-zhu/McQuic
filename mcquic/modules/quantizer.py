@@ -603,6 +603,11 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
     def Codebooks(self):
         return list(quantizer._codebook for quantizer in self._quantizers)
 
+    def residual_backward(self, code: torch.Tensor, level: int):
+        dequantizer, backward = self._dequantizers[level], self._backwards[level]
+        quantized = dequantizer.decode(code)
+        return backward(quantized)
+
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
         allLatents = list()

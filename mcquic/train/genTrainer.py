@@ -24,6 +24,7 @@ from rich import filesize
 import torch.nn.functional as F
 from fairscale.optim.oss import OSS
 from fairscale.nn.data_parallel import ShardedDataParallel as SDP
+from fairscale.optim import AdaScale
 
 from mcquic.train.utils import Saver, parseOptimGroup
 from mcquic.consts import Consts
@@ -74,7 +75,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         # optimizer = trackingFunctionCalls(optimizer, self.saver)
 
-        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.LayerNorm, torch.nn.Embedding), ['pos_embed', 'bias'])
+        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.Embedding, ), ['norm', 'pos_embed', 'bias'])
 
         optimizer_grouped_parameters = [
             {
@@ -261,9 +262,7 @@ class _baseGenTrainer(Restorable):
 
                 self._model.zero_grad()
 
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    predictions, codes, xHat = self._model(images, texts)
-                    loss = sum([F.cross_entropy(pre, gt, reduction='sum') / len(images) for (pre, gt) in zip(predictions, codes)])
+                predictions, loss, codes, xHat = self._model(images, texts)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
@@ -413,7 +412,7 @@ class MainGenTrainer(_baseGenTrainer):
         task = self.progress.get_task(self.trainingBar)
         self.progress.update(self.trainingBar, advance=1, progress=f"[{task.completed + 1:4d}/{task.total:4d}]", suffix=f"D = [b green]{moment:.2f}[/]")
 
-        if self._step % 10 != 0:
+        if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
             wandb.log({f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
@@ -446,6 +445,9 @@ class MainGenTrainer(_baseGenTrainer):
 
     #     # super()._epochStart(hook, *args, **kwArgs)
 
+    def decode(self, codes):
+        pass
+
 
     def log(self, *_, images, restored, codes, texts, **__):
         if self.rank != 0:
@@ -456,14 +458,15 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         # [m, ki]
         for lv, c in enumerate(codes):
-            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x), mode='L') for x in self.validator.visualizeIntermediate(c)]
+            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
-        payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
+        payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images[:8])]
         # self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
 
-        payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored)]
+        payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
+        # payload['Train/GT'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
@@ -475,42 +478,32 @@ class MainGenTrainer(_baseGenTrainer):
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
     def validate(self, *_, valLoader: DataLoader, **__):
-        return
         torch.cuda.empty_cache()
 
         self.saver.debug("[%s] Start validation.", self.PrettyStep)
 
         self._model.eval()
-        results, summary = self.validator.validate(0, self._model.Compressor, valLoader, self.progress)
+
+        texts = ['A big horse running over a river.', 'Mountainview with beautiful grass land and river aside.']
+
+        prediction, restored = self._model.module(None, texts)
 
 
         wandb.log({
-            'Eval/MsSSIM': results["MsSSIM"],
-            'Eval/PSNR': results["PSNR"],
-            'Eval/BPP': results['BPP'],
-            'Eval/Visualization': [wandb.Image(to_pil_image(x)) for x in results["Visualization"]]
+            'Eval/Visualization': [wandb.Image(to_pil_image(x)) for x in restored]
         }, step=self._step)
+
+        self.run.log({'Eval/Text': wandb.Table(data=[[t] for t in texts], columns=['txt'])}, step=self._step)
 
         # self.saver.add_scalar(f"Eval/MsSSIM", results["MsSSIM"], global_step=self._step)
         # self.saver.add_scalar(f"Eval/PSNR", results["PSNR"], global_step=self._step)
         # self.saver.add_scalar(f"Eval/BPP", results["BPP"], global_step=self._step)
         # self.saver.add_images(f"Eval/Visualization", results["Visualization"], global_step=self._step)
 
-        rate, distortion = results["BPP"], results[self.config.Train.Target]
-
         self.save(os.path.join(self.saver.SaveDir, f"val_{self._step}.ckpt"))
-
-        # TODO: Why d/r continously decrease?
-        # if (distortion / rate) > (self.bestDistortion / self.bestRate):
-        if distortion > self.bestDistortion:
-            self.bestDistortion = distortion
-            self.bestRate = rate
-            # self.progress.update(self.epochBar, suffix=f"H = [b red]{self.bestDistortion:2.2f}[/]dB")
-            shutil.copy2(os.path.join(self.saver.SaveDir, f"val_{self._step}.ckpt"), os.path.join(self.saver.SaveDir, "best.ckpt"))
-        self.saver.info("[%s] %s", self.PrettyStep, summary)
         self._model.train()
 
-        self.saver.debug("[%s] End validation.", self.PrettyStep)
+        self.saver.info("[%s] End validation.", self.PrettyStep)
 
 
 class PalGenTrainer(_baseGenTrainer):
