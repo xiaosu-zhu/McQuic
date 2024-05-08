@@ -1,7 +1,7 @@
 model:
   key: Generator
   params:
-    mode: forward
+    mode: backward
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]

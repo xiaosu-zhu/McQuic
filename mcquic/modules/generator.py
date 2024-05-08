@@ -94,11 +94,12 @@ class Generator(nn.Module):
                 for sp in splitted:
                     codes = self.compressor.encode(sp)
                     allCodes.append(codes)
-                    all_forwards_for_residual.append([self.compressor.residual_forward(code, formerLevel, level) for level, code in enumerate(codes[:-1])])
-                    formerLevel = all_forwards_for_residual[-1]
+                    for level, code in enumerate(codes[:-1]):
+                        all_forwards_for_residual.append(self.compressor.residual_forward(code, formerLevel, level))
+                        formerLevel = all_forwards_for_residual[-1]
                 codes = [torch.cat(x) for x in zip(*allCodes)]
                 # list - 1 of [n, c, 2h, 2w]
-                all_backwards_for_residual = [torch.cat(x) for x in zip(*all_forwards_for_residual)]
+                all_forwards_for_residual = [torch.cat(x) for x in zip(*all_forwards_for_residual)]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -475,7 +476,7 @@ class AnyResolutionBlock(nn.Module):
             FinalLayer(hidden_size, hidden_size)
         )
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, len(codebook), codebook)
+            FinalLayer(hidden_size, len(codebook), None)
         )
 
 
@@ -649,7 +650,7 @@ class TextConditionedGenerator(nn.Module):
 
         # we only need level - 1 final layers.
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, len(codebook), codebook)
+            FinalLayer(hidden_size, len(codebook), None)
         )
 
         self.num_patches = self.canvas_size * self.canvas_size
