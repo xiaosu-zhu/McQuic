@@ -48,8 +48,11 @@ class Generator(nn.Module):
             params.requires_grad_(False)
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
-        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
-        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
+        logging.debug('Start loading clip...')
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=False)
+        logging.debug('Loaded clip text model from %s.', "openai/clip-vit-base-patch32")
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=False)
+        logging.debug('Loaded clip text model from %s.', "openai/clip-vit-base-patch32")
         for params in self.text_encoder.parameters():
             params.requires_grad_(False)
 
@@ -58,7 +61,8 @@ class Generator(nn.Module):
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
-        self.text_to_first_level, self.next_residual_predictor = AnyRes_S(clip_text_channels, [4, 8, 16, 32], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
+        self.text_to_first_level, self.next_residual_predictor = AnyRes_S(clip_text_channels, [4, 8, 16, 32], [codebook.squeeze(0) for codebook in self.compressor.Codebooks])
+        logging.debug('Created any-res transformer.')
 
 
         self.compressor.eval()
@@ -393,15 +397,27 @@ class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
-    def __init__(self, hidden_size, prediction_num):
+    def __init__(self, hidden_size, prediction_num, prototypes = None):
         super().__init__()
-        self.norm_final = nn.InstanceNorm2d(hidden_size, affine=False, eps=1e-6)
-        self.linear = nn.Conv2d(hidden_size, prediction_num, 1)
-        self.skip_connection = nn.Conv2d(hidden_size, prediction_num, 1)
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(hidden_size, 2 * hidden_size)
-        )
+        if prototypes is not None:
+            self.register_buffer('prototypes', prototypes)
+            self.prototype_proj = nn.Linear(prototypes.shape[-1], hidden_size)
+            self.norm_final = nn.InstanceNorm2d(hidden_size, affine=False, eps=1e-6)
+            self.linear = nn.Conv2d(hidden_size, hidden_size, 1)
+            self.skip_connection = nn.Conv2d(hidden_size, hidden_size, 1)
+            self.adaLN_modulation = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(hidden_size, 2 * hidden_size)
+            )
+
+        else:
+            self.norm_final = nn.InstanceNorm2d(hidden_size, affine=False, eps=1e-6)
+            self.linear = nn.Conv2d(hidden_size, prediction_num, 1)
+            self.skip_connection = nn.Conv2d(hidden_size, prediction_num, 1)
+            self.adaLN_modulation = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(hidden_size, 2 * hidden_size)
+            )
 
         # Zero-out adaLN modulation layers in DiT blocks:
         nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
@@ -409,12 +425,28 @@ class FinalLayer(nn.Module):
 
 
     def forward(self, x, condition):
-        # [B, D]
-        shift, scale = self.adaLN_modulation(condition).chunk(2, dim=1)
-        # modulate, [B, D, H, W]
-        out = self.norm_final(x) * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
-        x = self.linear(out) + self.skip_connection(x)
-        return x
+        if hasattr(self, 'prototypes'):
+            # [B, D]
+            shift, scale = self.adaLN_modulation(condition).chunk(2, dim=1)
+            # modulate, [B, D, H, W]
+            out = self.norm_final(x) * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
+            # [B, D, H, W]
+            x = self.linear(out) + self.skip_connection(x)
+            n, c, h, w = x.shape
+            # [K, D]
+            codes = self.prototype_proj(self.prototypes)
+            # [b, hw, d] @ [b, d, k] -> [b, hw, k]
+            similarity = torch.bmm(x.permute(0, 2, 3, 1).reshape(n, h*w, c).contiguous(), codes.expand(n, *codes.shape).permute(0, 2, 1).contiguous())
+            # [b, k, h, w]
+            similarity = similarity.reshape(n, h, w, -1).permute(0, 3, 1, 2).contiguous()
+            return similarity
+        else:
+            # [B, D]
+            shift, scale = self.adaLN_modulation(condition).chunk(2, dim=1)
+            # modulate, [B, D, H, W]
+            out = self.norm_final(x) * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
+            x = self.linear(out) + self.skip_connection(x)
+            return x
 
 
 class AnyResolutionBlock(nn.Module):
@@ -423,8 +455,7 @@ class AnyResolutionBlock(nn.Module):
     """
     def __init__(
         self,
-        prediction_num: int,
-        input_dim: int,
+        codebook,
         canvas_size, # e.g.: 32, corresponding to raw pixels: 512
         hidden_size=1152,
         depth=28,
@@ -433,6 +464,7 @@ class AnyResolutionBlock(nn.Module):
         # learn_sigma=True,
     ):
         super().__init__()
+        input_dim = codebook.shape[-1]
         # self.learn_sigma = learn_sigma
         self.in_channels = input_dim
         self.canvas_size = canvas_size
@@ -444,9 +476,8 @@ class AnyResolutionBlock(nn.Module):
         self.pre_layer = checkpoint_wrapper(
             FinalLayer(hidden_size, hidden_size)
         )
-        # we only need level - 1 final layers.
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, prediction_num)
+            FinalLayer(hidden_size, len(codebook), codebook)
         )
 
 
@@ -561,8 +592,7 @@ class AnyResolutionTransformer(nn.Module):
         text_dimension,
         # NOTE: from low resolution to high resolution. this list should be ascending.
         canvas_size: List[int], # e.g.: 32, corresponding to raw pixels: 512
-        prediction_nums,
-        input_dims,
+        codebooks,
         hidden_size=1152,
         depth=28,
         num_heads=16,
@@ -572,10 +602,10 @@ class AnyResolutionTransformer(nn.Module):
         self.hidden_size = hidden_size
         # NOTE: we only need first (level - 1) blocks
         self.blocks = nn.ModuleList(
-            [AnyResolutionBlock(prediction_num, input_dim, can, hidden_size, depth, num_heads, mlp_ratio) for (can, prediction_num, input_dim) in zip(canvas_size, prediction_nums, input_dims)]
+            [AnyResolutionBlock(codebook, can, hidden_size, depth, num_heads, mlp_ratio) for (can, codebook) in zip(canvas_size, codebooks)]
         )
         self.text_lift = nn.ModuleList(
-            [nn.Linear(text_dimension, hidden_size) for _ in prediction_nums]
+            [nn.Linear(text_dimension, hidden_size) for _ in codebooks]
         )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
@@ -776,16 +806,16 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #################################################################################
 # 2.20B
 def AnyRes_XL(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=1024, depth=28, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=28, hidden_size=1024, num_heads=16, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=1024, depth=28, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=28, hidden_size=1024, num_heads=16, **kwargs)
 # 1.51B
 def AnyRes_L(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=768, depth=24, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=24, hidden_size=768, num_heads=16, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=768, depth=24, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=24, hidden_size=768, num_heads=16, **kwargs)
 # 480M
 def AnyRes_B(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=576, depth=12, num_heads=12, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=12, hidden_size=576, num_heads=12, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=576, depth=12, num_heads=12, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=12, hidden_size=576, num_heads=12, **kwargs)
 # 136M
 def AnyRes_S(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=288, depth=12, num_heads=6, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, [len(c) for c in codebooks], [c.shape[-1] for c in codebooks], depth=12, hidden_size=288, num_heads=6, **kwargs)
+    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=288, depth=12, num_heads=6, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=12, hidden_size=288, num_heads=6, **kwargs)
 
 
 # AnyRes_models = {
