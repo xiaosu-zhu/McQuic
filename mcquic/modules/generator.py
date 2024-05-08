@@ -16,6 +16,7 @@ import transformers
 import transformers.modeling_outputs
 
 from mcquic.modules.compressor import Neon
+from mcquic import Consts
 
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
@@ -48,8 +49,11 @@ class Generator(nn.Module):
             params.requires_grad_(False)
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
-        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
-        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
+        logging.debug('Start loading clip...')
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=False)
+        logging.debug('Loaded clip text model from %s.', "openai/clip-vit-base-patch32")
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=False)
+        logging.debug('Loaded clip text model from %s.', "openai/clip-vit-base-patch32")
         for params in self.text_encoder.parameters():
             params.requires_grad_(False)
 
@@ -59,6 +63,7 @@ class Generator(nn.Module):
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.text_to_first_level, self.next_residual_predictor = AnyRes_S(clip_text_channels, [2, 4, 8, 16], [codebook.squeeze(0) for codebook in self.compressor.Codebooks[:-1]])
+        logging.debug('Created any-res transformer.')
 
 
         self.compressor.eval()
