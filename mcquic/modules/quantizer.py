@@ -608,6 +608,13 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         quantized = dequantizer.decode(code)
         return backward(quantized)
 
+    def residual_forward(self, code: torch.Tensor, formerLevel: torch.Tensor, level: int):
+        if formerLevel is None and level > 0:
+            raise RuntimeError('For reconstruction after level-0, you should provide not None formerLevel as input.')
+        decoder, dequantizer = self._decoders[level], self._dequantizers[level]
+        quantized = dequantizer.decode(code)
+        return decoder(quantized + formerLevel) if formerLevel is not None else decoder(quantized)
+
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
         allLatents = list()

@@ -1,6 +1,7 @@
 model:
   key: Generator
   params:
+    mode: forward
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
@@ -21,7 +22,7 @@ train:
   optim:
     key: FusedLAMB
     params:
-      lr: 5.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
       weight_decay: 0.001
       # use_nvlamb: true
   schdr:
@@ -29,7 +30,7 @@ train:
     key: CosineAnnealingWarmupRestarts
     params:
       first_cycle_steps: 25000 # totalimage / gpus / batchsize * epochs
-      warmup_steps: 250
+      warmup_steps: 750
       gamma: 1.0
       lrScaleRatio: 0.0
   gpu:

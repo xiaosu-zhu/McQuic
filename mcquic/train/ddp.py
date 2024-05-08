@@ -13,7 +13,6 @@ from vlutils.config import summary
 
 from mcquic import Config, Consts
 from mcquic.modules.compressor import BaseCompressor, Compressor, Neon
-from mcquic.modules.generator_2 import Generator
 from mcquic.data import getTrainLoader, getValLoader
 from mcquic.train.hooks import getAllHooks
 from mcquic.utils.registry import *
@@ -71,8 +70,14 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distor
 
     return compressor, criterion
 
-def genModelFn(modelParams) -> Generator:
-    generator = Generator(**modelParams)
+def genModelFn(modelParams):
+    if modelParams['mode'] == 'forward':
+        from mcquic.modules.generator import Generator
+        generator = Generator(**modelParams)
+    else:
+        pass
+        from mcquic.modules.generator_2 import Generator
+        generator = Generator(**modelParams)
     return generator
 
 
