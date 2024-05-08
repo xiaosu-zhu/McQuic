@@ -119,7 +119,6 @@ class Generator(nn.Module):
             predictions = self.next_residual_predictor(all_backwards_for_residual, text_embedding.pooler_output.detach().clone(), text_embedding.last_hidden_state.detach().clone(), attention_mask)
 
             loss = [F.cross_entropy(pre, gt, reduction='none') for pre, gt in zip([first_level, *predictions], codes)]
-            # loss = [F.cross_entropy(pre, gt, reduction='none') for (pre, gt) in zip([first_level, *predictions], codes)]
 
             # list of [n, 1, h, w], len of list == levels
             restoredCodes = [pre.detach().clone().argmax(1, keepdim=True) for pre in predictions]
@@ -455,7 +454,7 @@ class AnyResolutionBlock(nn.Module):
     """
     def __init__(
         self,
-        codebook,
+        codebook: torch.Tensor,
         canvas_size, # e.g.: 32, corresponding to raw pixels: 512
         hidden_size=1152,
         depth=28,
@@ -493,7 +492,6 @@ class AnyResolutionBlock(nn.Module):
             checkpoint_wrapper(CrossTransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
         ])
         self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=1))
-        # self.pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -634,7 +632,7 @@ class AnyResolutionTransformer(nn.Module):
 class TextConditionedGenerator(nn.Module):
     def __init__(self,
         text_dimension: int,
-        prediction_num: int,
+        codebook,
         hidden_size=1152,
         depth=28,
         num_heads=16,
@@ -652,7 +650,7 @@ class TextConditionedGenerator(nn.Module):
 
         # we only need level - 1 final layers.
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, prediction_num)
+            FinalLayer(hidden_size, len(codebook), codebook)
         )
 
         self.num_patches = self.canvas_size * self.canvas_size
@@ -806,16 +804,16 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #################################################################################
 # 2.20B
 def AnyRes_XL(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=1024, depth=28, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=28, hidden_size=1024, num_heads=16, **kwargs)
+    return TextConditionedGenerator(text_dimension, codebooks[0], hidden_size=1024, depth=28, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=28, hidden_size=1024, num_heads=16, **kwargs)
 # 1.51B
 def AnyRes_L(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=768, depth=24, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=24, hidden_size=768, num_heads=16, **kwargs)
+    return TextConditionedGenerator(text_dimension, codebooks[0], hidden_size=768, depth=24, num_heads=16, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=24, hidden_size=768, num_heads=16, **kwargs)
 # 480M
 def AnyRes_B(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=576, depth=12, num_heads=12, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=12, hidden_size=576, num_heads=12, **kwargs)
+    return TextConditionedGenerator(text_dimension, codebooks[0], hidden_size=576, depth=12, num_heads=12, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=12, hidden_size=576, num_heads=12, **kwargs)
 # 136M
 def AnyRes_S(text_dimension, canvas_size, codebooks, **kwargs):
-    return TextConditionedGenerator(text_dimension, len(codebooks[0]), hidden_size=288, depth=12, num_heads=6, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=12, hidden_size=288, num_heads=6, **kwargs)
+    return TextConditionedGenerator(text_dimension, codebooks[0], hidden_size=288, depth=12, num_heads=6, **kwargs), AnyResolutionTransformer(text_dimension, canvas_size, codebooks[1:], depth=12, hidden_size=288, num_heads=6, **kwargs)
 
 
 # AnyRes_models = {

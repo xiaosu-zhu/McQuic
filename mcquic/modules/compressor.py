@@ -232,3 +232,7 @@ class Neon(BaseCompressor):
     def residual_backward(self, code, level):
         # [n, c, h*2, w*2] <- ([n, m, h, w], int)
         return self._quantizer.residual_backward(code, level)
+
+    def residual_forward(self, code, formerLevel, level):
+        # [n, c, h*2, w*2] <- ([n, m, h, w], int)
+        return self._quantizer.residual_forward(code, formerLevel, level)
