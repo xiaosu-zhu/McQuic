@@ -476,7 +476,7 @@ class AnyResolutionBlock(nn.Module):
             FinalLayer(hidden_size, hidden_size)
         )
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, len(codebook), codebook)
+            FinalLayer(hidden_size, len(codebook), None)
         )
 
 
@@ -650,7 +650,7 @@ class TextConditionedGenerator(nn.Module):
 
         # we only need level - 1 final layers.
         self.final_layer = checkpoint_wrapper(
-            FinalLayer(hidden_size, len(codebook), codebook)
+            FinalLayer(hidden_size, len(codebook), None)
         )
 
         self.num_patches = self.canvas_size * self.canvas_size
