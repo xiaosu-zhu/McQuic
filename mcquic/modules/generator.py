@@ -94,9 +94,11 @@ class Generator(nn.Module):
                 for sp in splitted:
                     codes = self.compressor.encode(sp)
                     allCodes.append(codes)
+                    this_split_forward_residual = list()
                     for level, code in enumerate(codes[:-1]):
-                        all_forwards_for_residual.append(self.compressor.residual_forward(code, formerLevel, level))
-                        formerLevel = all_forwards_for_residual[-1]
+                        this_split_forward_residual.append(self.compressor.residual_forward(code, formerLevel, level))
+                        formerLevel = this_split_forward_residual[-1]
+                    all_forwards_for_residual.append(this_split_forward_residual)
                 codes = [torch.cat(x) for x in zip(*allCodes)]
                 # list - 1 of [n, c, 2h, 2w]
                 all_forwards_for_residual = [torch.cat(x) for x in zip(*all_forwards_for_residual)]
