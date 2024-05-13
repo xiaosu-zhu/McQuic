@@ -90,8 +90,8 @@ class Generator(nn.Module):
                 splitted = torch.split(image, 16)
                 allCodes = list()
                 all_forwards_for_residual = list()
-                formerLevel = None
                 for sp in splitted:
+                    formerLevel = None
                     codes = self.compressor.encode(sp)
                     allCodes.append(codes)
                     this_split_forward_residual = list()
