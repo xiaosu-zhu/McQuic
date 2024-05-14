@@ -15,7 +15,7 @@ def getTrainingPreprocess():
     return T.Compose([
         # T.ToTensor(),
         # T.Resize(512),
-        T.RandomResizedCrop((512, 512), (0.75, 1.3333), (0.95, 1.05)),
+        T.RandomResizedCrop((512, 512), (0.75, 1), (0.95, 1.05)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])
@@ -24,7 +24,7 @@ def getTrainingPreprocessWithText():
     transform = T.Compose([
         # T.ToTensor(),
         # T.Resize(512),
-        T.RandomResizedCrop((512, 512), (0.75, 1.3333), (0.95, 1.05)),
+        T.RandomResizedCrop((512, 512), (0.75, 1), (0.95, 1.05)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])

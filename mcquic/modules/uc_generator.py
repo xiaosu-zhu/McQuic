@@ -324,26 +324,17 @@ class TransformerBlock(nn.Module):
     """
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0., proj_drop=0.):
         super().__init__()
-        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=True, eps=1e-6)
         self.attn = nn.MultiheadAttention(hidden_size, num_heads=num_heads, dropout=attn_drop, batch_first=True)
-        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=True, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=proj_drop)
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
-        )
 
-        # Zero-out adaLN modulation layers in DiT blocks:
-        nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
-
-    def forward(self, x, condition):
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(condition).chunk(6, dim=1)
-        attn_qkv = modulate(self.norm1(x), shift_msa, scale_msa)
-        x = x + gate_msa.unsqueeze(1) * self.attn(attn_qkv, attn_qkv, attn_qkv, need_weights=False)[0]
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+    def forward(self, x):
+        normed = self.norm1(x)
+        x = x + self.attn(normed, normed, normed, need_weights=False)[0]
+        x = x + self.mlp(self.norm2(x))
         return x
 
 
@@ -404,34 +395,19 @@ class FinalLayer(nn.Module):
         if prototypes is not None:
             self.register_buffer('prototypes', prototypes)
             self.prototype_proj = nn.Linear(prototypes.shape[-1], hidden_size)
-            self.norm_final = nn.InstanceNorm2d(hidden_size, affine=False, eps=1e-6)
+            self.norm_final = nn.InstanceNorm2d(hidden_size, affine=True, eps=1e-6)
             self.linear = nn.Conv2d(hidden_size, hidden_size, 1)
             self.skip_connection = nn.Conv2d(hidden_size, hidden_size, 1)
-            self.adaLN_modulation = nn.Sequential(
-                nn.SiLU(),
-                nn.Linear(hidden_size, 2 * hidden_size)
-            )
-
         else:
-            self.norm_final = nn.InstanceNorm2d(hidden_size, affine=False, eps=1e-6)
+            self.norm_final = nn.InstanceNorm2d(hidden_size, affine=True, eps=1e-6)
             self.linear = nn.Conv2d(hidden_size, prediction_num, 1)
             self.skip_connection = nn.Conv2d(hidden_size, prediction_num, 1)
-            self.adaLN_modulation = nn.Sequential(
-                nn.SiLU(),
-                nn.Linear(hidden_size, 2 * hidden_size)
-            )
-
-        # Zero-out adaLN modulation layers in DiT blocks:
-        nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
 
-    def forward(self, x, condition):
+    def forward(self, x):
         if hasattr(self, 'prototypes'):
-            # [B, D]
-            shift, scale = self.adaLN_modulation(condition).chunk(2, dim=1)
             # modulate, [B, D, H, W]
-            out = self.norm_final(x) * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
+            out = self.norm_final(x)
             # [B, D, H, W]
             x = self.linear(out) + self.skip_connection(x)
             n, c, h, w = x.shape
@@ -444,10 +420,8 @@ class FinalLayer(nn.Module):
             return similarity
         else:
             # [B, D]
-            shift, scale = self.adaLN_modulation(condition).chunk(2, dim=1)
             # modulate, [B, D, H, W]
-            out = self.norm_final(x) * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
-            x = self.linear(out) + self.skip_connection(x)
+            x = self.linear(self.norm_final(x)) + self.skip_connection(x)
             return x
 
 
@@ -491,9 +465,9 @@ class AnyResolutionBlock(nn.Module):
         self.blocks = nn.ModuleList([
             checkpoint_wrapper(TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
         ])
-        self.condition_blocks = nn.ModuleList([
-            checkpoint_wrapper(CrossTransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
-        ])
+        # self.condition_blocks = nn.ModuleList([
+        #     checkpoint_wrapper(CrossTransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio)) for _ in range(depth)
+        # ])
         self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, hidden_size))
         self._initialize_weights()
 
@@ -542,14 +516,14 @@ class AnyResolutionBlock(nn.Module):
         return x.permute(0, 2, 1).reshape(bs, dim, h, w).contiguous() # [bs, 4 * D, h, w]
         return self.pixel_shuffle(x) # [bs, D, 2 * h, 2 * w]
 
-    def forward(self, input_embedding, pooled_condition, sequence_condition, attention_mask):
+    def forward(self, input_embedding):
         # 0, 1, 2, 3
         bs, c, h, w = input_embedding.shape
         # [b, h, w, d]
         # x = self.input_embedding[code]
         # [b, h*w, hidden]
         x = self.input_transform(input_embedding)
-        x = (self.pre_layer(x, pooled_condition)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
+        x = (self.pre_layer(x)).permute(0, 2, 3, 1).reshape(bs, h*w, -1).contiguous()
 
         if self.training:
             # TODO: change to random
@@ -559,12 +533,12 @@ class AnyResolutionBlock(nn.Module):
             selected_pos_embed = self.center_pos_embed(h, w)
 
         x = x + selected_pos_embed # [bs, hw, hidden]
-        for block, cross in zip(self.blocks, self.condition_blocks):
-            x = block(x, pooled_condition) + cross(x, sequence_condition, attention_mask)
+        for block in self.blocks:
+            x = block(x)
             # print(x.mean(), x.std())
         x = self.proj_layer(x) # [bs, hw, hidden]
         x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
-        prediction = self.final_layer(x, pooled_condition) # [bs, k, 2h, 2w]
+        prediction = self.final_layer(x) # [bs, k, 2h, 2w]
         # print(prediction[0, :, 0, 0].min(), prediction[0, :, 0, 0].max(), prediction[0, :, 0, 0].softmax(-1).min(), prediction[0, :, 0, 0].softmax(-1).max())
         return prediction
 
@@ -605,9 +579,9 @@ class AnyResolutionTransformer(nn.Module):
         self.blocks = nn.ModuleList(
             [AnyResolutionBlock(codebook, can, hidden_size, depth, num_heads, mlp_ratio) for (can, codebook) in zip(canvas_size, codebooks)]
         )
-        self.text_lift = nn.ModuleList(
-            [nn.Linear(text_dimension, hidden_size) for _ in codebooks]
-        )
+        # self.text_lift = nn.ModuleList(
+        #     [nn.Linear(text_dimension, hidden_size) for _ in codebooks]
+        # )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
     def forward(self, all_forwards_for_residual, pooled_condition, sequence_condition, attention_mask):
@@ -616,17 +590,17 @@ class AnyResolutionTransformer(nn.Module):
                 raise RuntimeError('The given training input is not a list.')
             results = list()
             # [bs, c, h*2, w*2]
-            for current, block, text_lift in zip(all_forwards_for_residual, self.blocks, self.text_lift):
+            for current, block in zip(all_forwards_for_residual, self.blocks):
                 # [bs, k, h*2, w*2]
-                results.append(block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask))
+                results.append(block(current))
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
             # [bs, c, h*2, w*2]
             current, level = all_forwards_for_residual
             results = list()
-            block, text_lift = self.blocks[level], self.text_lift[level]
-            predict = block(current, text_lift(pooled_condition), text_lift(sequence_condition), attention_mask)
+            block = self.blocks[level]
+            predict = block(current)
             # NOTE: in training, the len of reuslts is level - 1
             return predict.argmax(1)
 
@@ -731,13 +705,13 @@ class TextConditionedGenerator(nn.Module):
             selected_pos_embed = self.center_pos_embed(h, w)
 
         x = selected_pos_embed.expand(bs, h*w, self.hidden_size) # [bs, hw, hidden]
-        x = self.pre_layer(x.permute(0, 2, 1).reshape(bs, self.hidden_size, h, w).contiguous(), pooled_condition).permute(0, 2, 3, 1).reshape(bs, h*w, self.hidden_size).contiguous()
+        x = self.pre_layer(x.permute(0, 2, 1).reshape(bs, self.hidden_size, h, w).contiguous()).permute(0, 2, 3, 1).reshape(bs, h*w, self.hidden_size).contiguous()
         for block, cross in zip(self.blocks, self.condition_blocks):
-            x = block(x, pooled_condition) + cross(x, sequence_condition, attention_mask)
+            x = block(x) + cross(x, sequence_condition, attention_mask)
         x = self.post_layer(x)
         x = x.reshape(bs, h, w, -1).permute(0, 3, 1, 2).contiguous()
         # x = x.permute(0, )
-        prediction = self.final_layer(x, pooled_condition) # [bs, k, h, w]
+        prediction = self.final_layer(x) # [bs, k, h, w]
         # print(prediction[0, :, 0, 0].min(), prediction[0, :, 0, 0].max(), prediction[0, :, 0, 0].softmax(-1).min(), prediction[0, :, 0, 0].softmax(-1).max())
         return prediction if self.training else prediction.argmax(1)
 
