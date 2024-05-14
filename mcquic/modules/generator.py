@@ -49,9 +49,9 @@ class Generator(nn.Module):
         logging.info('Loaded compressor checkpoint from %s.', loadFrom)
 
         logging.debug('Start loading clip...')
-        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=False)
+        self.text_encoder = transformers.CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
         logging.debug('Loaded clip text model from %s.', "openai/clip-vit-base-patch32")
-        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=False)
+        self.text_tokenizer = transformers.CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", local_files_only=True)
         logging.debug('Loaded clip text model from %s.', "openai/clip-vit-base-patch32")
         for params in self.text_encoder.parameters():
             params.requires_grad_(False)
@@ -90,11 +90,12 @@ class Generator(nn.Module):
                 splitted = torch.split(image, 16)
                 allCodes = list()
                 all_forwards_for_residual = list()
-                formerLevel = None
                 for sp in splitted:
+                    formerLevel = None
                     codes = self.compressor.encode(sp)
                     allCodes.append(codes)
                     this_split_forward_residual = list()
+                    formerLevel = None
                     for level, code in enumerate(codes[:-1]):
                         this_split_forward_residual.append(self.compressor.residual_forward(code, formerLevel, level))
                         formerLevel = this_split_forward_residual[-1]
