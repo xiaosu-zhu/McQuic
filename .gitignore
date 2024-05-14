@@ -14,7 +14,7 @@ version1/
 last_checkpoint/
 slurm-*.err
 slurm-*.out
-generation_saved/
+generation_saved*/
 compressor/
 clic/
 
@@ -147,3 +147,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+tmp/

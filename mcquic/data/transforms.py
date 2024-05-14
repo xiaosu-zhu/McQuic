@@ -22,15 +22,16 @@ def getTrainingPreprocess():
 
 def getTrainingPreprocessWithText():
     transform = T.Compose([
-        # T.ToTensor(),
+        T.ToTensor(),
         # T.Resize(512),
         T.RandomResizedCrop((512, 512), (0.75, 1), (0.95, 1.05)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])
     def call(x):
-        img, text = x
-        return transform(img), text
+        img = x["jpeg"]
+        text = x["label"]
+        return {"jpeg": transform(img), "label": text}
     return call
 
 def getTrainingTransform(gen: bool = False):

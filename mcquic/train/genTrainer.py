@@ -254,7 +254,10 @@ class _baseGenTrainer(Restorable):
             trainLoader = trainLoaderFn()
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
-            for images, texts in trainLoader:
+            for data in trainLoader:
+                images = data["jpeg"]
+                texts = data["label"]
+
                 self.saver.debug("[%s] Image loaded.", self.PrettyStep)
                 images = self.transform(images.to(self.localRank, non_blocking=True))
 
