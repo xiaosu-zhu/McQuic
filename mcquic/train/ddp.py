@@ -74,8 +74,10 @@ def genModelFn(modelParams):
     if modelParams['mode'] == 'forward':
         from mcquic.modules.generator import Generator
         generator = Generator(**modelParams)
+    elif modelParams['mode'] == 'uncondition':
+        from mcquic.modules.uc_generator import Generator
+        generator = Generator(**modelParams)
     else:
-        pass
         from mcquic.modules.generator_2 import Generator
         generator = Generator(**modelParams)
     return generator
