@@ -10,7 +10,7 @@ model:
     loadFrom: compressor.ckpt
 train:
   totalStep: 10000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 144
+  batchSize: 8
   epoch: 20
   valFreq: 2500
   trainSet: /ssdfs/datahome/tj24011/datasets/raw/imagenet/imagenet-1k/data

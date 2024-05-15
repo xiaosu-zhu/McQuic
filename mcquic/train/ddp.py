@@ -19,6 +19,7 @@ from mcquic.utils.registry import *
 import mcquic.utils.registry
 import mcquic.train.lrSchedulers as _
 import mcquic.loss
+from mcquic.modules.generator_3 import *
 
 from mcquic.train.utils import getSaver, initializeBaseConfigs
 from mcquic.train.trainer import getTrainer
@@ -49,16 +50,23 @@ def _registerBuiltinFunctions():
     # Built-in pytorch modules to be registered.
     try:
         import apex
+
         OptimizerRegistry.register("FusedLAMB")(apex.optimizers.FusedLAMB)
     except:
+
         def _raise_func(*_, **__):
-            raise ImportError("You are trying to use FusedLAMB optimizer but Apex is not installed.")
+            raise ImportError(
+                "You are trying to use FusedLAMB optimizer but Apex is not installed."
+            )
+
         OptimizerRegistry.register("FusedLAMB")(_raise_func)
         # raise ImportError("`import apex` failed. Apex not installed.")
     OptimizerRegistry.register("Adam")(torch.optim.AdamW)
     OptimizerRegistry.register("SGD")(torch.optim.SGD)
 
-    LrSchedulerRegistry.register("ReduceLROnPlateau")(torch.optim.lr_scheduler.ReduceLROnPlateau)
+    LrSchedulerRegistry.register("ReduceLROnPlateau")(
+        torch.optim.lr_scheduler.ReduceLROnPlateau
+    )
     LrSchedulerRegistry.register("Exponential")(torch.optim.lr_scheduler.ExponentialLR)
     LrSchedulerRegistry.register("MultiStep")(torch.optim.lr_scheduler.MultiStepLR)
     LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR)
@@ -70,36 +78,49 @@ def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distor
 
     return compressor, criterion
 
-def genModelFn(modelParams):
-    if modelParams['mode'] == 'forward':
-        from mcquic.modules.generator import Generator
-        generator = Generator(**modelParams)
-    else:
-        pass
-        from mcquic.modules.generator_2 import Generator
-        generator = Generator(**modelParams)
-    return generator
+
+def genModelFn(modelParams, modelTarget):
+    return GeneratorRegistry.get(modelTarget)(**modelParams)
 
 
-def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[pathlib.Path, None], loggingLevel: int):
+def ddpSpawnTraining(
+    gen: bool,
+    config: Config,
+    saveDir: str,
+    resume: Union[pathlib.Path, None],
+    loggingLevel: int,
+):
     registerForTrain(config)
     # NOTE: this is global rank
-    rank = int(os.environ['RANK'])
+    rank = int(os.environ["RANK"])
 
     # load ckpt before create trainer, in case it moved to other place.
     if resume is not None:
         # NOTE: here, we use local rank, since this checkpoint should be copied to each node's tmp dir.
-        if int(os.environ['LOCAL_RANK']) == 0:
-            tmpFile = copy2(resume, os.path.join(Consts.TempDir, "resume.ckpt"), follow_symlinks=False)
+        if int(os.environ["LOCAL_RANK"]) == 0:
+            tmpFile = copy2(
+                resume,
+                os.path.join(Consts.TempDir, "resume.ckpt"),
+                follow_symlinks=False,
+            )
         else:
             tmpFile = os.path.join(Consts.TempDir, "resume.ckpt")
     else:
         tmpFile = None
 
+    saver = getSaver(
+        saveDir,
+        saveName="saved.ckpt",
+        loggerName=Consts.Name,
+        loggingLevel=loggingLevel,
+        config=config.serialize(),
+        reserve=resume is not None,
+        disable=rank != 0,
+    )
 
-    saver = getSaver(saveDir, saveName="saved.ckpt", loggerName=Consts.Name, loggingLevel=loggingLevel, config=config.serialize(), reserve=resume is not None, disable=rank != 0)
-
-    saver.info("Here is the whole config during this run: \r\n%s", summary(config.serialize()))
+    saver.info(
+        "Here is the whole config during this run: \r\n%s", summary(config.serialize())
+    )
 
     saver.debug("Creating the world...")
 
@@ -117,7 +138,7 @@ def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[path
     schdrFn = LrSchedulerRegistry.get(config.Train.Schdr.Key, logger=saver)
 
     if gen:
-        model = lambda: genModelFn(config.Model.Params)
+        model = lambda: genModelFn(config.Model.Params, config.Model.Key)
     else:
         model = lambda: modelFn(config.Model.Params, config.Train.Target)
     trainer = getTrainer(gen, rank, config, tmpFile, model, optimizerFn, schdrFn, saver)
@@ -126,7 +147,9 @@ def ddpSpawnTraining(gen: bool, config: Config, saveDir: str, resume: Union[path
     #     saver.info("Found ckpt to resume at %s", resume)
     #     trainer.restoreStates(tmpFile)
 
-    trainLoaderFn = lambda: getTrainLoader(gen, config.Train.TrainSet, config.Train.BatchSize, logger=saver)
+    trainLoaderFn = lambda: getTrainLoader(
+        gen, config.Train.TrainSet, config.Train.BatchSize, logger=saver
+    )
     valLoader = getValLoader(config.Train.ValSet, disable=rank != 0, logger=saver)
     saver.debug("Train and validation datasets mounted.")
 

@@ -80,6 +80,7 @@ def wdsDecodeWithText(sample):
 
 def wdsImageNetWithLabel(sample):
     from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES
+
     # with io.BytesIO(sample["jpeg"]) as stream:
     #     img = Image.open(stream).convert("RGB")
     #     image = to_tensor(img.copy()).detach().clone()
@@ -98,7 +99,7 @@ def getTrainLoader(
     batchSize: int,
     logger: Union[logging.Logger, LoggerBase] = logging.root,
 ):
-    allTarGZ = glob.glob(str(datasetPath))
+    # allTarGZ = glob.glob(str(datasetPath))
     # NOTE: no need to use disbtribued sampler, since shuffle have difference RNG over time and pid.
     # NOTE: do not call .repeat(), it hangs!
     # NOTE: if number of shard < nodes, do not use shardshuffle, it hangs!
@@ -107,7 +108,9 @@ def getTrainLoader(
     # NOTE: don't use their (wds) collate function, it is wrong.
     if gen:
         trainDataset = (
-            load_dataset("webdataset", data_dir=datasetPath, split="train", streaming=True)
+            load_dataset(
+                "webdataset", data_dir=datasetPath, split="train", streaming=True
+            )
             .shuffle(seed=3407, buffer_size=10_000)
             .map(wdsImageNetWithLabel)
             .map(getTrainingPreprocessWithText())
@@ -119,18 +122,28 @@ def getTrainLoader(
         )
     else:
         trainDataset = (
-            wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
-            .shuffle(500)
+            load_dataset(
+                "webdataset", data_dir=datasetPath, split="train", streaming=True
+            )
+            .shuffle(seed=3407, buffer_size=10_000)
             .map(wdsDecode)
             .map(getTrainingPreprocess())
-            .batched(batchSize, collation_fn=default_collate, partial=False)
+            # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
+            # .shuffle(500)
+            # .map(wdsDecode)
+            # .map(getTrainingPreprocess())
+            # .batched(batchSize, collation_fn=default_collate, partial=False)
         )
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
     trainLoader = DataLoader(
         trainDataset,
         batch_size=batchSize,
-        num_workers=min(min(batchSize // 2, 48), trainDataset.n_shards) if gen else min(batchSize + 4, 16),
+        num_workers=(
+            min(min(batchSize // 2, 48), trainDataset.n_shards)
+            if gen
+            else min(batchSize + 4, 16)
+        ),
         pin_memory=True,
         persistent_workers=False,
     )
