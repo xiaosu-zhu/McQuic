@@ -88,7 +88,7 @@ def wdsImageNetWithLabel(sample):
     label = IMAGENET2012_CLASSES[sample["__key__"].split("_")[0]]
     caption = f"a photo of {label}"
     image = sample["jpeg"].convert("RGB")
-    
+
     return {"jpeg": image, "label": caption}
 
 
@@ -130,7 +130,7 @@ def getTrainLoader(
     trainLoader = DataLoader(
         trainDataset,
         batch_size=batchSize,
-        num_workers=min(batchSize // 2, 48) if gen else min(batchSize + 4, 16),
+        num_workers=min(min(batchSize // 2, 48), trainDataset.n_shards) if gen else min(batchSize + 4, 16),
         pin_memory=True,
         persistent_workers=False,
     )
