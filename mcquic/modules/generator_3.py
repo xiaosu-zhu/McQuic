@@ -914,15 +914,19 @@ class Transformer(nn.Module):
 
         nn.init.zeros_(self.cap_embedder[1].weight)
 
-    def random_pos_embed(self, h, w):
+    def random_pos_embed(self, bs, h, w):
         H = W = int(math.sqrt(self.num_patches))
         # [H, W, D]
         pos_embed = self.pos_embed.reshape(H, W, -1)
-        random_up = random.randint(0, H - h - 1)
-        random_left = random.randint(0, W - w - 1)
-        return pos_embed[
-            random_up : random_up + h, random_left : random_left + w
-        ].reshape(h * w, -1)
+        result = list()
+        for i in range(bs):
+            random_up = random.randint(0, H - h)
+            random_left = random.randint(0, W - w)
+            result.append(pos_embed[
+                random_up : random_up + h, random_left : random_left + w
+            ].reshape(h * w, -1))
+        # [bs, hw, d]
+        return torch.stack(result)
 
     def center_pos_embed(self, h, w):
         H = W = int(math.sqrt(self.num_patches))
@@ -961,8 +965,8 @@ class Transformer(nn.Module):
 
         if self.training:
             # TODO: change to random
-            # selected_pos_embed = self.random_pos_embed(h, w)
-            selected_pos_embed = self.center_pos_embed(h, w)
+            selected_pos_embed = self.random_pos_embed(bs, h, w)
+            # selected_pos_embed = self.center_pos_embed(h, w)
         else:
             selected_pos_embed = self.center_pos_embed(h, w)
 
@@ -1045,19 +1049,31 @@ class AnyResolutionModel(nn.Module):
                 b=math.sqrt(2 / (5 * hidden_size)),
             )
         )
+        self.cap_to_first_token = nn.Sequential(
+            nn.LayerNorm(cap_dim),
+            nn.Linear(
+                cap_dim,
+                self.token_dim,
+                bias=True,
+            ),
+        )
 
         self.level_indicator_pos_embed = nn.Parameter(torch.randn([5, self.token_dim]))
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
-    def random_pos_embed(self, h, w):
+    def random_pos_embed(self, bs, h, w):
         H = W = int(math.sqrt(self.first_level_pos_embed.shape[1]))
         # [H, W, D]
         pos_embed = self.first_level_pos_embed.reshape(H, W, -1)
-        random_up = random.randint(0, H - h - 1)
-        random_left = random.randint(0, W - w - 1)
-        return pos_embed[
-            random_up : random_up + h, random_left : random_left + w
-        ].reshape(h * w, -1)
+        result = list()
+        for i in range(bs):
+            random_up = random.randint(0, H - h)
+            random_left = random.randint(0, W - w)
+            result.append(pos_embed[
+                random_up : random_up + h, random_left : random_left + w
+            ].reshape(h * w, -1))
+        # [bs, hw, d]
+        return torch.stack(result)
 
     def center_pos_embed(self, h, w):
         H = W = int(math.sqrt(self.first_level_pos_embed.shape[1]))
@@ -1084,13 +1100,14 @@ class AnyResolutionModel(nn.Module):
                     # current should be picked from pos_embed
                     if self.training:
                         # TODO: change to random
-                        # selected_pos_embed = self.random_pos_embed(h, w)
-                        selected_pos_embed = self.center_pos_embed(h, w)
+                        selected_pos_embed = self.random_pos_embed(bs, h, w)
+                        # selected_pos_embed = self.center_pos_embed(h, w)
                     else:
                         selected_pos_embed = self.center_pos_embed(h, w)
                     current = selected_pos_embed.expand(
                         bs, h * w, self.token_dim
                     )  # [bs, hw, hidden]
+                    current = selected_pos_embed + self.cap_to_first_token(cap_pooled)[:, None, ...]
                     current = (
                         current.permute(0, 2, 1)
                         .reshape(bs, self.token_dim, h, w)
@@ -1113,6 +1130,7 @@ class AnyResolutionModel(nn.Module):
                 current = selected_pos_embed.expand(
                     bs, h * w, self.token_dim
                 )  # [bs, hw, hidden]
+                current = current + self.cap_to_first_token(cap_pooled)[:, None, ...]
                 current = (
                     current.permute(0, 2, 1)
                     .reshape(bs, self.token_dim, h, w)
