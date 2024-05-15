@@ -17,9 +17,10 @@ import transformers.modeling_outputs
 
 from mcquic.modules.compressor import Neon
 
+from mcquic.utils.registry import GeneratorRegistry
+
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
-
 
 
 # From PyTorch internals
@@ -38,7 +39,8 @@ to_4tuple = _ntuple(4)
 to_ntuple = _ntuple
 
 
-class Generator(nn.Module):
+@GeneratorRegistry.register()
+class ForwardGenerator(nn.Module):
     def __init__(self, channel: int, k: List[int], denseNorm: bool, loadFrom: str, *_, **__):
         super().__init__()
         self.compressor = Neon(channel, k, denseNorm)
