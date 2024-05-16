@@ -121,24 +121,25 @@ def getTrainLoader(
             # .batched(batchSize, collation_fn=default_collate, partial=False)
         )
     else:
+        allTarGZ = glob.glob(str(datasetPath))
         trainDataset = (
-            load_dataset(
-                "webdataset", data_dir=datasetPath, split="train", streaming=True
-            )
-            .shuffle(seed=3407, buffer_size=10_000)
-            .map(wdsDecode)
-            .map(getTrainingPreprocess())
-            # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
-            # .shuffle(500)
+            # load_dataset(
+            #     "webdataset", data_dir=datasetPath, split="train", streaming=True
+            # )
+            # .shuffle(seed=3407, buffer_size=10_000)
             # .map(wdsDecode)
             # .map(getTrainingPreprocess())
-            # .batched(batchSize, collation_fn=default_collate, partial=False)
+            wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
+            .shuffle(500)
+            .map(wdsDecode)
+            .map(getTrainingPreprocess())
+            .batched(batchSize, collation_fn=default_collate, partial=False)
         )
     logger.debug("Create training set: %s", trainDataset)
     # NOTE: we use native dataloader
     trainLoader = DataLoader(
         trainDataset,
-        batch_size=batchSize,
+        batch_size=batchSize if gen else None,
         num_workers=(
             min(min(batchSize // 2, 48), trainDataset.n_shards)
             if gen

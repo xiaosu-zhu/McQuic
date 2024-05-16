@@ -115,7 +115,7 @@ class ResidualBlockWithStride(_residulBlock):
             skip = None
         super().__init__(
             # TODO: test additional norm
-            nn.Sequential(nn.GroupNorm(groups, inChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
             GenDivNorm(outChannels, fuseNorm=denseNorm),
             conv3x3(outChannels, outChannels),
@@ -152,7 +152,7 @@ class ResidualBlockShuffle(_residulBlock):
         """
         super().__init__(
             # TODO: test additional norm
-            nn.Sequential(nn.GroupNorm(groups, inChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
+            nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
             InvGenDivNorm(outChannels, fuseNorm=denseNorm),
             conv3x3(outChannels, outChannels),
@@ -193,9 +193,9 @@ class ResidualBlock(_residulBlock):
             skip = None
         super().__init__(
             # TODO: test additional norm
-            nn.Sequential(nn.GroupNorm(groups, inChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
+            nn.SiLU(),
             conv3x3(inChannels, outChannels),
-            nn.Sequential(nn.GroupNorm(groups, outChannels), nn.SiLU()) if denseNorm else nn.SiLU(),
+            nn.GroupNorm(groups, outChannels) if denseNorm else nn.SiLU(),
             conv3x3(outChannels, outChannels),
             skip)
 
