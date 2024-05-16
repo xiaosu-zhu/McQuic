@@ -95,7 +95,7 @@ def conv3x3(inChannels: int, outChannels: int, stride: int = 1, bias: bool = Tru
     Returns:
         nn.Module: A Conv layer.
     """
-    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=3, stride=stride, padding=1, padding_mode="reflect")
+    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=3, stride=stride, padding=1)
 
 def conv5x5(inChannels: int, outChannels: int, stride: int = 1, bias: bool = True, groups: int = 1) -> nn.Conv2d:
     """A wrapper of 5x5 convolution with pre-calculated padding.
@@ -118,7 +118,7 @@ def conv5x5(inChannels: int, outChannels: int, stride: int = 1, bias: bool = Tru
     Returns:
         nn.Module: A Conv layer.
     """
-    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=5, stride=stride, padding=5 // 2, padding_mode="reflect")
+    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=5, stride=stride, padding=5 // 2)
 
 def deconv5x5(inChannels: int, outChannels: int, stride: int = 1, bias: bool = True, groups: int = 1) -> nn.ConvTranspose2d:
     """A wrapper of 5x5 TRANSPOSED convolution with pre-calculated padding.
@@ -170,13 +170,13 @@ def pixelShuffle5x5(inChannels: int, outChannels: int, r: float = 1) -> nn.Conv2
     if r < 1:
         r = int(1 / r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=5, stride=1, padding=5 // 2, padding_mode="reflect"),
+            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=5, stride=1, padding=5 // 2),
             nn.PixelUnshuffle(r)
         )
     else:
         r = int(r ** 2)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels * r, kernel_size=5, stride=1, padding=5 // 2, padding_mode="reflect"),
+            nn.Conv2d(inChannels, outChannels * r, kernel_size=5, stride=1, padding=5 // 2),
             nn.PixelShuffle(r)
         )
 
@@ -240,13 +240,13 @@ def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1, groups: int
     if r < 1:
         r = int(1 / r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode="reflect"),
+            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, groups=groups),
             nn.PixelUnshuffle(r)
         )
     else:
         r = int(r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode="reflect"),
+            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, groups=groups),
             nn.PixelShuffle(r)
         )
 
@@ -269,4 +269,4 @@ def conv1x1(inChannels: int, outChannels: int, stride: int = 1, bias: bool = Tru
     Returns:
         nn.Module: A Conv layer.
     """
-    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=1, stride=stride, padding_mode="reflect")
+    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=1, stride=stride)
