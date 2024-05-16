@@ -4,13 +4,14 @@ model:
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
+    denseNorm: true
 train:
-  totalStep: 198587 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 6
+  totalStep: 100000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+  batchSize: 8
   epoch: 2
   valFreq: 10000
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
-  valSet: /ssdfs/datahome/tj24011/kodak
+  valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
   saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved
   target: MsSSIM
   externalLib: []
@@ -26,7 +27,7 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 198587 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+      first_cycle_steps: 100000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
       warmup_steps: 2000
       gamma: 1.0
       lrScaleRatio: 0.0

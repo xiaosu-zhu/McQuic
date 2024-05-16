@@ -560,7 +560,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         quantizers = list()
         dequantizers = list()
 
-        codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, channel // mi), std=math.sqrt(2 / (5 * channel / float(mi)))))
+        codebook = nn.Parameter(nn.init.normal_(torch.empty(m[0], k[0], channel // m[0]), std=math.sqrt(2 / (5 * channel / float(m[0])))))
 
         # reverse adding encoder, decoder and quantizer
         for i, (ki, mi) in enumerate(zip(k[::-1], m[::-1])):
