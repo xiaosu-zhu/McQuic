@@ -560,6 +560,8 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         quantizers = list()
         dequantizers = list()
 
+        codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, channel // mi), std=math.sqrt(2 / (5 * channel / float(mi)))))
+
         # reverse adding encoder, decoder and quantizer
         for i, (ki, mi) in enumerate(zip(k[::-1], m[::-1])):
             latentStageEncoder = nn.Sequential(
@@ -568,7 +570,6 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                 ResidualBlockWithStride(channel, channel, 2, 32, denseNorm),
                 conv1x1(channel, channel, bias=False)
             )
-            codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, channel // mi), std=math.sqrt(2 / (5 * channel / float(mi)))))
             # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
             quantizer = _multiCodebookQuantization(codebook, 0.)
             dequantizer = _multiCodebookDeQuantization(codebook)
