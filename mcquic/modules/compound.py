@@ -8,6 +8,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.loss import Distortion, Rate
+from mcquic.loss.lpips import LPIPS
 from mcquic.modules.compressor import BaseCompressor
 
 _device_t = Union[int, device]
@@ -15,15 +16,17 @@ _devices_t = Sequence[_device_t]
 
 
 class Compound(Module):
-    def __init__(self, compressor: BaseCompressor, distortion: Distortion):
+    def __init__(self, compressor: BaseCompressor, distortion: Distortion, lpips: LPIPS):
         super().__init__()
         self._compressor = compressor
         self._distortion = distortion
+        self._lpips = lpips
 
     def forward(self, x: Tensor):
         xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(x, xHat, codes, logits)
-        return xHat, (0.0, distortion), codes, logits
+        lpips = self._lpips(xHat, x)
+        return xHat, (distortion, lpips.mean()), codes, logits
 
     @property
     def Freq(self):

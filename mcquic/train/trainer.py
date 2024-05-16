@@ -31,6 +31,7 @@ from mcquic.validate.utils import EMATracker
 from mcquic.modules.compound import Compound
 from mcquic import Config
 from mcquic.modules.compressor import BaseCompressor
+from mcquic.loss.lpips import LPIPS
 from mcquic.validate import Validator
 from mcquic.utils import StrPath, totalParameters
 from mcquic.data.transforms import getTrainingTransform
@@ -38,7 +39,7 @@ from mcquic.data.transforms import getTrainingTransform
 from mcquic.train.utils import checkHook, getRichProgress
 
 class _baseTrainer(Restorable):
-    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
+    def __init__(self, config: Config, tmpFile: Optional[StrPath], modelFn: Callable[[], Tuple[BaseCompressor, Distortion, LPIPS]], optimizer: Type[torch.optim.Optimizer], scheduler: Type[torch.optim.lr_scheduler._LRScheduler], saver: Saver, **_):
         super().__init__()
         self.saver = saver
 
@@ -63,10 +64,10 @@ class _baseTrainer(Restorable):
         self.transform = getTrainingTransform().to(self.localRank)
 
         self.saver.debug("[%s] Creating model...", self.PrettyStep)
-        compressor, distortion = trackingFunctionCalls(modelFn, self.saver)()
+        compressor, distortion, lpips = trackingFunctionCalls(modelFn, self.saver)()
 
 
-        model = Compound(compressor.to(self.localRank), distortion.to(self.localRank))
+        model = Compound(compressor.to(self.localRank), distortion.to(self.localRank), lpips.to(self.localRank))
         self.saver.debug("[%s] Model created.", self.PrettyStep)
         self.saver.info("[%s]           Model size: %s", self.PrettyStep, totalParameters(model.parameters()))
         self.saver.info("[%s] Trainable parameters: %s", self.PrettyStep, totalParameters([p for p in model.parameters() if p.requires_grad]))
@@ -267,10 +268,10 @@ class _baseTrainer(Restorable):
                 self._model.zero_grad()
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                xHat, (rate, distortion), codes, logits = self._model(images)
+                xHat, (reconLoss, lpipsLoss), codes, logits = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (rate + distortion).backward()
+                (reconLoss + lpipsLoss).backward()
 
                 # scaler.unscale_(self._optimizer)
 
@@ -283,7 +284,7 @@ class _baseTrainer(Restorable):
 
                 # scaler.update()
 
-                self._stepFinish(stepFinishHook, rate=rate, distortion=distortion, codes=codes, images=images, restored=xHat, logits=logits, norm=norm, **trainingArgs)
+                self._stepFinish(stepFinishHook, reconLoss=reconLoss, lpipsLoss=lpipsLoss, codes=codes, images=images, restored=xHat, logits=logits, norm=norm, **trainingArgs)
                 del images
                 if self._step >= self._totalStep:
                     break
@@ -417,8 +418,8 @@ class MainTrainer(_baseTrainer):
         self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
-    def _stepFinishHook(self, *_, rate, distortion, norm, **__):
-        distortionDB = self._model.module.formatDistortion(distortion)
+    def _stepFinishHook(self, *_, reconLoss, lpipsLoss, norm, **__):
+        distortionDB = self._model.module.formatDistortion(reconLoss)
         moment = self.diffTracker(distortionDB)
 
         task = self.progress.get_task(self.trainingBar)
@@ -427,7 +428,7 @@ class MainTrainer(_baseTrainer):
         if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
+            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Loss_lpips": lpipsLoss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
         if self._step % (self.config.Train.ValFreq // 100) == 0:
             if torch.isnan(moment) or moment < 0.1:
                 self.saver.critical('Loss becomes NAN. Train crashed.')
