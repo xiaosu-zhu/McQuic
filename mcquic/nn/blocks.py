@@ -117,7 +117,7 @@ class ResidualBlockWithStride(_residulBlock):
             # TODO: test additional norm
             nn.SiLU(),
             conv3x3(inChannels, outChannels, stride=stride),
-            nn.GroupNorm(groups, outChannels),
+            GenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
             skip)
 
@@ -154,7 +154,7 @@ class ResidualBlockShuffle(_residulBlock):
             # TODO: test additional norm
             nn.SiLU(),
             pixelShuffle3x3(inChannels, outChannels, upsample),
-            nn.GroupNorm(groups, outChannels),
+            InvGenDivNorm(outChannels),
             conv3x3(outChannels, outChannels),
             pixelShuffle3x3(inChannels, outChannels, upsample))
 
