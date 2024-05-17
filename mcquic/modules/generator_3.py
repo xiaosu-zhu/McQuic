@@ -1367,7 +1367,7 @@ def AnyRes_L(cap_dim, canvas_size, codebooks, **kwargs):
         canvas_size,
         codebooks[1:],
         depth=24,
-        hidden_size=1152,
+        hidden_size=1536,
         num_heads=16,
         **kwargs,
     )
@@ -1379,9 +1379,9 @@ def AnyRes_B(cap_dim, canvas_size, codebooks, **kwargs):
         cap_dim,
         canvas_size,
         codebooks[1:],
-        depth=12,
-        hidden_size=1024,
-        num_heads=12,
+        depth=20,
+        hidden_size=1152,
+        num_heads=16,
         **kwargs,
     )
 
@@ -1392,9 +1392,9 @@ def AnyRes_S(cap_dim, canvas_size, codebooks, **kwargs):
         cap_dim,
         canvas_size,
         codebooks[1:],
-        depth=12,
+        depth=16,
         hidden_size=768,
-        num_heads=12,
+        num_heads=16,
         **kwargs,
     )
 
