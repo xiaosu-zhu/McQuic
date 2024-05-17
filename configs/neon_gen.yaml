@@ -7,13 +7,13 @@ model:
     denseNorm: false
     qk_norm: true
     norm_eps: 1e-5
-    loadFrom: compressor/compressor_58000.ckpt
+    loadFrom: compressor/new_20000.ckpt
 train:
   totalStep: 10000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 2
+  batchSize: 8
   epoch: 2
   valFreq: 1000
-  trainSet: /mnt/hdd1/zhuxiaosu/datasets/cc3m-wds/*train*.tar
+  trainSet: /mnt/hdd1/zhuxiaosu/datasets/imagenet-1k
   valSet: valid
   saveDir: generation_saved
   target: MsSSIM
