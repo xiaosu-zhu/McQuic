@@ -4,7 +4,7 @@ model:
     channel: 32
     k: [4096, 4096, 4096, 4096, 4096]
     m: [1, 1, 1, 1, 1]
-    denseNorm: true
+    denseNorm: false
 train:
   totalStep: 100000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 8
