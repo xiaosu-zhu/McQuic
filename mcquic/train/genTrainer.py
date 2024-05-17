@@ -471,8 +471,10 @@ class MainGenTrainer(_baseGenTrainer):
         # self.saver.add_images("Train/Raw", self.validator.tensorToImage(images), global_step=self._step)
         # self.saver.add_images("Train/Post", self.validator.tensorToImage(postProcessed), global_step=self._step)
 
-        payload['Train/Res'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
-        # payload['Train/GT'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
+        payload['Train/Generation'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
+
+        gtRestored = self._model.module.compressor.decode([c.unsqueeze(1) for c in codes[:8]])
+        payload['Train/Reconstruction'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts[:8]], columns=['txt'])}, step=self._step)
         # self.saver.add_images("Train/Res", self.validator.tensorToImage(restored), global_step=self._step)
@@ -490,7 +492,8 @@ class MainGenTrainer(_baseGenTrainer):
 
         self._model.eval()
 
-        texts = ['A big horse running over a river.', 'Mountainview with beautiful grass land and river aside.']
+        # texts = ['A big horse running over a river.', 'Mountainview with beautiful grass land and river aside.']
+        texts = ['A photo of dog.', 'A photo of cat.']
 
         prediction, restored = self._model.module(None, texts)
 

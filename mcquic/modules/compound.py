@@ -22,6 +22,12 @@ class Compound(Module):
         self._distortion = distortion
         self._lpips = lpips
 
+    def train(self, mode: bool = True):
+        retValue = super().train(mode)
+        self._lpips.eval()
+        self._distortion.eval()
+        return retValue
+
     def forward(self, x: Tensor):
         xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(x, xHat, codes, logits)

@@ -62,7 +62,7 @@ class GeneratorV3(nn.Module):
         self.compressor.load_state_dict(
             {
                 k[len("module._compressor.") :]: v
-                for k, v in state_dict["trainer"]["_model"].items()
+                for k, v in state_dict["trainer"]["_model"].items() if '_lpips' not in k
             }
         )
         for params in self.compressor.parameters():
@@ -86,7 +86,7 @@ class GeneratorV3(nn.Module):
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
-        self.next_residual_predictor = AnyRes_XL(
+        self.next_residual_predictor = AnyRes_L(
             clip_text_channels,
             [2, 4, 8, 16],
             [codebook.squeeze(0) for codebook in self.compressor.Codebooks],
@@ -103,9 +103,10 @@ class GeneratorV3(nn.Module):
         # self.next_residual_predictor.bfloat16()
 
     def train(self, mode: bool = True):
+        retValue = super().train(mode)
         self.compressor.eval()
         self.text_encoder.eval()
-        return super().train(mode)
+        return retValue
 
     def forward(self, image, condition: List[str]):
         if not isinstance(condition, list):
@@ -117,25 +118,15 @@ class GeneratorV3(nn.Module):
                 # from low resolution to high resolution
                 # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
                 # NOTE: therefore, we manually split image into batch 16
-                splitted = torch.split(image, 16)
-                allCodes = list()
                 all_forwards_for_residual = list()
-                for sp in splitted:
-                    codes = self.compressor.encode(sp)
-                    allCodes.append(codes)
-                    this_split_forward_residual = list()
-                    formerLevel = None
-                    for level, code in enumerate(codes[:-1]):
-                        this_split_forward_residual.append(
-                            self.compressor.residual_forward(code, formerLevel, level)
-                        )
-                        formerLevel = this_split_forward_residual[-1]
-                    all_forwards_for_residual.append(this_split_forward_residual)
-                codes = [torch.cat(x) for x in zip(*allCodes)]
-                # list - 1 of [n, c, 2h, 2w]
-                all_forwards_for_residual = [
-                    torch.cat(x) for x in zip(*all_forwards_for_residual)
-                ]
+                codes = self.compressor.encode(image)
+                formerLevel = None
+                for level, code in enumerate(codes[:-1]):
+                    # list - 1 of [n, c, 2h, 2w]
+                    all_forwards_for_residual.append(
+                        self.compressor.residual_forward(code, formerLevel, level)
+                    )
+                    formerLevel = all_forwards_for_residual[-1]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -190,12 +181,7 @@ class GeneratorV3(nn.Module):
             #     0, first_level.detach().clone().argmax(1, keepdim=True)
             # )
             with torch.no_grad():
-                splitted = list(zip(*list(torch.split(x, 16) for x in restoredCodes)))
-
-                allRestored = list()
-                for sp in splitted:
-                    allRestored.append(self.compressor.decode(sp))
-                restored = torch.cat(allRestored)
+                restored = self.compressor.decode(restoredCodes)
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
@@ -244,7 +230,7 @@ class GeneratorV3(nn.Module):
                 )
 
                 predictions = list()
-                for i in range(0, len(self.compressor.Codebooks) - 1):
+                for i in range(1, len(self.compressor.Codebooks)):
                     predictions.append(
                         self.next_residual_predictor(
                             (formerLevel, i),
@@ -262,12 +248,7 @@ class GeneratorV3(nn.Module):
                 # list of [bs, 1, hi, wi]
                 predictions = [p.unsqueeze(1) for p in predictions]
 
-                splitted = list(zip(*list(torch.split(x, 16) for x in predictions)))
-
-                allRestored = list()
-                for sp in splitted:
-                    allRestored.append(self.compressor.decode(sp))
-                restored = torch.cat(allRestored)
+                restored = self.compressor.decode(predictions)
                 return predictions, restored
 
 
@@ -1045,8 +1026,8 @@ class AnyResolutionModel(nn.Module):
         self.first_level_pos_embed = nn.Parameter(
             nn.init.uniform_(
                 torch.empty(1, canvas_size[-1] * canvas_size[-1], self.token_dim),
-                a=-math.sqrt(2 / (5 * hidden_size)),
-                b=math.sqrt(2 / (5 * hidden_size)),
+                a=-math.sqrt(2 / (5 * self.token_dim)),
+                b=math.sqrt(2 / (5 * self.token_dim)),
             )
         )
         self.cap_to_first_token = nn.Sequential(
@@ -1058,7 +1039,13 @@ class AnyResolutionModel(nn.Module):
             ),
         )
 
-        self.level_indicator_pos_embed = nn.Parameter(torch.randn([5, self.token_dim]))
+        self.level_indicator_pos_embed = nn.Parameter(
+            nn.init.uniform_(
+                torch.empty(5, self.token_dim),
+                a=-math.sqrt(2 / (5 * self.token_dim)),
+                b=math.sqrt(2 / (5 * self.token_dim)),
+            )
+        )
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
 
     def random_pos_embed(self, bs, h, w):
@@ -1367,7 +1354,7 @@ def AnyRes_L(cap_dim, canvas_size, codebooks, **kwargs):
         canvas_size,
         codebooks[1:],
         depth=24,
-        hidden_size=1152,
+        hidden_size=1536,
         num_heads=16,
         **kwargs,
     )
