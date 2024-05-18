@@ -79,18 +79,18 @@ def wdsDecodeWithText(sample):
 
 
 def wdsImageNetWithLabel(sample):
-    from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES
+    from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES, IMAGENET2012_LABELS
 
     # with io.BytesIO(sample["jpeg"]) as stream:
     #     img = Image.open(stream).convert("RGB")
     #     image = to_tensor(img.copy()).detach().clone()
     #     img.close()
 
-    label = IMAGENET2012_CLASSES[sample["__key__"].split("_")[0]]
-    caption = f"a photo of {label}"
+    label = IMAGENET2012_LABELS[sample["__key__"].split("_")[0]]
+    # caption = f"a photo of {label}"
     image = sample["jpeg"].convert("RGB")
 
-    return {"jpeg": image, "label": caption}
+    return {"jpeg": image, "label": label}
 
 
 def getTrainLoader(

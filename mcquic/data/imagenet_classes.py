@@ -1020,3 +1020,8 @@ IMAGENET2012_CLASSES = OrderedDict(
         "n15075141": "toilet tissue, toilet paper, bathroom tissue",
     }
 )
+
+
+IMAGENET2012_LABELS = OrderedDict(
+    {key: i for i, key in enumerate(IMAGENET2012_CLASSES.keys())}
+)
