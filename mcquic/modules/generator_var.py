@@ -21,6 +21,8 @@ from transformers import CLIPTextModel, CLIPProcessor
 from mcquic.modules.compressor import Neon
 from mcquic.utils.registry import GeneratorRegistry
 
+from mcquic.modules.var import VQVAE
+
 
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
@@ -44,7 +46,7 @@ to_ntuple = _ntuple
 
 
 @GeneratorRegistry.register
-class GeneratorV3(nn.Module):
+class GeneratorVAR(nn.Module):
     def __init__(
         self,
         channel: int,
@@ -57,13 +59,10 @@ class GeneratorV3(nn.Module):
         **__,
     ):
         super().__init__()
-        self.compressor = Neon(channel, k, denseNorm)
+        self.compressor = VQVAE(4096, 32, 160, share_quant_resi=4, v_patch_nums=(1, 2, 3, 4, 5, 6, 8, 10, 13, 16))
         state_dict = torch.load(loadFrom, map_location="cpu")
         self.compressor.load_state_dict(
-            {
-                k[len("module._compressor.") :]: v
-                for k, v in state_dict["trainer"]["_model"].items() if '_lpips' not in k
-            }
+            state_dict
         )
         for params in self.compressor.parameters():
             params.requires_grad_(False)
@@ -88,11 +87,16 @@ class GeneratorV3(nn.Module):
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.next_residual_predictor = AnyRes_S(
             clip_text_channels,
-            [1, 2, 4, 8, 16],
-            [[4096, 32] for _ in [1, 2, 4, 8, 16]],
+            (1, 2, 3, 4, 5, 6, 8, 10, 13, 16),
+            [[4096, 32] for _ in (1, 2, 3, 4, 5, 6, 8, 10, 13, 16)],
             qk_norm=qk_norm,
             norm_eps=norm_eps,
         )
+
+        # from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES, IMAGENET2012_LABELS
+        # self.label_embedding = nn.Parameter(
+        #     nn.init.normal_(torch.empty(len(IMAGENET2012_LABELS), 8, self.next_residual_predictor.token_dim), std=2/(5*self.next_residual_predictor.token_dim))
+        # )
         logging.debug("Created any-res transformer.")
 
         self.compressor.eval()
@@ -108,7 +112,9 @@ class GeneratorV3(nn.Module):
         self.text_encoder.eval()
         return retValue
 
-    def forward(self, image, condition: List[str]):
+    def forward(self, image, condition: List[int]):
+        # if not isinstance(condition, list):
+        #     raise NotImplementedError
         if self.training:
             ###################### Preparing inputs #########################
             with torch.no_grad():
@@ -117,14 +123,17 @@ class GeneratorV3(nn.Module):
                 # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
                 # NOTE: therefore, we manually split image into batch 16
                 all_forwards_for_residual = list()
-                codes = self.compressor.encode(image)
-                formerLevel = None
-                for level, code in enumerate(codes[:-1]):
-                    # list - 1 of [n, c, 2h, 2w]
-                    all_forwards_for_residual.append(
-                        self.compressor.residual_forward(code, formerLevel, level)
-                    )
-                    formerLevel = all_forwards_for_residual[-1]
+                # list of [B, patch_nums]
+                rawCodes = self.compressor.img_to_idxBl(image)
+                # list of [B, patch_nums, channel] (without first scale), len(list) = scale - 1
+                transformerInput = self.compressor.quantize.idxBl_to_var_input(rawCodes)
+
+                # reshape to normal input
+                patch_nums = (1, 2, 3, 4, 5, 6, 8, 10, 13, 16)
+                # list of [B, h, w]
+                codes = [c.reshape(-1, x, x) for c, x in zip(rawCodes, patch_nums)]
+                # list of [B, C, h, w]
+                transformerInput = [t.reshape(len(t), x, x, -1).permute(0, 3, 1, 2) for t, x in zip(transformerInput, patch_nums[1:])]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -147,53 +156,54 @@ class GeneratorV3(nn.Module):
                     input_ids, attention_mask=attention_mask, return_dict=True
                 )
 
-            # NOTE: remove product quantization artifacts, since we don't use product quantization
-            codes = [c.squeeze(1) for c in codes]
-
+            # [bs, L, k]
             rawPredictions = self.next_residual_predictor(
-                [None, *all_forwards_for_residual],
+                [None, *transformerInput],
                 text_embedding.pooler_output.detach().clone(),
                 text_embedding.last_hidden_state.detach().clone(),
                 attention_mask.bool(),
+                # self.label_embedding[condition].mean(1),
+                # self.label_embedding[condition],
+                # torch.ones(len(condition), 8, dtype=torch.bool, device=self.label_embedding.device),
             )
 
             loss = list()
             curIdx = 0
             predictions = list()
-            for gt in codes:
-                bs, h, w = gt.shape
-                pre = rawPredictions[:, curIdx:curIdx+(h*w)]
-                pre = pre.permute(0, 2, 1).reshape(bs, -1, h, w)
+            for c, gt in zip(patch_nums, codes):
+                pre = rawPredictions[:, 2+curIdx:2+curIdx+(c*c)]
+                pre = pre.permute(0, 2, 1).reshape(len(pre), -1, c, c)
                 predictions.append(pre)
                 loss.append(F.cross_entropy(pre, gt, reduction="none"))
-                curIdx += h*w
+                curIdx += c*c+3
 
             # loss = [
             #     F.cross_entropy(pre, gt, reduction="none")
             #     for pre, gt in zip([*predictions], codes)
             # ]
 
-            # list of [n, 1, h, w], len of list == levels
+            # list of [n, h*w], len of list == levels
             restoredCodes = [
-                pre.detach().clone().argmax(1, keepdim=True) for pre in predictions
+                pre.detach().clone().argmax(1).reshape(len(pre), -1) for pre in predictions
             ]
             # [n, 1, h, w]
             # restoredCodes.insert(
             #     0, first_level.detach().clone().argmax(1, keepdim=True)
             # )
             with torch.no_grad():
-                restored = self.compressor.decode(restoredCodes)
+                restored = self.compressor.idxBl_to_img(restoredCodes, True, True)
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
             return (
                 [*predictions],
                 sum([l.sum() / len(image) for l in loss]),
-                codes,
+                rawCodes,
                 restored,
                 [l.mean() for l in loss],
             )
         else:
+            raise NotImplementedError
             ###################### Preparing inputs #########################
             with torch.no_grad():
                 device = next(self.parameters()).device
@@ -663,7 +673,7 @@ class FinalLayer(nn.Module):
         # else:
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False)
         self.linear = nn.Linear(hidden_size, prediction_num)
-        # self.skip_connection = nn.Linear(hidden_size, prediction_num)
+        self.skip_connection = nn.Linear(hidden_size, prediction_num)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size)
         )
@@ -703,7 +713,7 @@ class FinalLayer(nn.Module):
         out = (
             self.norm_final(x) * (1 + scale[:, None]) + shift[:, None]
         )
-        x = self.linear(out)# + self.skip_connection(x)
+        x = self.linear(out) + self.skip_connection(x)
         return x
 
 
@@ -850,7 +860,7 @@ class Transformer(nn.Module):
         self.hidden_size = hidden_size
 
         # self.input_transform = nn.Sequential(
-        #     nn.InstanceNorm2d(input_dim, eps=1e-6),
+        #     nn.GroupNorm(input_dim, input_dim),
         #     nn.Conv2d(input_dim, hidden_size, 1, bias=True),
         # )
 
@@ -944,13 +954,15 @@ class Transformer(nn.Module):
         return self.pixel_shuffle(x)  # [bs, D, 2 * h, 2 * w]
 
     def forward(self, x, x_mask, cap_pooled, cap_cond, cap_mask):
-        # 0, 1, 2, 3
-        # bs, c, h, w = x.shape
+        # start, level, content, end = x[:, :1], x[:, 1:2], x[:, 2:-1], x[:, -1:]
+        # content = content.reshape(len(content), *size, -1).permute(0, 3, 1, 2)
+        # # 0, 1, 2, 3
+        # bs, c, h, w = content.shape
         # # [b, h, w, d]
         # # x = self.x[code]
         # # [b, h*w, hidden]
-        # x = (
-        #     self.input_transform(x)
+        # content = (
+        #     self.input_transform(content)
         #     .permute(0, 2, 3, 1)
         #     .reshape(bs, h * w, -1)
         #     .contiguous()
@@ -958,12 +970,15 @@ class Transformer(nn.Module):
 
         bs = len(x)
         x = self.token_embedder(x)
+
+        # start, level, end = torch.split(self.special_token_embedder(torch.cat([start, level, end], 1)), 3, 1)
+
         # if self.training:
         #     # TODO: change to random
         #     selected_pos_embed = self.random_pos_embed(bs, h, w)
         #     # selected_pos_embed = self.center_pos_embed(h, w)
         # else:
-        #     selected_pos_embed = self.center_pos_embed(h, w)
+        #     selected_pos_embed = self.center_pos_embed(h, w).expand(bs, h * w, self.hidden_size)
 
         selected_pos_embed = self.pos_embed[:x.shape[1]].expand(bs, x.shape[1], -1)
         cap_emb = self.cap_embedder(cap_pooled)
@@ -980,7 +995,7 @@ class Transformer(nn.Module):
             # print(x.mean(), x.std())
         # x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
         # x = (
-        #     x.reshape(bs, h, w, -1).permute(0, 3, 1, 2).contiguous()
+        #     x[:, 2:-1].reshape(bs, h, w, -1).permute(0, 3, 1, 2).contiguous()
         # )  # [bs, hidden, h, w]
         prediction = self.final_layer(x, cap_emb)  # [bs, k, 2h, 2w]
         # print(prediction[0, :, 0, 0].min(), prediction[0, :, 0, 0].max(), prediction[0, :, 0, 0].softmax(-1).min(), prediction[0, :, 0, 0].softmax(-1).max())
@@ -1020,7 +1035,6 @@ class AnyResolutionModel(nn.Module):
         norm_eps=1e-5,
     ):
         super().__init__()
-        self.cap_dim = cap_dim
         self.token_dim = codebooks[0][-1]
         self.hidden_size = hidden_size
         # NOTE: we only need first (level - 1) blocks
@@ -1055,6 +1069,30 @@ class AnyResolutionModel(nn.Module):
             ),
         )
 
+        self.start_of_sequence = nn.Parameter(
+            nn.init.uniform_(
+                torch.empty(1, self.token_dim),
+                a=-math.sqrt(2 / (5 * self.token_dim)),
+                b=math.sqrt(2 / (5 * self.token_dim)),
+            )
+        )
+
+        self.end_of_sequence = nn.Parameter(
+            nn.init.uniform_(
+                torch.empty(1, self.token_dim),
+                a=-math.sqrt(2 / (5 * self.token_dim)),
+                b=math.sqrt(2 / (5 * self.token_dim)),
+            )
+        )
+
+        self.level_indicator = nn.Parameter(
+            nn.init.uniform_(
+                torch.empty(len(canvas_size), self.token_dim),
+                a=-math.sqrt(2 / (5 * self.token_dim)),
+                b=math.sqrt(2 / (5 * self.token_dim)),
+            )
+        )
+
         self.level_indicator_pos_embed = nn.Parameter(
             nn.init.uniform_(
                 torch.empty(len(canvas_size), self.token_dim),
@@ -1069,7 +1107,7 @@ class AnyResolutionModel(nn.Module):
     def prepare_input_mask(self, canvas_size):
         lengths = list()
         for c in canvas_size:
-            lengths.append(c*c)
+            lengths.append(c*c+3)
         # [L, L]
         attention_mask = torch.tril(torch.ones([sum(lengths), sum(lengths)]))
         curDiag = 0
@@ -1137,8 +1175,11 @@ class AnyResolutionModel(nn.Module):
                 # current = torch.cat([level_emb, current], dim=1) # todo: maybe useful
                 # [bs, hw, c]
                 current = current.permute(0, 2, 3, 1).reshape(bs, h*w, -1) + level_emb
-                # [bs, hw, c]
+
+                # [bs, hw+3, c]
+                current = torch.cat([self.start_of_sequence.expand(bs, 1, self.token_dim), self.level_indicator[level].expand(bs, 1, self.token_dim), current, self.end_of_sequence.expand(bs, 1, self.token_dim)], 1)
                 total.append(current)
+                lengths.append(len(current))
             # [bs, h1w1+3+h2w2+3+h3w3+3..., c]
             total = torch.cat(total, 1)
             # [bs, h1w1+3+h2w2+3+h3w3+3.., k]
@@ -1374,7 +1415,6 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 # 2.20B
 def AnyRes_XL(cap_dim, canvas_size, codebooks, **kwargs):
     return AnyResolutionModel(
-        cap_dim,
         canvas_size,
         codebooks[1:],
         depth=28,
