@@ -44,7 +44,7 @@ to_ntuple = _ntuple
 
 
 @GeneratorRegistry.register
-class GeneratorV3(nn.Module):
+class GeneratorV3SelfAttention(nn.Module):
     def __init__(
         self,
         channel: int,
@@ -69,25 +69,24 @@ class GeneratorV3(nn.Module):
             params.requires_grad_(False)
         logging.info("Loaded compressor checkpoint from %s.", loadFrom)
 
-        logging.debug("Start loading clip...")
-        self.text_encoder = CLIPTextModel.from_pretrained(
-            "openai/clip-vit-base-patch32", local_files_only=True
-        )
-        logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
-        self.text_tokenizer = CLIPProcessor.from_pretrained(
-            "openai/clip-vit-base-patch32", local_files_only=True
-        )
-        logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
-        for params in self.text_encoder.parameters():
-            params.requires_grad_(False)
+        # logging.debug("Start loading clip...")
+        # self.text_encoder = CLIPTextModel.from_pretrained(
+        #     "openai/clip-vit-base-patch32", local_files_only=True
+        # )
+        # logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
+        # self.text_tokenizer = CLIPProcessor.from_pretrained(
+        #     "openai/clip-vit-base-patch32", local_files_only=True
+        # )
+        # logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
+        # for params in self.text_encoder.parameters():
+        #     params.requires_grad_(False)
 
-        clip_text_channels = self.text_encoder.text_model.config.hidden_size
+        # clip_text_channels = self.text_encoder.text_model.config.hidden_size
 
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
-        self.next_residual_predictor = AnyRes_S(
-            clip_text_channels,
+        self.next_residual_predictor = AnyRes_L(
             [1, 2, 4, 8, 16],
             [[4096, 32] for _ in [1, 2, 4, 8, 16]],
             qk_norm=qk_norm,
@@ -95,8 +94,14 @@ class GeneratorV3(nn.Module):
         )
         logging.debug("Created any-res transformer.")
 
+        from mcquic.data.imagenet_classes import IMAGENET2012_LABELS
+
+        self.class_tokens = nn.Parameter(
+            nn.init.trunc_normal_(torch.empty(len(IMAGENET2012_LABELS), self.next_residual_predictor.hidden_size), std=math.sqrt(2 / (5 * self.next_residual_predictor.hidden_size)))
+        )
+
         self.compressor.eval()
-        self.text_encoder.eval()
+        # self.text_encoder.eval()
         # Cast to bfloat16
         # self.text_encoder.float16()
         # self.text_to_first_level.bfloat16()
@@ -105,10 +110,10 @@ class GeneratorV3(nn.Module):
     def train(self, mode: bool = True):
         retValue = super().train(mode)
         self.compressor.eval()
-        self.text_encoder.eval()
+        # self.text_encoder.eval()
         return retValue
 
-    def forward(self, image, condition: List[str]):
+    def forward(self, image, condition: torch.Tensor):
         if self.training:
             ###################### Preparing inputs #########################
             with torch.no_grad():
@@ -128,33 +133,31 @@ class GeneratorV3(nn.Module):
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
-                batch_encoding = self.text_tokenizer(
-                    text=condition,
-                    return_attention_mask=True,
-                    padding=True,
-                    truncation=True,
-                    return_tensors="pt",
-                )
+                # batch_encoding = self.text_tokenizer(
+                #     text=condition,
+                #     return_attention_mask=True,
+                #     padding=True,
+                #     truncation=True,
+                #     return_tensors="pt",
+                # )
 
-                input_ids = batch_encoding.input_ids.to(image.device)
-                attention_mask = batch_encoding.attention_mask.to(image.device)
+                # input_ids = batch_encoding.input_ids.to(image.device)
+                # attention_mask = batch_encoding.attention_mask.to(image.device)
 
-                # last_hidden_state: [B, max_len, D]
-                # pooler_output: [B, D]
-                text_embedding: (
-                    transformers.modeling_outputs.BaseModelOutputWithPooling
-                ) = self.text_encoder(
-                    input_ids, attention_mask=attention_mask, return_dict=True
-                )
+                # # last_hidden_state: [B, max_len, D]
+                # # pooler_output: [B, D]
+                # text_embedding: (
+                #     transformers.modeling_outputs.BaseModelOutputWithPooling
+                # ) = self.text_encoder(
+                #     input_ids, attention_mask=attention_mask, return_dict=True
+                # )
 
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
 
             rawPredictions = self.next_residual_predictor(
                 [None, *all_forwards_for_residual],
-                text_embedding.pooler_output.detach().clone(),
-                text_embedding.last_hidden_state.detach().clone(),
-                attention_mask.bool(),
+                self.class_tokens[condition]
             )
 
             loss = list()
@@ -307,7 +310,6 @@ class Attention(nn.Module):
         n_heads: int,
         n_kv_heads: Optional[int],
         qk_norm: bool,
-        y_dim: int,
     ):
         """
         Initialize the Attention module.
@@ -339,18 +341,6 @@ class Attention(nn.Module):
             self.n_kv_heads * self.head_dim,
             bias=False,
         )
-        if y_dim > 0:
-            self.wk_y = nn.Linear(
-                y_dim,
-                self.n_kv_heads * self.head_dim,
-                bias=False,
-            )
-            self.wv_y = nn.Linear(
-                y_dim,
-                self.n_kv_heads * self.head_dim,
-                bias=False,
-            )
-            self.gate = nn.Parameter(torch.zeros([self.n_heads]))
 
         self.wo = nn.Linear(
             n_heads * self.head_dim,
@@ -361,13 +351,8 @@ class Attention(nn.Module):
         if qk_norm:
             self.q_norm = nn.LayerNorm(self.n_heads * self.head_dim)
             self.k_norm = nn.LayerNorm(self.n_kv_heads * self.head_dim)
-            if y_dim > 0:
-                self.ky_norm = nn.LayerNorm(self.n_kv_heads * self.head_dim)
-            else:
-                self.ky_norm = nn.Identity()
         else:
             self.q_norm = self.k_norm = nn.Identity()
-            self.ky_norm = nn.Identity()
 
         # for proportional attention computation
         self.base_seqlen = None
@@ -467,8 +452,6 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        y_feat: torch.Tensor,
-        y_mask: torch.Tensor,
         pos_embed: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -549,28 +532,6 @@ class Attention(nn.Module):
             .permute(0, 2, 1, 3)
             .to(dtype)
         )
-
-        if hasattr(self, "wk_y"):
-            # todo better flash_attn support
-            yk = self.ky_norm(self.wk_y(y_feat)).reshape(
-                bsz, -1, self.n_kv_heads, self.head_dim
-            )
-            yv = self.wv_y(y_feat).reshape(bsz, -1, self.n_kv_heads, self.head_dim)
-            n_rep = self.n_heads // self.n_kv_heads
-
-            if n_rep >= 1:
-                yk = yk.unsqueeze(3).repeat(1, 1, 1, n_rep, 1).flatten(2, 3)
-                yv = yv.unsqueeze(3).repeat(1, 1, 1, n_rep, 1).flatten(2, 3)
-
-            output_y = F.scaled_dot_product_attention(
-                xq.permute(0, 2, 1, 3),
-                yk.permute(0, 2, 1, 3),
-                yv.permute(0, 2, 1, 3),
-                y_mask.reshape(bsz, 1, 1, -1).expand(bsz, self.n_heads, seqlen, -1),
-            ).permute(0, 2, 1, 3)
-
-            output_y = output_y * self.gate.tanh().reshape(1, 1, -1, 1)
-            output = output + output_y
 
         output = output.flatten(-2)
 
@@ -716,7 +677,6 @@ class TransformerBlock(nn.Module):
         n_kv_heads: int,
         norm_eps: float,
         qk_norm: bool,
-        y_dim: int,
     ) -> None:
         """
         Initialize a TransformerBlock.
@@ -746,7 +706,7 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.dim = dim
         self.head_dim = dim // n_heads
-        self.attention = Attention(dim, n_heads, n_kv_heads, qk_norm, y_dim)
+        self.attention = Attention(dim, n_heads, n_kv_heads, qk_norm)
         self.ffn = FeedForward(dim=dim, hidden_dim=4 * dim)
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(dim, eps=norm_eps)
@@ -762,8 +722,6 @@ class TransformerBlock(nn.Module):
                 bias=True,
             ),
         )
-
-        self.attention_y_norm = RMSNorm(y_dim, eps=norm_eps)
 
         self._initialize_weights()
 
@@ -784,8 +742,6 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         x_mask: torch.Tensor,
         y_emb: torch.Tensor,
-        y_feat: torch.Tensor,
-        y_mask: torch.Tensor,
         pos_embed: torch.Tensor,
     ):
         """
@@ -808,8 +764,6 @@ class TransformerBlock(nn.Module):
             * self.attention(
                 modulate(self.attention_norm(x), shift_msa, scale_msa),
                 x_mask,
-                self.attention_y_norm(y_feat),
-                y_mask,
                 pos_embed,
             )
         )
@@ -885,7 +839,7 @@ class Transformer(nn.Module):
             [
                 checkpoint_wrapper(
                     TransformerBlock(
-                        idx, hidden_size, num_heads, 1, norm_eps, qk_norm, cap_dim
+                        idx, hidden_size, num_heads, 1, norm_eps, qk_norm
                     )
                 )
                 for idx in range(depth)
@@ -943,7 +897,7 @@ class Transformer(nn.Module):
         )  # [bs, 4 * D, h, w]
         return self.pixel_shuffle(x)  # [bs, D, 2 * h, 2 * w]
 
-    def forward(self, x, x_mask, cap_pooled, cap_cond, cap_mask):
+    def forward(self, x, x_mask, cap_pooled):
         # 0, 1, 2, 3
         # bs, c, h, w = x.shape
         # # [b, h, w, d]
@@ -973,8 +927,6 @@ class Transformer(nn.Module):
                 x,
                 x_mask,
                 cap_emb,
-                cap_cond,
-                cap_mask,
                 selected_pos_embed,
             )
             # print(x.mean(), x.std())
@@ -1009,7 +961,7 @@ class AnyResolutionModel(nn.Module):
     def __init__(
         self,
         # the token should be firstly aligned to cap_dim, then lift to hidden_size
-        cap_dim,
+        # cap_dim,
         # NOTE: from low resolution to high resolution. this list should be ascending.
         canvas_size: List[int],  # e.g.: 32, corresponding to raw pixels: 512
         codebooks,
@@ -1020,14 +972,13 @@ class AnyResolutionModel(nn.Module):
         norm_eps=1e-5,
     ):
         super().__init__()
-        self.cap_dim = cap_dim
         self.token_dim = codebooks[0][-1]
         self.hidden_size = hidden_size
         # NOTE: we only need first (level - 1) blocks
         self.model = Transformer(
             codebooks[0][-1],
             canvas_size[-1],
-            cap_dim,
+            hidden_size,
             hidden_size,
             depth,
             num_heads,
@@ -1040,26 +991,24 @@ class AnyResolutionModel(nn.Module):
         # )
 
         self.first_level_pos_embed = nn.Parameter(
-            nn.init.uniform_(
+            nn.init.trunc_normal_(
                 torch.empty(1, canvas_size[-1] * canvas_size[-1], self.token_dim),
-                a=-math.sqrt(2 / (5 * self.token_dim)),
-                b=math.sqrt(2 / (5 * self.token_dim)),
+                std=math.sqrt(2 / (5 * self.token_dim)),
             )
         )
         self.cap_to_first_token = nn.Sequential(
-            nn.LayerNorm(cap_dim),
+            nn.LayerNorm(hidden_size),
             nn.Linear(
-                cap_dim,
+                hidden_size,
                 self.token_dim,
                 bias=True,
             ),
         )
 
         self.level_indicator_pos_embed = nn.Parameter(
-            nn.init.uniform_(
+            nn.init.trunc_normal_(
                 torch.empty(len(canvas_size), self.token_dim),
-                a=-math.sqrt(2 / (5 * self.token_dim)),
-                b=math.sqrt(2 / (5 * self.token_dim)),
+                std=math.sqrt(2 / (5 * self.token_dim)),
             )
         )
 
@@ -1102,7 +1051,7 @@ class AnyResolutionModel(nn.Module):
             h * w, -1
         )
 
-    def forward(self, all_forwards_for_residual, cap_pooled, cap_cond, cap_mask):
+    def forward(self, all_forwards_for_residual, cap_pooled):
         if self.training:
             if not isinstance(all_forwards_for_residual, list):
                 raise RuntimeError("The given training input is not a list.")
@@ -1118,8 +1067,8 @@ class AnyResolutionModel(nn.Module):
                     # current should be picked from pos_embed
                     if self.training:
                         # TODO: change to random
-                        selected_pos_embed = self.random_pos_embed(bs, h, w)
-                        # selected_pos_embed = self.center_pos_embed(h, w)
+                        # selected_pos_embed = self.random_pos_embed(bs, h, w)
+                        selected_pos_embed = self.center_pos_embed(h, w)
                     else:
                         selected_pos_embed = self.center_pos_embed(h, w)
                     current = selected_pos_embed.expand(
@@ -1139,10 +1088,10 @@ class AnyResolutionModel(nn.Module):
                 current = current.permute(0, 2, 3, 1).reshape(bs, h*w, -1) + level_emb
                 # [bs, hw, c]
                 total.append(current)
-            # [bs, h1w1+3+h2w2+3+h3w3+3..., c]
+            # [bs, h1w1+h2w2+h3w3..., c]
             total = torch.cat(total, 1)
-            # [bs, h1w1+3+h2w2+3+h3w3+3.., k]
-            results = self.model(total, self.input_mask, cap_pooled, cap_cond, cap_mask)
+            # [bs, h1w1+h2w2+h3w3.., k]
+            results = self.model(total, self.input_mask, cap_pooled)
             # NOTE: in training, the len of reuslts is level - 1
             return results
         else:
@@ -1372,9 +1321,8 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                 AnyRes Configs                                #
 #################################################################################
 # 2.20B
-def AnyRes_XL(cap_dim, canvas_size, codebooks, **kwargs):
+def AnyRes_XL(canvas_size, codebooks, **kwargs):
     return AnyResolutionModel(
-        cap_dim,
         canvas_size,
         codebooks[1:],
         depth=28,
@@ -1385,9 +1333,8 @@ def AnyRes_XL(cap_dim, canvas_size, codebooks, **kwargs):
 
 
 # 1.51B
-def AnyRes_L(cap_dim, canvas_size, codebooks, **kwargs):
+def AnyRes_L(canvas_size, codebooks, **kwargs):
     return AnyResolutionModel(
-        cap_dim,
         canvas_size,
         codebooks,
         depth=24,
@@ -1411,9 +1358,8 @@ def AnyRes_B(cap_dim, canvas_size, codebooks, **kwargs):
 
 
 # 152.1455M
-def AnyRes_S(cap_dim, canvas_size, codebooks, **kwargs):
+def AnyRes_S(canvas_size, codebooks, **kwargs):
     return AnyResolutionModel(
-        cap_dim,
         canvas_size,
         codebooks[1:],
         depth=16,
