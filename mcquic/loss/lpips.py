@@ -46,7 +46,7 @@ class LPIPS(nn.Module):
         lins = [self.lin0, self.lin1, self.lin2, self.lin3, self.lin4]
         for kk in range(len(self.chns)):
             feats0[kk], feats1[kk] = normalize_tensor(outs0[kk]), normalize_tensor(outs1[kk])
-            diffs[kk] = (feats0[kk] - feats1[kk]) ** 2
+            diffs[kk] = F.mse_loss(feats0[kk], feats1[kk], reduction='none')
 
         res = [spatial_average(lins[kk].model(diffs[kk]), keepdim=True) for kk in range(len(self.chns))]
         val = res[0]
@@ -120,4 +120,4 @@ def normalize_tensor(x,eps=1e-10):
 
 
 def spatial_average(x, keepdim=True):
-    return x.sum([2,3],keepdim=keepdim)
+    return x.mean([2,3],keepdim=keepdim)
