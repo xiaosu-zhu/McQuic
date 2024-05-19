@@ -17,6 +17,7 @@ slurm-*.out
 generation_saved*/
 compressor/
 clic/
+new_tokenizer/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

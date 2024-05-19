@@ -4,6 +4,7 @@ import os
 from torch import device, Tensor
 import torch
 from torch.nn import Module
+import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
@@ -31,8 +32,9 @@ class Compound(Module):
     def forward(self, x: Tensor):
         xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(x, xHat, codes, logits)
+        mse = F.mse_loss(x, xHat)
         lpips = self._lpips(xHat, x)
-        return xHat, (distortion, lpips.mean()), codes, logits
+        return xHat, (distortion, mse, lpips.mean()), codes, logits
 
     @property
     def Freq(self):
