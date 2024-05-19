@@ -455,6 +455,7 @@ class MainGenTrainer(_baseGenTrainer):
         pass
 
 
+    @torch.no_grad()
     def log(self, *_, images, restored, codes, texts, **__):
         if self.rank != 0:
             return
@@ -463,8 +464,8 @@ class MainGenTrainer(_baseGenTrainer):
         # First level, first image, first group
         # self.saver.add_histogram("Stat/LogDistance", (-(logits[0][0, 0])).clamp(Consts.Eps).log10(), global_step=self._step)
         # [m, ki]
-        for lv, c in enumerate(codes):
-            payload[f'Hist/Code[{lv}]'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c[:8].unsqueeze(1))]
+        # for lv, c in enumerate(codes):
+        #     payload[f'Hist/Code[{lv}]'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c[:8].unsqueeze(1))]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images[:8])]
@@ -473,7 +474,8 @@ class MainGenTrainer(_baseGenTrainer):
 
         payload['Train/Generation'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
 
-        gtRestored = self._model.module.compressor.decode([c.unsqueeze(1) for c in codes[:8]])
+        # gtRestored = self._model.module.compressor.idxBl_to_img(codes, True, True)
+        gtRestored = self._model.module.compressor.decode([c.unsqueeze(1) for c in codes][:8])
         payload['Train/Reconstruction'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts[:8]], columns=['txt'])}, step=self._step)
@@ -486,6 +488,7 @@ class MainGenTrainer(_baseGenTrainer):
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
     def validate(self, *_, valLoader: DataLoader, **__):
+        return
         torch.cuda.empty_cache()
 
         self.saver.debug("[%s] Start validation.", self.PrettyStep)
@@ -493,7 +496,7 @@ class MainGenTrainer(_baseGenTrainer):
         self._model.eval()
 
         # texts = ['A big horse running over a river.', 'Mountainview with beautiful grass land and river aside.']
-        texts = ['A photo of dog.', 'A photo of cat.']
+        texts = ['A photo of dog', 'A photo of cat']
 
         prediction, restored = self._model.module(None, texts)
 
