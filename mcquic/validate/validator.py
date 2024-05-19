@@ -20,7 +20,7 @@ class Validator:
             PSNR().to(rank),
             BPP().to(rank),
             Visualization().to(rank),
-            IdealBPP(config.Model.Params["m"], config.Model.Params["k"]).to(rank),
+            IdealBPP([1] * len(config.Model.Params['size']), [config.Model.Params['k']] * len(config.Model.Params['size'])).to(rank),
             ImageCollector().to(rank)
         ])
 

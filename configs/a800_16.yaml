@@ -1,13 +1,13 @@
 model:
   key: Compressor
   params:
-    channel: 32
-    k: [4096, 4096, 4096, 4096, 4096]
-    m: [1, 1, 1, 1, 1]
+    channel: 192
+    k: 4096
+    size: [16, 8, 8, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
     denseNorm: false
 train:
   totalStep: 100000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 8
+  batchSize: 4
   epoch: 2
   valFreq: 10000
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz

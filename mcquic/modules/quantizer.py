@@ -544,15 +544,12 @@ class NeonQuantizer(VariousMQuantizer):
 
 
 class ResidualBackwardQuantizer(VariousMQuantizer):
-    def __init__(self, channel: int, m: List[int], k: List[int], denseNorm: bool):
-        if not isinstance(k, list):
-            raise AttributeError
-
+    def __init__(self, channel: int, k: int, size: List[int], denseNorm: bool):
         from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
         from mcquic.nn.blocks import AttentionBlock
         from mcquic.nn.convs import conv3x3, conv1x1
 
-        super().__init__(m, k)
+        super().__init__([1] * len(size), [k] * len(size))
 
         encoders = list()
         backwards = list()
@@ -560,33 +557,64 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         quantizers = list()
         dequantizers = list()
 
-        codebook = nn.Parameter(nn.init.normal_(torch.empty(m[0], k[0], channel // m[0]), std=math.sqrt(2 / (5 * channel / float(m[0])))))
+        codebook = nn.Parameter(nn.init.normal_(torch.empty(1, k, channel), std=math.sqrt(2 / (5 * channel))))
 
+        lastSize = size[0] * 2
         # reverse adding encoder, decoder and quantizer
-        for i, (ki, mi) in enumerate(zip(k[::-1], m[::-1])):
-            latentStageEncoder = nn.Sequential(
-                ResidualBlock(channel, channel, 32, denseNorm),
-                AttentionBlock(channel, 32, denseNorm),
-                ResidualBlockWithStride(channel, channel, 2, 32, denseNorm),
-                conv1x1(channel, channel, bias=False)
-            )
-            # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
-            quantizer = _multiCodebookQuantization(codebook, 0.)
-            dequantizer = _multiCodebookDeQuantization(codebook)
+        for i, thisSize in enumerate(size):
+            if thisSize == lastSize // 2:
+                latentStageEncoder = nn.Sequential(
+                    ResidualBlock(channel, channel, 32, denseNorm),
+                    AttentionBlock(channel, 32, denseNorm),
+                    ResidualBlockWithStride(channel, channel, 2, 32, denseNorm),
+                    conv1x1(channel, channel, bias=False)
+                )
+                # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
+                quantizer = _multiCodebookQuantization(codebook, 0.)
+                dequantizer = _multiCodebookDeQuantization(codebook)
 
-            backward = nn.Sequential(
-                conv1x1(channel, channel, bias=False),
-                ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
-                AttentionBlock(channel, 32, denseNorm),
-                ResidualBlock(channel, channel, 32, denseNorm)
-            ) if i < len(k) - 1 else nn.Identity()
+                backward = nn.Sequential(
+                    conv1x1(channel, channel, bias=False),
+                    ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
+                    AttentionBlock(channel, 32, denseNorm),
+                    ResidualBlock(channel, channel, 32, denseNorm)
+                ) if i < len(size) - 1 else nn.Identity()
 
-            restoreHead = nn.Sequential(
-                conv1x1(channel, channel, bias=False),
-                ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
-                AttentionBlock(channel, 32, denseNorm),
-                ResidualBlock(channel, channel, 32, denseNorm)
-            )
+                restoreHead = nn.Sequential(
+                    conv1x1(channel, channel, bias=False),
+                    ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
+                    AttentionBlock(channel, 32, denseNorm),
+                    ResidualBlock(channel, channel, 32, denseNorm)
+                )
+            elif thisSize == lastSize:
+                latentStageEncoder = nn.Sequential(
+                    ResidualBlock(channel, channel, 32, denseNorm),
+                    # AttentionBlock(channel, 32, denseNorm),
+                    # ResidualBlock(channel, channel, 32, denseNorm),
+                    conv1x1(channel, channel, bias=False)
+                )
+                # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
+                quantizer = _multiCodebookQuantization(codebook, 0.)
+                dequantizer = _multiCodebookDeQuantization(codebook)
+
+                backward = nn.Sequential(
+                    conv1x1(channel, channel, bias=False),
+                    ResidualBlock(channel, channel, 32, denseNorm),
+                    # AttentionBlock(channel, 32, denseNorm),
+                    # ResidualBlock(channel, channel, 32, denseNorm)
+                ) if i < len(size) - 1 else nn.Identity()
+
+                restoreHead = nn.Sequential(
+                    conv1x1(channel, channel, bias=False),
+                    ResidualBlock(channel, channel, 32, denseNorm),
+                    # AttentionBlock(channel, 32, denseNorm),
+                    # ResidualBlock(channel, channel, 32, denseNorm)
+                )
+            else:
+                raise ValueError('The given size sequence does not half or equal to from left to right.')
+
+
+            lastSize = thisSize
 
             encoders.append(latentStageEncoder)
             backwards.append(backward)
@@ -625,7 +653,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             allLatents.append(x)
         # calculate smallest code, and produce residuals from small to large
         currentLatent = torch.zeros_like(allLatents[-1])
-        for quantizer, dequantizer, backward, latent in zip(self._quantizers, self._dequantizers, self._backwards, allLatents[::-1]):
+        for quantizer, dequantizer, backward, latent in zip(self._quantizers[::-1], self._dequantizers[::-1], self._backwards[::-1], allLatents[::-1]):
             residual = latent - currentLatent
             code = quantizer.encode(residual)
             quantized = dequantizer.decode(code)
@@ -637,7 +665,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
 
     def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
         formerLevel = None
-        for decoder, dequantizer, code in zip(self._decoders, self._dequantizers, codes):
+        for decoder, dequantizer, code in zip(self._decoders[::-1], self._dequantizers[::-1], codes):
             quantized = dequantizer.decode(code)
             if formerLevel is None:
                 formerLevel = decoder(quantized)
@@ -672,7 +700,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         ######################## ENCODING ########################
         # calculate smallest code, and produce residuals from small to large
         currentLatent = torch.zeros_like(allLatents[-1])
-        for quantizer, dequantizer, backward, latent in zip(self._quantizers, self._dequantizers, self._backwards, allLatents[::-1]):
+        for quantizer, dequantizer, backward, latent in zip(self._quantizers[::-1], self._dequantizers[::-1], self._backwards[::-1], allLatents[::-1]):
             residual = latent - currentLatent
             sample, code, oneHot, logit = quantizer(residual)
             quantized = dequantizer(sample)
@@ -689,7 +717,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         ######################## DECODING ########################
         # From smallest quantized latent, scale 2x, and sum with next quantized latent
         formerLevel = torch.zeros_like(quantizeds[0])
-        for decoder, quantized in zip(self._decoders, quantizeds):
+        for decoder, quantized in zip(self._decoders[::-1], quantizeds):
             # ↓ restored
             formerLevel = decoder(formerLevel + quantized)
 
