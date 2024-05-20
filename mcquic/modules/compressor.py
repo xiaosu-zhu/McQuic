@@ -192,23 +192,24 @@ class Neon(BaseCompressor):
             ResidualBlock(channel, channel, 32, denseNorm),
             ResidualBlockWithStride(channel, channel, 2, 32, denseNorm),
             AttentionBlock(channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
+            ResidualBlock(channel, 2 * channel, 32, denseNorm),
             # ResidualBlock(320, 640),
             # ResidualBlockWithStride(320, 640),
             # ResidualBlock(640, 640),
-            ResidualBlock(channel, channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
-            AttentionBlock(channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 32, 32, denseNorm),
+            AttentionBlock(32, 32, denseNorm),
         )
         decoder = nn.Sequential(
-            AttentionBlock(channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
+            AttentionBlock(32, 32, denseNorm),
+            ResidualBlock(32, 2 * channel, 32, denseNorm),
             # AttentionBlock(32),
-            ResidualBlock(channel, channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
-            ResidualBlock(channel, channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
+            ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
+            ResidualBlock(2 * channel, channel, 32, denseNorm),
             # ResidualBlockShuffle(640, 320),
             AttentionBlock(channel, 32, denseNorm),
             ResidualBlock(channel, channel, 32, denseNorm),
@@ -226,7 +227,7 @@ class Neon(BaseCompressor):
         encoder = checkpoint_wrapper(encoder)
         decoder = checkpoint_wrapper(decoder)
 
-        quantizer = ResidualBackwardQuantizer(channel, k, size, denseNorm)
+        quantizer = ResidualBackwardQuantizer(k, size, denseNorm)
         super().__init__(encoder, quantizer, decoder)
 
     def residual_backward(self, code, level):

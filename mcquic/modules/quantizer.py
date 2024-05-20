@@ -14,6 +14,21 @@ from mcquic.nn.base import gumbelSoftmax
 from mcquic.nn.gdn import GenDivNorm, InvGenDivNorm
 
 
+
+class GradMultiply(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, scale):
+        ctx.scale = scale
+        res = x.new(x)
+        return res
+
+
+    @staticmethod
+    def backward(ctx, grad):
+        return grad * ctx.scale, None
+
+
+
 class BaseQuantizer(nn.Module):
     def __init__(self, m: int, k: List[int]):
         super().__init__()
@@ -141,6 +156,8 @@ class _multiCodebookQuantization(nn.Module):
         # [n, m, 1, h, w]
         x2 = (x ** 2).sum(2, keepdim=True)
 
+        # codebook = GradMultiply.apply(self._codebook, 0.1)
+
         # [m, k, 1, 1]
         c2 = (self._codebook ** 2).sum(-1, keepdim=True)[..., None].contiguous()
         # [n, m, d, h, w] * [m, k, d] -sum-> [n, m, k, h, w]
@@ -236,6 +253,8 @@ class _multiCodebookDeQuantization(nn.Module):
         # return torch.einsum("nmhwk,mkd->nmhwd", sample, self._codebook).contiguous().permute(0, 1, 4, 2, 3).contiguous().reshape(n, -1, h, w).contiguous()
         # [nm, hw, k]
         left = sample.reshape(n*self._m, h*w, self._k).contiguous()
+
+        # codebook = GradMultiply.apply(self._codebook, 0.1)
         # [nm, k, d]
         right = self._codebook.expand(n, self._m, self._k, self._d).reshape(n*self._m, self._k, self._d).contiguous()
         # [nm, hw, d]
@@ -544,10 +563,12 @@ class NeonQuantizer(VariousMQuantizer):
 
 
 class ResidualBackwardQuantizer(VariousMQuantizer):
-    def __init__(self, channel: int, k: int, size: List[int], denseNorm: bool):
+    def __init__(self, k: int, size: List[int], denseNorm: bool):
         from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
         from mcquic.nn.blocks import AttentionBlock
         from mcquic.nn.convs import conv3x3, conv1x1
+
+        channel = 32
 
         super().__init__([1] * len(size), [k] * len(size))
 
@@ -557,7 +578,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         quantizers = list()
         dequantizers = list()
 
-        codebook = nn.Parameter(nn.init.normal_(torch.empty(1, k, channel), std=math.sqrt(2 / (5 * channel))))
+        codebook = nn.Parameter(nn.init.trunc_normal_(torch.empty(1, k, channel), std=math.sqrt(2 / (5 * channel))))
 
         lastSize = size[0] * 2
         # reverse adding encoder, decoder and quantizer
