@@ -420,7 +420,7 @@ class MainGenTrainer(_baseGenTrainer):
         if self.rank == 0:
             payload = {f"Stat/Loss": loss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}
             for i, l in enumerate(allLoss):
-                payload.update({f"Stat/Loss[{i}]": l})
+                payload.update({f"Stat/Loss[{i:02d}]": l})
             wandb.log(payload, step=self._step)
         if self._step % (self.config.Train.ValFreq // 100) == 0:
             if torch.isnan(moment):
@@ -475,7 +475,7 @@ class MainGenTrainer(_baseGenTrainer):
         payload['Train/Generation'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
 
         # gtRestored = self._model.module.compressor.idxBl_to_img(codes, True, True)
-        gtRestored = self._model.module.compressor.decode([c.unsqueeze(1) for c in codes][:8])
+        gtRestored = self._model.module.compressor.decode([c.unsqueeze(1)[:8] for c in codes])
         payload['Train/Reconstruction'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts[:8]], columns=['txt'])}, step=self._step)

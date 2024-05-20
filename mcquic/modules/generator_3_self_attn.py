@@ -48,7 +48,8 @@ class GeneratorV3SelfAttention(nn.Module):
     def __init__(
         self,
         channel: int,
-        k: List[int],
+        k: int,
+        size: List[int],
         denseNorm: bool,
         loadFrom: str,
         qk_norm: bool,
@@ -57,7 +58,7 @@ class GeneratorV3SelfAttention(nn.Module):
         **__,
     ):
         super().__init__()
-        self.compressor = Neon(channel, k, denseNorm)
+        self.compressor = Neon(channel, k, size, denseNorm)
         state_dict = torch.load(loadFrom, map_location="cpu")
         self.compressor.load_state_dict(
             {
@@ -87,8 +88,8 @@ class GeneratorV3SelfAttention(nn.Module):
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.next_residual_predictor = AnyRes_L(
-            [1, 2, 4, 8, 16],
-            [[4096, 32] for _ in [1, 2, 4, 8, 16]],
+            size[::-1],
+            [[4096, 32] for _ in size[::-1]],
             qk_norm=qk_norm,
             norm_eps=norm_eps,
         )
@@ -839,7 +840,7 @@ class Transformer(nn.Module):
             [
                 checkpoint_wrapper(
                     TransformerBlock(
-                        idx, hidden_size, num_heads, 1, norm_eps, qk_norm
+                        idx, hidden_size, num_heads, num_heads, norm_eps, qk_norm
                     )
                 )
                 for idx in range(depth)
@@ -1062,8 +1063,8 @@ class AnyResolutionModel(nn.Module):
                     if current is not None:
                         raise RuntimeError("The first level input should be None.")
                     bs, _, h, w = all_forwards_for_residual[1].shape
-                    h = h // 2
-                    w = w // 2
+                    h = 1
+                    w = 1
                     # current should be picked from pos_embed
                     if self.training:
                         # TODO: change to random
@@ -1345,9 +1346,8 @@ def AnyRes_L(canvas_size, codebooks, **kwargs):
 
 
 # 480M
-def AnyRes_B(cap_dim, canvas_size, codebooks, **kwargs):
+def AnyRes_B(canvas_size, codebooks, **kwargs):
     return AnyResolutionModel(
-        cap_dim,
         canvas_size,
         codebooks[1:],
         depth=20,
