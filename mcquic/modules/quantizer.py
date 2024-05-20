@@ -568,7 +568,8 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         from mcquic.nn.blocks import AttentionBlock
         from mcquic.nn.convs import conv3x3, conv1x1
 
-        channel = 32
+        channel = 8
+        self.channel = channel
 
         super().__init__([1] * len(size), [k] * len(size))
 
@@ -585,49 +586,49 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         for i, thisSize in enumerate(size):
             if thisSize == lastSize // 2:
                 latentStageEncoder = nn.Sequential(
-                    ResidualBlock(channel, channel, 32, denseNorm),
-                    AttentionBlock(channel, 32, denseNorm),
-                    ResidualBlockWithStride(channel, channel, 2, 32, denseNorm),
-                    conv1x1(channel, channel, bias=False)
+                    ResidualBlock(channel, channel * 4, 32, denseNorm),
+                    AttentionBlock(channel * 4, 32, denseNorm),
+                    ResidualBlockWithStride(channel * 4, channel * 4, 2, 32, denseNorm),
+                    conv1x1(channel * 4, channel, bias=False)
                 )
                 # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
                 quantizer = _multiCodebookQuantization(codebook, 0.)
                 dequantizer = _multiCodebookDeQuantization(codebook)
 
                 backward = nn.Sequential(
-                    conv1x1(channel, channel, bias=False),
-                    ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
-                    AttentionBlock(channel, 32, denseNorm),
-                    ResidualBlock(channel, channel, 32, denseNorm)
+                    conv1x1(channel, channel * 4, bias=False),
+                    ResidualBlockShuffle(channel * 4, channel * 4, 2, 32, denseNorm),
+                    AttentionBlock(channel * 4, 32, denseNorm),
+                    ResidualBlock(channel * 4, channel, 32, denseNorm)
                 ) if i < len(size) - 1 else nn.Identity()
 
                 restoreHead = nn.Sequential(
-                    conv1x1(channel, channel, bias=False),
-                    ResidualBlockShuffle(channel, channel, 2, 32, denseNorm),
-                    AttentionBlock(channel, 32, denseNorm),
-                    ResidualBlock(channel, channel, 32, denseNorm)
+                    conv1x1(channel, channel * 4, bias=False),
+                    ResidualBlockShuffle(channel * 4, channel * 4, 2, 32, denseNorm),
+                    AttentionBlock(channel * 4, 32, denseNorm),
+                    ResidualBlock(channel * 4, channel, 32, denseNorm)
                 )
             elif thisSize == lastSize:
                 latentStageEncoder = nn.Sequential(
-                    ResidualBlock(channel, channel, 32, denseNorm),
+                    ResidualBlock(channel, channel * 4, 32, denseNorm),
                     # AttentionBlock(channel, 32, denseNorm),
                     # ResidualBlock(channel, channel, 32, denseNorm),
-                    conv1x1(channel, channel, bias=False)
+                    conv1x1(channel * 4, channel, bias=False)
                 )
                 # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
                 quantizer = _multiCodebookQuantization(codebook, 0.)
                 dequantizer = _multiCodebookDeQuantization(codebook)
 
                 backward = nn.Sequential(
-                    conv1x1(channel, channel, bias=False),
-                    ResidualBlock(channel, channel, 32, denseNorm),
+                    conv1x1(channel, channel * 4, bias=False),
+                    ResidualBlock(channel * 4, channel, 32, denseNorm),
                     # AttentionBlock(channel, 32, denseNorm),
                     # ResidualBlock(channel, channel, 32, denseNorm)
                 ) if i < len(size) - 1 else nn.Identity()
 
                 restoreHead = nn.Sequential(
-                    conv1x1(channel, channel, bias=False),
-                    ResidualBlock(channel, channel, 32, denseNorm),
+                    conv1x1(channel, channel * 4, bias=False),
+                    ResidualBlock(channel * 4, channel, 32, denseNorm),
                     # AttentionBlock(channel, 32, denseNorm),
                     # ResidualBlock(channel, channel, 32, denseNorm)
                 )

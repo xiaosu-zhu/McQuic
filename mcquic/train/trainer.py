@@ -458,7 +458,7 @@ class MainTrainer(_baseTrainer):
 
     #     # super()._epochStart(hook, *args, **kwArgs)
 
-
+    @torch.no_grad()
     def log(self, *_, images, restored, codes, logits, **__):
         if self.rank != 0:
             return
@@ -489,6 +489,7 @@ class MainTrainer(_baseTrainer):
 
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
+    @torch.no_grad()
     def validate(self, *_, valLoader: DataLoader, **__):
         if self._step < 1:
             return
