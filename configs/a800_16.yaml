@@ -3,11 +3,11 @@ model:
   params:
     channel: 256
     k: 4096
-    size: [16, 8, 8, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
+    size: [16, 8, 8, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
     denseNorm: false
 train:
   totalStep: 100000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 6
+  batchSize: 4
   epoch: 2
   valFreq: 10000
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
