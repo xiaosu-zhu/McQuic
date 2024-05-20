@@ -271,7 +271,7 @@ class _baseTrainer(Restorable):
                 xHat, (reconLoss, mseLoss, lpipsLoss), codes, logits = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (reconLoss + mseLoss + lpipsLoss).backward()
+                (reconLoss + 0.1 * mseLoss + lpipsLoss).backward()
 
                 # scaler.unscale_(self._optimizer)
 

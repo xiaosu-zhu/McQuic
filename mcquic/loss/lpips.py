@@ -7,6 +7,7 @@ from torchvision.models import VGG16_Weights
 from collections import namedtuple
 import logging
 from pathlib import Path
+import torch.nn.functional as F
 
 
 class LPIPS(nn.Module):
