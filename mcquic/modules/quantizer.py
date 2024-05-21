@@ -97,14 +97,15 @@ class VariousMQuantizer(BaseQuantizer):
 #       Generally, although code is neat and output is same as here,
 #         training with README's implementation will cause loss become suddenly NAN after a few epoches.
 class _multiCodebookQuantization(nn.Module):
-    def __init__(self, codebook: nn.Parameter, permutationRate: float = 0.0):
+    def __init__(self, codebook: nn.Parameter, freqEMA: nn.Parameter):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
         self._scale = math.sqrt(self._k)
         self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1)))
         self._bound = LowerBound(Consts.Eps)
-        self._permutationRate = permutationRate
+        # [m, k]
+        self._freqEMA = freqEMA
 
     def reAssignCodebook(self, freq: torch.Tensor)-> torch.Tensor:
         codebook = self._codebook.detach().clone()
@@ -180,18 +181,26 @@ class _multiCodebookQuantization(nn.Module):
         logit = -1 * self._distance(x)
         return logit / self._scale
 
-    def _permute(self, sample: torch.Tensor) -> torch.Tensor:
-        if self._permutationRate < Consts.Eps:
-            return sample
-        # [n, h, w, m]
-        needPerm = torch.rand_like(sample[..., 0]) < self._permutationRate
-        randomed = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=sample.device), num_classes=self._k).float()
-        sample[needPerm] = randomed
-        return sample.contiguous()
+    # def _permute(self, sample: torch.Tensor) -> torch.Tensor:
+    #     if self._permutationRate < Consts.Eps:
+    #         return sample
+    #     # [n, h, w, m]
+    #     needPerm = torch.rand_like(sample[..., 0]) < self._permutationRate
+    #     randomed = F.one_hot(torch.randint(self._k, (needPerm.sum(), ), device=sample.device), num_classes=self._k).float()
+    #     sample[needPerm] = randomed
+    #     return sample.contiguous()
+
+    def _randomDrop(self, logit):
+        # [n, m, h, w, k] < [m, 1, 1, k]
+        randomMask = (torch.rand_like(logit) ** 10) < self._freqEMA[:, None, None, ...]
+        logit[randomMask] += -1e9
+        return logit
 
     def _sample(self, x: torch.Tensor, temperature: float):
         # [n, m, h, w, k] * [m, 1, 1, 1]
         logit = self._logit(x) * self._bound(self._temperature)
+
+        logit = self._randomDrop(logit)
 
         # It causes training unstable
         # leave to future tests.
@@ -331,7 +340,7 @@ class _quantizerDecoder(nn.Module):
     def __init__(self, dequantizer: _multiCodebookDeQuantization, dequantizationHead: nn.Module, sideHead: Union[None, nn.Module], restoreHead: nn.Module):
         super().__init__()
         self._dequantizer =  dequantizer
-        self._dequantizationHead =  dequantizationHead
+        self._dequantizationHead = dequantizationHead
         self._sideHead = sideHead
         self._restoreHead =  restoreHead
 
@@ -483,7 +492,7 @@ class NeonQuantizer(VariousMQuantizer):
             quantizationHead = nn.Identity()
             latentHead = nn.Identity()
             codebook = nn.Parameter(nn.init.normal_(torch.empty(mi, ki, 32 // mi), std=math.sqrt(2 / (5 * 32 / float(mi)))))
-            quantizer = _multiCodebookQuantization(codebook, 0.)
+            quantizer = _multiCodebookQuantization(codebook, 0.5)
             dequantizer = _multiCodebookDeQuantization(codebook)
 
             dequantizationHead = nn.Identity()
@@ -586,51 +595,53 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         for i, thisSize in enumerate(size):
             if thisSize == lastSize // 2:
                 latentStageEncoder = nn.Sequential(
-                    ResidualBlock(channel, channel * 4, 32, denseNorm),
-                    AttentionBlock(channel * 4, 32, denseNorm),
-                    ResidualBlockWithStride(channel * 4, channel * 4, 2, 32, denseNorm),
+                    ResidualBlock(channel, channel * 4, 1, denseNorm),
+                    AttentionBlock(channel * 4, 1, denseNorm),
+                    ResidualBlockWithStride(channel * 4, channel * 4, 2, 1, denseNorm),
                     conv1x1(channel * 4, channel, bias=False)
                 )
                 # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
-                quantizer = _multiCodebookQuantization(codebook, 0.)
+                # NOTE: quantizer is from large to small, but _freqEMA is from small to large
+                quantizer = _multiCodebookQuantization(codebook, self._entropyCoder._freqEMA[-(i+1)])
                 dequantizer = _multiCodebookDeQuantization(codebook)
 
                 backward = nn.Sequential(
                     conv1x1(channel, channel * 4, bias=False),
-                    ResidualBlockShuffle(channel * 4, channel * 4, 2, 32, denseNorm),
-                    AttentionBlock(channel * 4, 32, denseNorm),
-                    ResidualBlock(channel * 4, channel, 32, denseNorm)
+                    ResidualBlockShuffle(channel * 4, channel * 4, 2, 1, denseNorm),
+                    AttentionBlock(channel * 4, 1, denseNorm),
+                    ResidualBlock(channel * 4, channel, 1, denseNorm)
                 ) if i < len(size) - 1 else nn.Identity()
 
                 restoreHead = nn.Sequential(
                     conv1x1(channel, channel * 4, bias=False),
-                    ResidualBlockShuffle(channel * 4, channel * 4, 2, 32, denseNorm),
-                    AttentionBlock(channel * 4, 32, denseNorm),
-                    ResidualBlock(channel * 4, channel, 32, denseNorm)
+                    ResidualBlockShuffle(channel * 4, channel * 4, 2, 1, denseNorm),
+                    AttentionBlock(channel * 4, 1, denseNorm),
+                    ResidualBlock(channel * 4, channel, 1, denseNorm)
                 )
             elif thisSize == lastSize:
                 latentStageEncoder = nn.Sequential(
-                    ResidualBlock(channel, channel * 4, 32, denseNorm),
-                    # AttentionBlock(channel, 32, denseNorm),
-                    # ResidualBlock(channel, channel, 32, denseNorm),
+                    ResidualBlock(channel, channel * 4, 1, denseNorm),
+                    AttentionBlock(channel * 4, 1, denseNorm),
+                    ResidualBlock(channel * 4, channel * 4, 1, denseNorm),
                     conv1x1(channel * 4, channel, bias=False)
                 )
                 # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
-                quantizer = _multiCodebookQuantization(codebook, 0.)
+                # NOTE: quantizer is from large to small, but _freqEMA is from small to large
+                quantizer = _multiCodebookQuantization(codebook, self._entropyCoder._freqEMA[-(i+1)])
                 dequantizer = _multiCodebookDeQuantization(codebook)
 
                 backward = nn.Sequential(
                     conv1x1(channel, channel * 4, bias=False),
-                    ResidualBlock(channel * 4, channel, 32, denseNorm),
-                    # AttentionBlock(channel, 32, denseNorm),
-                    # ResidualBlock(channel, channel, 32, denseNorm)
+                    ResidualBlock(channel * 4, channel * 4, 1, denseNorm),
+                    AttentionBlock(channel * 4, 1, denseNorm),
+                    ResidualBlock(channel * 4, channel, 1, denseNorm)
                 ) if i < len(size) - 1 else nn.Identity()
 
                 restoreHead = nn.Sequential(
                     conv1x1(channel, channel * 4, bias=False),
-                    ResidualBlock(channel * 4, channel, 32, denseNorm),
-                    # AttentionBlock(channel, 32, denseNorm),
-                    # ResidualBlock(channel, channel, 32, denseNorm)
+                    ResidualBlock(channel * 4, channel * 4, 1, denseNorm),
+                    AttentionBlock(channel * 4, 1, denseNorm),
+                    ResidualBlock(channel * 4, channel, 1, denseNorm)
                 )
             else:
                 raise ValueError('The given size sequence does not half or equal to from left to right.')
