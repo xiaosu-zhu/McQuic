@@ -666,16 +666,9 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         return list(quantizer._codebook for quantizer in self._quantizers)
 
     def residual_backward(self, code: torch.Tensor, level: int):
-        dequantizer, backward = self._dequantizers[level], self._backwards[level]
+        dequantizer, backward = self._dequantizers[-level], self._backwards[-level]
         quantized = dequantizer.decode(code)
         return backward(quantized)
-
-    def residual_forward(self, code: torch.Tensor, formerLevel: torch.Tensor, level: int):
-        if formerLevel is None and level > 0:
-            raise RuntimeError('For reconstruction after level-0, you should provide not None formerLevel as input.')
-        decoder, dequantizer = self._decoders[level], self._dequantizers[level]
-        quantized = dequantizer.decode(code)
-        return decoder(quantized + formerLevel) if formerLevel is not None else decoder(quantized)
 
     def encode(self, x: torch.Tensor) -> List[torch.Tensor]:
         codes = list()
@@ -705,6 +698,15 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             else:
                 formerLevel = decoder(quantized + formerLevel)
         return formerLevel
+
+    def residual_forward(self, code: torch.Tensor, formerLevel: torch.Tensor, level: int):
+        if formerLevel is None and level > 0:
+            raise RuntimeError('For reconstruction after level-0, you should provide not None formerLevel as input.')
+        if formerLevel is not None and level == 0:
+            raise RuntimeError('For reconstruction at level-0, you should provide None formerLevel as input.')
+        decoder, dequantizer = self._decoders[-(level+1)], self._dequantizers[-(level+1)]
+        quantized = dequantizer.decode(code)
+        return decoder(quantized + formerLevel) if formerLevel is not None else decoder(quantized)
 
     def reAssignCodebook(self) -> torch.Tensor:
         freqs = self.NormalizedFreq
