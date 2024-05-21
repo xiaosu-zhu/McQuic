@@ -268,10 +268,10 @@ class _baseTrainer(Restorable):
                 self._model.zero_grad()
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                xHat, (reconLoss, mseLoss, lpipsLoss), codes, logits = self._model(images)
+                xHat, (reconLoss, lpipsLoss), codes, logits = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (reconLoss + 0.1 * mseLoss + lpipsLoss).backward()
+                (reconLoss + lpipsLoss).backward()
 
                 # scaler.unscale_(self._optimizer)
 
@@ -284,7 +284,7 @@ class _baseTrainer(Restorable):
 
                 # scaler.update()
 
-                self._stepFinish(stepFinishHook, reconLoss=reconLoss, lpipsLoss=lpipsLoss, mseLoss=mseLoss, codes=codes, images=images, restored=xHat, logits=logits, norm=norm, **trainingArgs)
+                self._stepFinish(stepFinishHook, reconLoss=reconLoss, lpipsLoss=lpipsLoss, codes=codes, images=images, restored=xHat, logits=logits, norm=norm, **trainingArgs)
                 del images
                 if self._step >= self._totalStep:
                     break
@@ -418,7 +418,7 @@ class MainTrainer(_baseTrainer):
         self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
-    def _stepFinishHook(self, *_, reconLoss, lpipsLoss, mseLoss, norm, **__):
+    def _stepFinishHook(self, *_, reconLoss, lpipsLoss, norm, **__):
         distortionDB = self._model.module.formatDistortion(reconLoss)
         moment = self.diffTracker(distortionDB)
 
@@ -428,7 +428,7 @@ class MainTrainer(_baseTrainer):
         if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Loss_lpips": lpipsLoss, "Stat/Loss_mse": mseLoss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
+            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Loss_lpips": lpipsLoss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
         if self._step % (self.config.Train.ValFreq // 100) == 0:
             if torch.isnan(moment) or moment < 0.1:
                 self.saver.critical('Loss becomes NAN. Train crashed.')
@@ -458,7 +458,7 @@ class MainTrainer(_baseTrainer):
 
     #     # super()._epochStart(hook, *args, **kwArgs)
 
-
+    @torch.no_grad()
     def log(self, *_, images, restored, codes, logits, **__):
         if self.rank != 0:
             return
@@ -490,6 +490,7 @@ class MainTrainer(_baseTrainer):
 
         self.saver.debug('[%s] `MainTrainaer.log` finished.', self.prettyStep)
 
+    @torch.no_grad()
     def validate(self, *_, valLoader: DataLoader, **__):
         if self._step < 1:
             return

@@ -32,9 +32,8 @@ class Compound(Module):
     def forward(self, x: Tensor):
         xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(xHat, x, codes, logits)
-        mse = F.mse_loss(xHat, x)
         lpips = self._lpips(xHat, x)
-        return xHat, (distortion, mse, lpips.mean()), codes, logits
+        return xHat, (distortion, lpips.mean()), codes, logits
 
     @property
     def Freq(self):

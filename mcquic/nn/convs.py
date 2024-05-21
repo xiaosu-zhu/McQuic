@@ -95,7 +95,9 @@ def conv3x3(inChannels: int, outChannels: int, stride: int = 1, bias: bool = Tru
     Returns:
         nn.Module: A Conv layer.
     """
-    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=3, stride=stride, padding=1, padding_mode='replicate')
+    # NOTE: padding mode = zeros
+    # NOTE: other padding modes will significantly boom VRAM and slow down training
+    return nn.Conv2d(inChannels, outChannels, bias=bias, groups=groups, kernel_size=3, stride=stride, padding=1)
 
 def conv5x5(inChannels: int, outChannels: int, stride: int = 1, bias: bool = True, groups: int = 1) -> nn.Conv2d:
     """A wrapper of 5x5 convolution with pre-calculated padding.
@@ -237,16 +239,18 @@ def pixelShuffle3x3(inChannels: int, outChannels: int, r: float = 1, groups: int
     Returns:
         nn.Module: A Conv layer.
     """
+    # NOTE: padding mode = zeros
+    # NOTE: other padding modes will significantly boom VRAM and slow down training
     if r < 1:
         r = int(1 / r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode='replicate'),
+            nn.Conv2d(inChannels, outChannels // (r ** 2), kernel_size=3, padding=1, groups=groups),
             nn.PixelUnshuffle(r)
         )
     else:
         r = int(r)
         return nn.Sequential(
-            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, groups=groups, padding_mode='replicate'),
+            nn.Conv2d(inChannels, outChannels * (r ** 2), kernel_size=3, padding=1, groups=groups),
             nn.PixelShuffle(r)
         )
 
