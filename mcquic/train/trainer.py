@@ -462,6 +462,7 @@ class MainTrainer(_baseTrainer):
     def log(self, *_, images, restored, codes, logits, **__):
         if self.rank != 0:
             return
+        wandb.Histogram.MAX_LENGTH = 4097
         payload: Dict[str, Any] = {
             'Hist/LogDistance': wandb.Histogram((-(logits[0][0, 0])).clamp(Consts.Eps).log10().detach().cpu().numpy()),
         }
@@ -471,8 +472,8 @@ class MainTrainer(_baseTrainer):
         freq = self._model.module.Compressor.NormalizedFreq
         # [m, ki]
         for lv, (fr, c) in enumerate(zip(freq, codes)):
-            payload[f'Hist/FreqLv{lv}'] = wandb.Histogram(fr[0].detach().cpu().numpy(), num_bins=min(512, len(fr[0])))
-            payload[f'Hist/CodeLv{lv}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
+            payload[f'Hist/FreqLv{lv:02d}'] = wandb.Histogram(np_histogram=(fr[0].detach().cpu().numpy(), np.arange(len(fr[0]))))
+            payload[f'Hist/CodeLv{lv:02d}'] = [wandb.Image(to_pil_image(x)) for x in self.validator.visualizeIntermediate(c)]
             # self.saver.add_histogram_raw(f"Stat/FreqLv{lv}", min=0, max=len(fr[0]), num=len(fr[0]), sum=fr[0].sum(), sum_squares=(fr[0] ** 2).sum(), bucket_limits=list(range(len(fr[0]))), bucket_counts=fr[0], global_step=self._step)
             # self.saver.add_images(f"Train/CodeLv{lv}", self.validator.visualizeIntermediate(c), self._step)
         payload['Train/Raw'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(images)]
