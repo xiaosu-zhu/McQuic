@@ -191,8 +191,10 @@ class _multiCodebookQuantization(nn.Module):
     #     return sample.contiguous()
 
     def _randomDrop(self, logit):
+        # if codeUsage == 0., then exponential = 10 (x**10 < freq, x=U(0,1)), if codeUsage == 1.0, then exponential = 1.
+        codeUsage = (self._freqEMA > Consts.Eps).float().mean().clamp(0., 1.)
         # [n, m, h, w, k] < [m, 1, 1, k]
-        randomMask = (torch.rand_like(logit) ** 10) < self._freqEMA[:, None, None, ...]
+        randomMask = (torch.rand_like(logit) ** (-9 * (codeUsage ** 3) + 10)) < self._freqEMA[:, None, None, ...]
         logit[randomMask] += -1e9
         return logit
 

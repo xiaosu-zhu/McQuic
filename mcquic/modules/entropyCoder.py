@@ -293,7 +293,7 @@ class PlainCoder(nn.Module):
 
 
 class VariousMCoder(nn.Module):
-    def __init__(self, m: List[int], k: List[int], ema: float = 0.9):
+    def __init__(self, m: List[int], k: List[int], ema: float = 0.998):
         super().__init__()
         # initial value is uniform
         self._freqEMA = nn.ParameterList(nn.Parameter(torch.ones(mi, ki) / ki, requires_grad=False) for mi, ki in zip(m, k))
