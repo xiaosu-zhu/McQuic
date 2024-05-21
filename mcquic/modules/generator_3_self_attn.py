@@ -89,7 +89,7 @@ class GeneratorV3SelfAttention(nn.Module):
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.next_residual_predictor = AnyRes_L(
             size[::-1],
-            [[4096, 32] for _ in size[::-1]],
+            [[codebook.shape[1], codebook.shape[2]] for codebook in self.compressor.Codebooks[::-1]],
             qk_norm=qk_norm,
             norm_eps=norm_eps,
         )
