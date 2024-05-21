@@ -180,6 +180,9 @@ class Compressor(BaseCompressor):
 
 class Neon(BaseCompressor):
     def __init__(self, channel: int, k: int, size: List[int], denseNorm: bool = False, *_, **__):
+        quantizer = ResidualBackwardQuantizer(k, size, denseNorm)
+
+
         encoder = nn.Sequential(
             # convs.conv3x3(3, channel),
             conv3x3(3, channel),
@@ -199,12 +202,12 @@ class Neon(BaseCompressor):
             ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
             ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
             ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
-            ResidualBlock(2 * channel, 32, 32, denseNorm),
-            AttentionBlock(32, 32, denseNorm),
+            ResidualBlock(2 * channel, quantizer.channel, 1, denseNorm),
+            AttentionBlock(quantizer.channel, 1, denseNorm),
         )
         decoder = nn.Sequential(
-            AttentionBlock(32, 32, denseNorm),
-            ResidualBlock(32, 2 * channel, 32, denseNorm),
+            AttentionBlock(quantizer.channel, 1, denseNorm),
+            ResidualBlock(quantizer.channel, 2 * channel, 1, denseNorm),
             # AttentionBlock(32),
             ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
             ResidualBlock(2 * channel, 2 * channel, 32, denseNorm),
@@ -227,7 +230,6 @@ class Neon(BaseCompressor):
         encoder = checkpoint_wrapper(encoder)
         decoder = checkpoint_wrapper(decoder)
 
-        quantizer = ResidualBackwardQuantizer(k, size, denseNorm)
         super().__init__(encoder, quantizer, decoder)
 
     def residual_backward(self, code, level):
