@@ -101,6 +101,7 @@ class _multiCodebookQuantization(nn.Module):
         super().__init__()
         self._m, self._k, self._d = codebook.shape
         self._codebook = codebook
+        self._bits = math.log2(self._k)
         self._scale = math.sqrt(self._k)
         self._temperature = nn.Parameter(torch.ones((self._m, 1, 1, 1)))
         self._bound = LowerBound(Consts.Eps)
@@ -191,10 +192,10 @@ class _multiCodebookQuantization(nn.Module):
     #     return sample.contiguous()
 
     def _randomDrop(self, logit):
-        # if codeUsage == 0., then exponential = 10 (x**10 < freq, x=U(0,1)), if codeUsage == 1.0, then exponential = 1.
+        # if codeUsage == 0., then exponential = 12 (x**10 < freq, x=U(0,1)), if codeUsage == 1.0, then exponential = 1.
         codeUsage = (self._freqEMA > Consts.Eps).float().mean().clamp(0., 1.)
         # [n, m, h, w, k] < [m, 1, 1, k]
-        randomMask = (torch.rand_like(logit) ** (-9 * (codeUsage ** 3) + 10)) < self._freqEMA[:, None, None, ...]
+        randomMask = (torch.rand_like(logit) ** (-(self._bits - 1) * (codeUsage ** 2) + self._bits)) < self._freqEMA[:, None, None, ...]
         logit[randomMask] += -1e9
         return logit
 
