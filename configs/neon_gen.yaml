@@ -1,9 +1,10 @@
+# migrate from neon.yaml
 model:
   key: GeneratorV3SelfAttention
   params:
     channel: 256
     k: 4096
-    size: [16, 8, 8, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
+    size: [16, 8, 8, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
     denseNorm: false
     qk_norm: true
     norm_eps: 1.e-5
