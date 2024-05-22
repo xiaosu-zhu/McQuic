@@ -651,7 +651,7 @@ class FinalLayer(nn.Module):
         )
 
         # Zero-out adaLN modulation layers in DiT blocks:
-        nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
+        # nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
         nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
     def forward(self, x, condition):
@@ -748,13 +748,12 @@ class TransformerBlock(nn.Module):
         # Initialize transformer layers and proj layer:
         def _basic_init(module):
             if isinstance(module, nn.Linear):
-                torch.nn.init.xavier_uniform_(module.weight)
+                torch.nn.init.trunc_normal_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
 
         self.apply(_basic_init)
-
-        nn.init.zeros_(self.adaLN_modulation[1].weight)
+        # nn.init.zeros_(self.adaLN_modulation[1].weight)
 
     def forward(
         self,
@@ -821,6 +820,7 @@ class Transformer(nn.Module):
         self.canvas_size = canvas_size
         self.num_heads = num_heads
         self.hidden_size = hidden_size
+        self.depth = depth
 
         # self.input_transform = nn.Sequential(
         #     nn.InstanceNorm2d(input_dim, eps=1e-6),
@@ -873,16 +873,28 @@ class Transformer(nn.Module):
         self._initialize_weights()
 
     def _initialize_weights(self):
+        init_std = 2 / (5 * self.hidden_size)
         # Initialize transformer layers and proj layer:
         def _basic_init(module):
             if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
+                nn.init.trunc_normal_(module.weight, std=init_std)
                 # if module.bias is not None:
                 #     nn.init.constant_(module.bias, 0)
-
         self.apply(_basic_init)
 
-        nn.init.zeros_(self.cap_embedder[1].weight)
+        nn.init.trunc_normal_(self.cap_embedder[1].weight, std=init_std)
+        nn.init.trunc_normal_(self.token_embedder[1].weight, std=init_std)
+        # NOTE: copy from VAR
+        for block in self.blocks:
+            block.attention.wo.weight.data.div_(math.sqrt(2 * depth))
+            block.ffn.w2.weight.data.div_(math.sqrt(2 * depth))
+            
+            if hasattr(block, "adaLN_modulation"):
+                block.adaLN_modulation[-1].weight.data[2 * self.hidden_size:].mul_(0.5) # adaln
+                block.adaLN_modulation[-1].weight.data[:2 * self.hidden_size].mul_(1e-5) # gamma
+                if hasattr(block.adaLN_modulation[-1], "bias") and block.adaLN_modulation[-1].bias is not None:
+                    block.adaLN_modulation[-1].bias.data.zero_()
+        
 
     def random_pos_embed(self, bs, h, w):
         H = W = int(math.sqrt(self.num_patches))
