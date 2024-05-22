@@ -230,28 +230,43 @@ class GeneratorV3SelfAttention(nn.Module):
                 # compressor.Codebooks: [4096, 32]
 
                 # get class embedding from class_id to embedding
-                class_embed = self.class_token[condition]
+                class_embed = self.class_tokens[condition]
                 # given shape and condition, produce token with secified shape
+                h, w = 1, 1 # first scale is 1x1
+                bs, hidden_size = class_embed.shape
                 # ================= start loop =================
-                first_level_token = self.next_residual_predictor(None, class_embed)
+                first_level_token = self.next_residual_predictor((None, 0), class_embed)
+                first_level_token = first_level_token.unsqueeze(dim=1)
+                first_level_token = first_level_token.permute(0, 2, 1).reshape(
+                    bs, -1, h, w
+                )
+
                 first_scale_feat = self.compressor.residual_forward(
-                    first_level_token.unsqueeze(1), None, 0
+                    first_level_token, None, 0
                 )
 
                 predictions = [first_level_token]
                 input_feats = [first_scale_feat]
-                former_level_feat = first_scale_feat.copy()
+                former_level_feat = first_scale_feat.clone()
 
                 for i in range(1, len(self.compressor.Codebooks)):
+                    # [bs, h * w]
                     next_level_token = self.next_residual_predictor(
                         (input_feats, i), class_embed
                     )
+                    # get current scale
+                    scale = int(math.sqrt(next_level_token.shape[-1]))
+                    h, w = scale, scale
+                    # [bs, 1, h, w]
+                    next_level_token = next_level_token.reshape(bs, h, w).unsqueeze(1)
+
+                    # [bs, tok_dim, h, w]
                     next_scale_feat = self.compressor.residual_forward(
-                        next_level_token.unsqueeze(1), former_level_feat, i
+                        next_level_token, former_level_feat, i
                     )
-                    former_level_feat = next_scale_feat.copy()
+                    former_level_feat = next_scale_feat.clone()
                     predictions.append(next_level_token)
-                    transformer_input.append(next_scale_feat)
+                    input_feats.append(next_scale_feat)
 
                 # # list of [bs, hi, wi]
                 # predictions.insert(0, first_level)
@@ -533,7 +548,7 @@ class Attention(nn.Module):
                 xq.permute(0, 2, 1, 3),
                 xk.permute(0, 2, 1, 3),
                 xv.permute(0, 2, 1, 3),
-                attn_mask=x_mask.expand(bsz, 1, -1, -1),
+                attn_mask=x_mask.expand(bsz, 1, -1, -1) if self.training else None,
             )
             .permute(0, 2, 1, 3)
             .to(dtype)
@@ -1110,11 +1125,16 @@ class AnyResolutionModel(nn.Module):
             return results
         else:
             # inference
-            if all_forwards_for_residual is None:
+            if not isinstance(all_forwards_for_residual, tuple):
+                raise RuntimeError("The given training input is not a tuple.")
+
+            current, level = all_forwards_for_residual
+            if level == 0:
                 # shape = [int(x) for x in all_forwards_for_residual.split(",")]
                 # bs, h, w = shape
                 h, w = 1, 1
-                bs, dim = cap_poooled.shape
+                bs, dim = cap_pooled.shape
+
                 selected_pos_embed = self.center_pos_embed(h, w)
                 current = selected_pos_embed.expand(
                     bs, h * w, self.token_dim
@@ -1125,21 +1145,30 @@ class AnyResolutionModel(nn.Module):
                     .reshape(bs, self.token_dim, h, w)
                     .contiguous()
                 )
-                level_emb = self.level_indicator_pos_embed[0]
-                current = current + level_emb[:, None, None]
-                predict = self.model(current, self.input_mask, cap_pooled)
-                
-                return predict.argmax(dim=1)
+
+                bs, _, h, w = current.shape
+                level_emb = self.level_indicator_pos_embed[level]
+                current = current.permute(0, 2, 3, 1).reshape(bs, h * w, -1) + level_emb
+                # logits: [bs, h * w, hidden_size]
+                logits = self.model(current, None, cap_pooled)
+                # NOTE: in training, the len of reuslts is level - 1
+
+                return logits.argmax(dim=-1)
             else:
                 # [bs, c, h*2, w*2]
                 current, level = all_forwards_for_residual
+                current_feat = current[-1]
+                bs, _, h, w = current_feat.shape
                 level_emb = self.level_indicator_pos_embed[level]
                 # current = torch.cat([level_emb, current], dim=1) # todo: maybe useful
-                current = current + level_emb[:, None, None]
-                predict = self.model(current, self.input_mask, cap_pooled)
+                current_feat = (
+                    current_feat.permute(0, 2, 3, 1).reshape(bs, h * w, -1) + level_emb
+                )
+                # logits: [bs, h * w, hidden_size]
+                logits = self.model(current_feat, None, cap_pooled)
                 # NOTE: in training, the len of reuslts is level - 1
-                
-                return predict.argmax(dim=1)
+
+                return logits.argmax(dim=-1)
 
 
 #################################################################################
