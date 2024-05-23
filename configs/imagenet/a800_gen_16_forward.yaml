@@ -10,7 +10,7 @@ model:
     loadFrom: compressor/val_40000.ckpt
 train:
   totalStep: 75000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 28
+  batchSize: 24
   epoch: 20
   valFreq: 2500
   trainSet: /ssdfs/datahome/tj24011/datasets/raw/imagenet/imagenet-1k/data
@@ -23,7 +23,7 @@ train:
   optim:
     key: Adam
     params:
-      lr: 4.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      lr: 8.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
       weight_decay: 0.0
       betas: !!python/tuple [0.9, 0.95]
       fused: true

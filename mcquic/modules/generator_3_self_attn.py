@@ -270,10 +270,10 @@ class GeneratorV3SelfAttention(nn.Module):
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
 
-            all_forwards_for_residual = [x.to(torch.float16) for x in all_forwards_for_residual]
+            all_forwards_for_residual = [x.to(torch.bfloat16) for x in all_forwards_for_residual]
 
             rawPredictions = self.next_residual_predictor(
-                [None, *all_forwards_for_residual], self.class_pos_embed[condition].to(torch.float16)
+                [None, *all_forwards_for_residual], self.class_pos_embed[condition].to(torch.bfloat16)
             )
 
             loss = list()
