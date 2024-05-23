@@ -75,21 +75,21 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         # optimizer = trackingFunctionCalls(optimizer, self.saver)
 
-        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.Embedding, ), ['norm', 'pos_embed', 'codebook', 'bias'])
+        # included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), [], ['norm', 'pos_embed', 'codebook', 'bias'])
 
-        optimizer_grouped_parameters = [
-            {
-                "params": included,
-                "weight_decay": self.config.Train.Optim.Params['weight_decay'],
-            },
-            {
-                "params": excluded,
-                "weight_decay": 0.0,
-            },
-        ]
+        # optimizer_grouped_parameters = [
+        #     {
+        #         "params": included,
+        #         "weight_decay": self.config.Train.Optim.Params['weight_decay'],
+        #     },
+        #     {
+        #         "params": excluded,
+        #         "weight_decay": 0.0,
+        #     },
+        # ]
 
         # NOTE: tokenizer can't use fp16
-        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
+        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 

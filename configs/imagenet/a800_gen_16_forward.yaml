@@ -24,7 +24,7 @@ train:
     key: Adam
     params:
       lr: 4.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
-      weight_decay: 0.05
+      weight_decay: 0.0
       betas: !!python/tuple [0.9, 0.95]
       fused: true
       # use_nvlamb: true
