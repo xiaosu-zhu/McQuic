@@ -90,7 +90,7 @@ class GeneratorV3SelfAttention(nn.Module):
         # NOTE: remove first dim of codebook, since it is for product quantization
         self.next_residual_predictor = AnyRes_L(
             size[::-1],
-            [[4096, 32] for _ in size[::-1]],
+            [[codebook.shape[1], codebook.shape[2]] for codebook in self.compressor.Codebooks[::-1]],
             qk_norm=qk_norm,
             norm_eps=norm_eps,
         )
@@ -103,7 +103,7 @@ class GeneratorV3SelfAttention(nn.Module):
                 torch.empty(
                     len(IMAGENET2012_LABELS), self.next_residual_predictor.hidden_size
                 ),
-                std=math.sqrt(2 / (5 * self.next_residual_predictor.hidden_size)),
+                std=math.sqrt(2 / (6 * self.next_residual_predictor.hidden_size)),
             )
         )
         self.norm = nn.LayerNorm(8)
@@ -116,6 +116,54 @@ class GeneratorV3SelfAttention(nn.Module):
         # self.text_encoder.float16()
         # self.text_to_first_level.bfloat16()
         # self.next_residual_predictor.bfloat16()
+
+        self.init_weights(self.next_residual_predictor.hidden_size)
+
+
+    def init_weights(self, hidden_size, init_adaln=0.5, init_adaln_gamma=1e-5, init_head=0.02, init_std=-1, conv_std_or_gain=0.02):
+        if init_std < 0: init_std = (1 / hidden_size / 3) ** 0.5     # init_std < 0: automated
+
+        print(f'[init_weights] {type(self).__name__} with {init_std=:g}')
+        for m in self.modules():
+            with_weight = hasattr(m, 'weight') and m.weight is not None
+            with_bias = hasattr(m, 'bias') and m.bias is not None
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight.data, std=init_std)
+                if with_bias: m.bias.data.zero_()
+            elif isinstance(m, nn.Embedding):
+                nn.init.trunc_normal_(m.weight.data, std=init_std)
+                if m.padding_idx is not None: m.weight.data[m.padding_idx].zero_()
+            elif isinstance(m, (nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm, nn.GroupNorm, nn.InstanceNorm1d, nn.InstanceNorm2d, nn.InstanceNorm3d)):
+                if with_weight: m.weight.data.fill_(1.)
+                if with_bias: m.bias.data.zero_()
+            # conv: VAR has no conv, only VQVAE has conv
+            elif isinstance(m, (nn.Conv1d, nn.Conv2d, nn.Conv3d, nn.ConvTranspose1d, nn.ConvTranspose2d, nn.ConvTranspose3d)):
+                if conv_std_or_gain > 0: nn.init.trunc_normal_(m.weight.data, std=conv_std_or_gain)
+                else: nn.init.xavier_normal_(m.weight.data, gain=-conv_std_or_gain)
+                if with_bias: m.bias.data.zero_()
+
+        if init_head >= 0:
+            self.next_residual_predictor.model.final_layer.linear.weight.data.mul_(init_head)
+            self.next_residual_predictor.model.final_layer.linear.bias.data.zero_()
+
+        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].weight.data.mul_(init_adaln)
+        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].bias.data.zero_()
+
+        depth = self.next_residual_predictor.depth
+        for block_idx, transformerBlock in enumerate(self.next_residual_predictor.model.blocks):
+            transformerBlock: TransformerBlock
+            transformerBlock.attention.wo.weight.data.div_(math.sqrt(2 * depth))
+            transformerBlock.ffn.w2.weight.data.div_(math.sqrt(2 * depth))
+            # if hasattr(sab.ffn, 'fcg') and sab.ffn.fcg is not None:
+            #     nn.init.ones_(sab.ffn.fcg.bias)
+            #     nn.init.trunc_normal_(sab.ffn.fcg.weight, std=1e-5)
+            transformerBlock.adaLN_modulation[-1].weight.data[2*hidden_size:].mul_(init_adaln)
+            transformerBlock.adaLN_modulation[-1].weight.data[:2*hidden_size].mul_(init_adaln_gamma)
+            transformerBlock.adaLN_modulation[-1].bias.data.zero_()
+
+        # sab.ada_gss.data[:, :, 2:].mul_(init_adaln)
+        # sab.ada_gss.data[:, :, :2].mul_(init_adaln_gamma)
+
 
     def train(self, mode: bool = True):
         retValue = super().train(mode)
@@ -145,6 +193,9 @@ class GeneratorV3SelfAttention(nn.Module):
                     
                     all_forwards_for_residual.append(res_level)
                     formerLevel = all_forwards_for_residual[-1]
+                    print(formerLevel.mean(), formerLevel.std())
+
+            exit()
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -859,11 +910,7 @@ class Transformer(nn.Module):
         )  # expand canvas to 8 * canvas, to support at least 8*resolution
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(
-            nn.init.trunc_normal_(
-                torch.empty(self.num_patches, hidden_size),
-                std=2 / (5 * self.hidden_size),
-            ),
-            requires_grad=False,
+            nn.init.trunc_normal_(torch.empty(self.num_patches, hidden_size), std=2/(6*self.hidden_size)), requires_grad=False
         )
 
         self.blocks = nn.ModuleList(
@@ -1023,11 +1070,12 @@ class AnyResolutionModel(nn.Module):
         norm_eps=1e-5,
     ):
         super().__init__()
-        self.token_dim = codebooks[0][-1]
+        # self.token_dim = codebooks[0][-1]
         self.hidden_size = hidden_size
+        self.depth = depth
         # NOTE: we only need first (level - 1) blocks
         self.model = Transformer(
-            codebooks[0][-1],
+            hidden_size,
             canvas_size[-1],
             hidden_size,
             hidden_size,
@@ -1041,25 +1089,31 @@ class AnyResolutionModel(nn.Module):
         #     [nn.Linear(cap_dim, hidden_size) for _ in codebooks]
         # )
 
+        self.input_transform = nn.Sequential(
+            nn.LayerNorm(codebooks[0][1], norm_eps),
+            nn.Linear(codebooks[0][1], hidden_size),
+            nn.LayerNorm(hidden_size, norm_eps),
+        )
+
         self.first_level_pos_embed = nn.Parameter(
             nn.init.trunc_normal_(
-                torch.empty(1, canvas_size[-1] * canvas_size[-1], self.token_dim),
-                std=math.sqrt(2 / (5 * self.token_dim)),
+                torch.empty(1, canvas_size[-1] * canvas_size[-1], self.hidden_size),
+                std=math.sqrt(2 / (6 * self.hidden_size)),
             )
         )
         self.cap_to_first_token = nn.Sequential(
-            nn.LayerNorm(hidden_size),
+            nn.LayerNorm(hidden_size, norm_eps),
             nn.Linear(
                 hidden_size,
-                self.token_dim,
+                hidden_size,
                 bias=True,
             ),
         )
 
         self.level_indicator_pos_embed = nn.Parameter(
             nn.init.trunc_normal_(
-                torch.empty(len(canvas_size), self.token_dim),
-                std=math.sqrt(2 / (5 * self.token_dim)),
+                torch.empty(len(canvas_size), self.hidden_size),
+                std=math.sqrt(2 / (6 * self.hidden_size)),
             )
         )
 
@@ -1135,23 +1189,24 @@ class AnyResolutionModel(nn.Module):
                     else:
                         selected_pos_embed = self.center_pos_embed(h, w)
                     current = selected_pos_embed.expand(
-                        bs, h * w, self.token_dim
+                        bs, h * w, -1
                     )  # [bs, hw, hidden]
-                    current = (
-                        selected_pos_embed
-                        + self.cap_to_first_token(cap_pooled)[:, None, ...]
-                    )
-                    current = (
-                        current.permute(0, 2, 1)
-                        .reshape(bs, self.token_dim, h, w)
-                        .contiguous()
-                    )
+                    current = selected_pos_embed + self.cap_to_first_token(cap_pooled)[:, None, ...]
+                    # current = (
+                    #     current.permute(0, 2, 1)
+                    #     .reshape(bs, self.token_dim, h, w)
+                    #     .contiguous()
+                    # )
+                else:
+                    bs, _, h, w = current.shape
+                    current = self.input_transform(current.permute(0, 2, 3, 1).reshape(bs, h*w, -1))
+
 
                 level_emb = self.level_indicator_pos_embed[level]
-                bs, _, h, w = current.shape
+                # bs, _, h, w = current.shape
                 # current = torch.cat([level_emb, current], dim=1) # todo: maybe useful
                 # [bs, hw, c]
-                current = current.permute(0, 2, 3, 1).reshape(bs, h * w, -1) + level_emb
+                current = current + level_emb
                 # [bs, hw, c]
                 total.append(current)
             # [bs, h1w1+h2w2+h3w3..., c]

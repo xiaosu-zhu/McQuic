@@ -8,10 +8,10 @@ model:
     denseNorm: false
     qk_norm: true
     norm_eps: 1.e-5
-    loadFrom: compressor/long-10000.ckpt
+    loadFrom: compressor/dynamic_20000.ckpt
 train:
   totalStep: 10000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 36
+  batchSize: 24
   epoch: 2
   valFreq: 1000
   trainSet: /mnt/hdd1/zhuxiaosu/datasets/imagenet-1k
