@@ -4,6 +4,7 @@
 - 不论是训练中还是推理，tokenizer 都必须用 float32，不然精度不够
 - Cross-entropy 出现几千的情况：最后一层之前加一个 normalization
 - ZERO-2 远比 flash attention 和 FP-16 重要，能够大幅减少显存占用
+- Generator 初始化，参考 Spike No More: Stabilizing the Pre-training of Large Language Models
 
 ---
 

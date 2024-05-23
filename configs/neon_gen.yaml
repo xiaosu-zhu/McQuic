@@ -11,7 +11,7 @@ model:
     loadFrom: compressor/dynamic_20000.ckpt
 train:
   totalStep: 10000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 24
+  batchSize: 12
   epoch: 2
   valFreq: 1000
   trainSet: /mnt/hdd1/zhuxiaosu/datasets/imagenet-1k
@@ -25,7 +25,7 @@ train:
     key: Adam
     params:
       lr: 5.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
-      weight_decay: 0.0
+      weight_decay: 0.1
       # use_nvlamb: true
   schdr:
     # key: Placeholder

@@ -44,7 +44,7 @@ to_ntuple = _ntuple
 
 
 @GeneratorRegistry.register
-class GeneratorV3SelfAttention(nn.Module):
+class GeneratorV3SelfAttentionNoAda(nn.Module):
     def __init__(
         self,
         channel: int,
@@ -78,12 +78,12 @@ class GeneratorV3SelfAttention(nn.Module):
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
         # NOTE: remove first dim of codebook, since it is for product quantization
-        self.next_residual_predictor = checkpoint_wrapper(AnyRes_L(
+        self.next_residual_predictor = AnyRes_L(
             size[::-1],
-            [[k, channel] for _ in size],
+            [[codebook.shape[1], codebook.shape[2]] for codebook in self.compressor.Codebooks[::-1]],
             qk_norm=qk_norm,
             norm_eps=norm_eps,
-        ))
+        )
         logging.debug("Created any-res transformer.")
 
         from mcquic.data.imagenet_classes import IMAGENET2012_LABELS
@@ -93,48 +93,9 @@ class GeneratorV3SelfAttention(nn.Module):
                 torch.empty(
                     len(IMAGENET2012_LABELS), self.next_residual_predictor.hidden_size
                 ),
-                std=math.sqrt(2 / (5 * self.next_residual_predictor.hidden_size)),
+                std=math.sqrt(2 / (5)),
             )
         )
-
-
-        from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
-        from mcquic.nn.blocks import AttentionBlock
-        from mcquic.nn.convs import conv3x3, conv1x1, pixelShuffle3x3
-        from mcquic.modules.quantizer import _multiCodebookDeQuantization
-
-
-        decoders = list()
-        dequantizers = list()
-
-        codebook = nn.Parameter(nn.init.trunc_normal_(torch.empty(1, k, self.next_residual_predictor.hidden_size), std=math.sqrt(2 / (5 * self.next_residual_predictor.hidden_size))))
-
-        lastSize = size[0] * 2
-        # reverse adding encoder, decoder and quantizer
-        for i, thisSize in enumerate(size):
-            if thisSize == lastSize // 2:
-                # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
-                # NOTE: quantizer is from large to small, but _freqEMA is from small to large
-                dequantizer = _multiCodebookDeQuantization(codebook)
-
-                restoreHead = pixelShuffle3x3(self.next_residual_predictor.hidden_size, self.next_residual_predictor.hidden_size, 2)
-            elif thisSize == lastSize:
-                dequantizer = _multiCodebookDeQuantization(codebook)
-
-                restoreHead = conv3x3(self.next_residual_predictor.hidden_size, self.next_residual_predictor.hidden_size)
-            else:
-                raise ValueError('The given size sequence does not half or equal to from left to right.')
-
-
-            lastSize = thisSize
-
-            decoders.append(restoreHead)
-            dequantizers.append(dequantizer)
-
-
-        self._decoders: nn.ModuleList = nn.ModuleList(decoders)
-
-        self._dequantizers: nn.ModuleList = nn.ModuleList(dequantizers)
 
         # self.text_encoder.eval()
         # Cast to bfloat16
@@ -159,17 +120,6 @@ class GeneratorV3SelfAttention(nn.Module):
 
 
         self.compressor.eval()
-
-
-    def residual_forward(self, code: torch.Tensor, formerLevel: torch.Tensor, level: int):
-        if formerLevel is None and level > 0:
-            raise RuntimeError('For reconstruction after level-0, you should provide not None formerLevel as input.')
-        if formerLevel is not None and level == 0:
-            raise RuntimeError('For reconstruction at level-0, you should provide None formerLevel as input.')
-        decoder, dequantizer = self._decoders[-(level+1)], self._dequantizers[-(level+1)]
-        quantized = dequantizer.decode(code)
-        return decoder(quantized + formerLevel) if formerLevel is not None else decoder(quantized)
-
 
 
     def init_weights(self, hidden_size, init_adaln=0.5, init_adaln_gamma=1e-5, init_head=0.02, init_std=-1, conv_std_or_gain=0.02):
@@ -197,8 +147,6 @@ class GeneratorV3SelfAttention(nn.Module):
             self.next_residual_predictor.model.final_layer.linear.weight.data.mul_(init_head)
             self.next_residual_predictor.model.final_layer.linear.bias.data.zero_()
 
-        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].weight.data.zero_()
-        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].bias.data.zero_()
 
         depth = self.next_residual_predictor.depth
         for block_idx, transformerBlock in enumerate(self.next_residual_predictor.model.blocks):
@@ -210,8 +158,6 @@ class GeneratorV3SelfAttention(nn.Module):
             #     nn.init.trunc_normal_(sab.ffn.fcg.weight, std=1e-5)
             # transformerBlock.adaLN_modulation[-1].weight.data[2*hidden_size:].mul_(init_adaln)
             # transformerBlock.adaLN_modulation[-1].weight.data[:2*hidden_size].mul_(init_adaln_gamma)
-        self.next_residual_predictor.model.adaLN_modulation[-1].weight.data.zero_()
-        self.next_residual_predictor.model.adaLN_modulation[-1].bias.data.zero_()
 
         # sab.ada_gss.data[:, :, 2:].mul_(init_adaln)
         # sab.ada_gss.data[:, :, :2].mul_(init_adaln_gamma)
@@ -226,20 +172,20 @@ class GeneratorV3SelfAttention(nn.Module):
     def forward(self, image, condition: torch.Tensor):
         if self.training:
             ###################### Preparing inputs #########################
+            with torch.no_grad():
                 # list of [n, 1, h, w], len of list == levels
                 # from low resolution to high resolution
                 # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
                 # NOTE: therefore, we manually split image into batch 16
-            with torch.no_grad():
+                all_forwards_for_residual = list()
                 codes = self.compressor.encode(image)
-            all_forwards_for_residual = list()
-            formerLevel = None
-            for level, code in enumerate(codes[:-1]):
-                # list - 1 of [n, c, 2h, 2w]
-                all_forwards_for_residual.append(
-                    self.residual_forward(code, formerLevel, level)
-                )
-                formerLevel = all_forwards_for_residual[-1]
+                formerLevel = None
+                for level, code in enumerate(codes[:-1]):
+                    # list - 1 of [n, c, 2h, 2w]
+                    all_forwards_for_residual.append(
+                        self.compressor.residual_forward(code, formerLevel, level)
+                    )
+                    formerLevel = all_forwards_for_residual[-1]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -746,12 +692,9 @@ class FinalLayer(nn.Module):
         #     )
 
         # else:
-        self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False)
+        self.norm_final = nn.LayerNorm(hidden_size)
         self.linear = nn.Linear(hidden_size, prediction_num)
         # self.skip_connection = nn.Linear(hidden_size, prediction_num)
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size)
-        )
         self.prediction_num = prediction_num
 
     def forward(self, x, condition):
@@ -780,9 +723,8 @@ class FinalLayer(nn.Module):
         #     return similarity
         # else:
         # [B, D]
-        shift, scale = self.adaLN_modulation(condition).chunk(2, dim=1)
         # modulate, [B, L, D]
-        out = self.norm_final(x) * (1 + scale[:, None]) + shift[:, None]
+        out = self.norm_final(x)
         x = self.linear(out)  # + self.skip_connection(x)
         return x
 
@@ -828,17 +770,16 @@ class TransformerBlock(nn.Module):
         self.attention = Attention(dim, n_heads, n_kv_heads, qk_norm)
         self.ffn = FeedForward(dim=dim, hidden_dim=4 * dim)
         self.layer_id = layer_id
-        self.attention_norm = nn.LayerNorm(dim, eps=norm_eps, elementwise_affine=False)
+        self.attention_norm = nn.LayerNorm(dim, eps=norm_eps)
         self.attention_norm1 = nn.LayerNorm(dim, eps=norm_eps)
-        self.ffn_norm = nn.LayerNorm(dim, eps=norm_eps, elementwise_affine=False)
+        self.ffn_norm = nn.LayerNorm(dim, eps=norm_eps)
         self.ffn_norm1 = nn.LayerNorm(dim, eps=norm_eps)
-
 
     def forward(
         self,
         x: torch.Tensor,
         x_mask: torch.Tensor,
-        adas: torch.Tensor,
+        y_emb: torch.Tensor,
         pos_embed: torch.Tensor,
     ):
         """
@@ -853,20 +794,17 @@ class TransformerBlock(nn.Module):
                 feedforward layers.
 
         """
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = adas
         x = x + self.attention_norm1(
-            gate_msa.unsqueeze(1)
-            * self.attention(
-                modulate(self.attention_norm(x), shift_msa, scale_msa),
+            self.attention(
+                self.attention_norm(x),
                 x_mask,
                 pos_embed,
             )
         )
         d = x.shape[-1]
         x = x + self.ffn_norm1(
-            gate_mlp.unsqueeze(1)
-            * self.ffn(
-                modulate(self.ffn_norm(x), shift_mlp, scale_mlp).reshape(-1, d),
+            self.ffn(
+                self.ffn_norm(x),
             ).reshape(*x.shape)
         )
 
@@ -908,25 +846,20 @@ class Transformer(nn.Module):
         #     nn.Conv2d(input_dim, hidden_size, 1, bias=True),
         # )
 
-        self.final_layer = FinalLayer(hidden_size, vocab_size)
+        self.final_layer = checkpoint_wrapper(FinalLayer(hidden_size, vocab_size))
         # self.cap_embedder = nn.Sequential(
         #     nn.LayerNorm(cap_dim, norm_eps),
-        #     # nn.Linear(
-        #     #     cap_dim,
-        #     #     hidden_size,
-        #     #     bias=True,
-        #     # ),
+        #     nn.Linear(
+        #         cap_dim,
+        #         hidden_size,
+        #         bias=True,
+        #     ),
         # )
         self.token_embedder = nn.Sequential(
             nn.LayerNorm(input_dim, norm_eps),
-        )
-
-
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
             nn.Linear(
+                input_dim,
                 hidden_size,
-                6 * hidden_size,
                 bias=True,
             ),
         )
@@ -942,13 +875,15 @@ class Transformer(nn.Module):
 
         self.blocks = nn.ModuleList(
             [
-                TransformerBlock(
-                    idx, hidden_size, num_heads, num_heads, norm_eps, qk_norm
+                checkpoint_wrapper(
+                    TransformerBlock(
+                        idx, hidden_size, num_heads, num_heads, norm_eps, qk_norm
+                    )
                 )
                 for idx in range(depth)
             ]
         )
-        self.proj_layer = ProjLayer(hidden_size, scale_factor=1)
+        self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=1))
 
     def random_pos_embed(self, bs, h, w):
         H = W = int(math.sqrt(self.num_patches))
@@ -1011,22 +946,20 @@ class Transformer(nn.Module):
         #     selected_pos_embed = self.center_pos_embed(h, w)
 
         selected_pos_embed = self.pos_embed[: x.shape[1]].expand(bs, x.shape[1], -1)
-        cap_emb = cap_pooled
-
-        adas = self.adaLN_modulation(cap_emb).chunk(6, dim=1)
+        # cap_emb = self.cap_embedder(cap_pooled)
 
         for block in self.blocks:
             x = block(
                 x,
                 x_mask,
-                adas,
-                torch.zeros_like(selected_pos_embed),
+                None,
+                selected_pos_embed,
             )
         # x = self.unpatchify(x, h ,w) # [bs, hidden, 2h, 2w]
         # x = (
         #     x.reshape(bs, h, w, -1).permute(0, 3, 1, 2).contiguous()
         # )  # [bs, hidden, h, w]
-        prediction = self.final_layer(x, cap_emb)  # [bs, k, 2h, 2w]
+        prediction = self.final_layer(x, None)  # [bs, k, 2h, 2w]
         # print(prediction[0, :, 0, 0].min(), prediction[0, :, 0, 0].max(), prediction[0, :, 0, 0].softmax(-1).min(), prediction[0, :, 0, 0].softmax(-1).max())
         return prediction
 
@@ -1084,27 +1017,25 @@ class AnyResolutionModel(nn.Module):
         # )
 
         self.input_transform = nn.Sequential(
+            nn.LayerNorm(codebooks[0][1], norm_eps),
+            nn.Linear(codebooks[0][1], hidden_size),
             nn.LayerNorm(hidden_size, norm_eps),
         )
-
-        # self.cap_transform = nn.Sequential(
-        #     nn.LayerNorm(hidden_size, norm_eps),
-        # )
 
         self.first_level_pos_embed = nn.Parameter(
             nn.init.trunc_normal_(
                 torch.empty(1, canvas_size[-1] * canvas_size[-1], self.hidden_size),
-                std=math.sqrt(2 / (5 * self.hidden_size)),
+                std=math.sqrt(2 / (5)),
             )
         )
-        # self.input_transform2 = nn.Sequential(
-        #     nn.LayerNorm(hidden_size, norm_eps),
-        #     # nn.Linear(
-        #     #     hidden_size,
-        #     #     hidden_size,
-        #     #     bias=True,
-        #     # ),
-        # )
+        self.cap_to_first_token = nn.Sequential(
+            nn.LayerNorm(hidden_size, norm_eps),
+            nn.Linear(
+                hidden_size,
+                hidden_size,
+                bias=True,
+            ),
+        )
 
         self.level_indicator_pos_embed = nn.Parameter(
             nn.init.trunc_normal_(
@@ -1160,7 +1091,6 @@ class AnyResolutionModel(nn.Module):
                 raise RuntimeError("The given training input is not a list.")
             results = list()
             total = list()
-            # cap_pooled = self.input_transform(cap_pooled)
             for level, current in enumerate(all_forwards_for_residual):
                 if level == 0:
                     if current is not None:
@@ -1177,7 +1107,7 @@ class AnyResolutionModel(nn.Module):
                     current = selected_pos_embed.expand(
                         bs, h * w, -1
                     )  # [bs, hw, hidden]
-                    current = self.input_transform(selected_pos_embed + cap_pooled[:, None, ...])
+                    current = selected_pos_embed + self.cap_to_first_token(cap_pooled)[:, None, ...]
                     # current = (
                     #     current.permute(0, 2, 1)
                     #     .reshape(bs, self.token_dim, h, w)

@@ -272,6 +272,15 @@ class _baseGenTrainer(Restorable):
 
                 scaler.unscale_(self._optimizer)
 
+                # all_grad = list()
+                # for name, param in self._model.named_parameters():
+                #     if param.grad is not None:
+                #         all_grad.append((name, torch.norm(param.grad, 2)))
+
+                # all_grad = sorted(all_grad, key=lambda x: -x[1])
+                # print(sum(x[1] for x in all_grad))
+                # print(all_grad[:10])
+
                 norm = self._optimizer.clip_grad_norm(4.0)
 
                 # self._optimizer.step()
