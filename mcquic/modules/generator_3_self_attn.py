@@ -106,6 +106,9 @@ class GeneratorV3SelfAttention(nn.Module):
                 std=math.sqrt(2 / (5 * self.next_residual_predictor.hidden_size)),
             )
         )
+        self.norm = nn.LayerNorm(8)
+        self.norm.weight.data.fill_(1.)
+        self.norm.bias.data.zero_()
 
         self.compressor.eval()
         # self.text_encoder.eval()
@@ -133,9 +136,14 @@ class GeneratorV3SelfAttention(nn.Module):
                 formerLevel = None
                 for level, code in enumerate(codes[:-1]):
                     # list - 1 of [n, c, 2h, 2w]
-                    all_forwards_for_residual.append(
-                        self.compressor.residual_forward(code, formerLevel, level)
-                    )
+                    res_level = self.compressor.residual_forward(code, formerLevel, level)
+                    # result level [n, 2h, 2w, c]
+                    res_level = res_level.permute(0, 2, 3, 1)
+                    res_level = self.norm(res_level)
+                    # result level [n, c, 2h, 2w]
+                    res_level = res_level.permute(0, 3, 1, 2)
+                    
+                    all_forwards_for_residual.append(res_level)
                     formerLevel = all_forwards_for_residual[-1]
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
@@ -652,7 +660,7 @@ class FinalLayer(nn.Module):
 
         # Zero-out adaLN modulation layers in DiT blocks:
         # nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
+        # nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
     def forward(self, x, condition):
         # if hasattr(self, "prototypes"):
@@ -728,10 +736,10 @@ class TransformerBlock(nn.Module):
         self.attention = Attention(dim, n_heads, n_kv_heads, qk_norm)
         self.ffn = FeedForward(dim=dim, hidden_dim=4 * dim)
         self.layer_id = layer_id
-        self.attention_norm = RMSNorm(dim, eps=norm_eps)
-        self.attention_norm1 = RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm = RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm1 = RMSNorm(dim, eps=norm_eps)
+        self.attention_norm = nn.LayerNorm(dim, eps=norm_eps)
+        self.attention_norm1 = nn.LayerNorm(dim, eps=norm_eps)
+        self.ffn_norm = nn.LayerNorm(dim, eps=norm_eps)
+        self.ffn_norm1 = nn.LayerNorm(dim, eps=norm_eps)
 
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
@@ -742,17 +750,17 @@ class TransformerBlock(nn.Module):
             ),
         )
 
-        self._initialize_weights()
+        # self._initialize_weights()
 
-    def _initialize_weights(self):
-        # Initialize transformer layers and proj layer:
-        def _basic_init(module):
-            if isinstance(module, nn.Linear):
-                torch.nn.init.trunc_normal_(module.weight)
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0)
+    # def _initialize_weights(self):
+    #     # Initialize transformer layers and proj layer:
+    #     def _basic_init(module):
+    #         if isinstance(module, nn.Linear):
+    #             torch.nn.init.trunc_normal_(module.weight)
+    #             if module.bias is not None:
+    #                 nn.init.constant_(module.bias, 0)
 
-        self.apply(_basic_init)
+    #     self.apply(_basic_init)
         # nn.init.zeros_(self.adaLN_modulation[1].weight)
 
     def forward(
@@ -868,7 +876,7 @@ class Transformer(nn.Module):
                 for idx in range(depth)
             ]
         )
-        self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=1))
+        # self.proj_layer = checkpoint_wrapper(ProjLayer(hidden_size, scale_factor=1))
 
         self._initialize_weights()
 
@@ -885,16 +893,22 @@ class Transformer(nn.Module):
         nn.init.trunc_normal_(self.cap_embedder[1].weight, std=init_std)
         nn.init.trunc_normal_(self.token_embedder[1].weight, std=init_std)
         # NOTE: copy from VAR
+        init_adaln = 0.5
+        init_adaln_gate = 1e-5
         for block in self.blocks:
-            block.attention.wo.weight.data.div_(math.sqrt(2 * depth))
-            block.ffn.w2.weight.data.div_(math.sqrt(2 * depth))
+            block.attention.wo.weight.data.div_(math.sqrt(2 * self.depth))
+            block.ffn.w2.weight.data.div_(math.sqrt(2 * self.depth))
             
             if hasattr(block, "adaLN_modulation"):
-                block.adaLN_modulation[-1].weight.data[2 * self.hidden_size:].mul_(0.5) # adaln
-                block.adaLN_modulation[-1].weight.data[:2 * self.hidden_size].mul_(1e-5) # gamma
+                block.adaLN_modulation[-1].weight.data[2 * self.hidden_size:].mul_(init_adaln) # adaln
+                block.adaLN_modulation[-1].weight.data[:2 * self.hidden_size].mul_(init_adaln_gate) # gamma
                 if hasattr(block.adaLN_modulation[-1], "bias") and block.adaLN_modulation[-1].bias is not None:
                     block.adaLN_modulation[-1].bias.data.zero_()
-        
+
+            if isinstance(self.final_layer, FinalLayer):
+                self.final_layer.adaLN_modulation[-1].weight.data.mul_(init_adaln)
+                if hasattr(self.final_layer.adaLN_modulation[-1], 'bias') and self.final_layer.adaLN_modulation[-1].bias is not None:
+                    self.final_layer.adaLN_modulation[-1].bias.data.zero_()
 
     def random_pos_embed(self, bs, h, w):
         H = W = int(math.sqrt(self.num_patches))
@@ -1051,6 +1065,17 @@ class AnyResolutionModel(nn.Module):
 
         self.register_buffer("input_mask", self.prepare_input_mask(canvas_size), False)
         # self.blocks = nn.ModuleList([AnyResolutionBlock(canvas_size[-1], in_channels, hidden_size, depth, num_heads, mlp_ratio) for _ in canvas_size] * len(canvas_size))
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            with_weight = hasattr(m, 'weight') and m.weight is not None
+            with_bias = hasattr(m, 'bias') and m.bias is not None
+            if isinstance(m, (nn.LayerNorm, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm, nn.GroupNorm, nn.InstanceNorm1d, nn.InstanceNorm2d, nn.InstanceNorm3d)):
+                if with_weight: 
+                    m.weight.data.fill_(1.)
+                if with_bias: 
+                    m.bias.data.zero_()
 
     def prepare_input_mask(self, canvas_size):
         lengths = list()
