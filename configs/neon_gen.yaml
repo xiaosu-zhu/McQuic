@@ -1,14 +1,16 @@
 # migrate from neon.yaml
 model:
-  key: GeneratorV3SelfAttention
+  key: GeneratorVAR
   params:
+    # For compressor
     channel: 256
     k: 4096
     size: [16, 8, 8, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
     denseNorm: false
+    loadFrom: compressor/dynamic_20000.ckpt
+    # For VAR
     qk_norm: true
     norm_eps: 1.e-5
-    loadFrom: compressor/dynamic_20000.ckpt
 train:
   totalStep: 10000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
   batchSize: 12
@@ -24,8 +26,10 @@ train:
   optim:
     key: Adam
     params:
-      lr: 5.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
-      weight_decay: 0.1
+      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      weight_decay: 0.0
+      betas: !!python/tuple [0.9, 0.95]
+      fused: true
       # use_nvlamb: true
   schdr:
     # key: Placeholder

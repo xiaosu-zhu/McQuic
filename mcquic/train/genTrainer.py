@@ -266,7 +266,7 @@ class _baseGenTrainer(Restorable):
                 self._model.zero_grad()
 
                 with torch.autocast('cuda', dtype=torch.bfloat16):
-                    predictions, loss, codes, xHat, subLosses = self._model(images, texts)
+                    predictions, loss, codes, xHat, subLosses = self._model(images, texts.to(self.localRank, non_blocking=True))
                     self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()

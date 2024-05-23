@@ -21,7 +21,7 @@ import mcquic.train.lrSchedulers as _
 import mcquic.loss
 from mcquic.loss.lpips import LPIPS
 from mcquic.modules.generator_3 import *
-from mcquic.modules.generator_var import *
+from mcquic.modules.generator_3_var import *
 from mcquic.modules.generator_3_self_attn import *
 from mcquic.modules.generator_3_self_attn_wo_ada import *
 
