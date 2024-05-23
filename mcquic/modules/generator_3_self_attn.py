@@ -197,8 +197,8 @@ class GeneratorV3SelfAttention(nn.Module):
             self.next_residual_predictor.model.final_layer.linear.weight.data.mul_(init_head)
             self.next_residual_predictor.model.final_layer.linear.bias.data.zero_()
 
-        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].weight.data.zero_()
-        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].bias.data.zero_()
+        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].weight.data.mul_(init_adaln)
+        self.next_residual_predictor.model.final_layer.adaLN_modulation[-1].bias.data.mul_(init_adaln_gamma)
 
         depth = self.next_residual_predictor.depth
         for block_idx, transformerBlock in enumerate(self.next_residual_predictor.model.blocks):
@@ -210,8 +210,10 @@ class GeneratorV3SelfAttention(nn.Module):
             #     nn.init.trunc_normal_(sab.ffn.fcg.weight, std=1e-5)
             # transformerBlock.adaLN_modulation[-1].weight.data[2*hidden_size:].mul_(init_adaln)
             # transformerBlock.adaLN_modulation[-1].weight.data[:2*hidden_size].mul_(init_adaln_gamma)
-        self.next_residual_predictor.model.adaLN_modulation[-1].weight.data.zero_()
-        self.next_residual_predictor.model.adaLN_modulation[-1].bias.data.zero_()
+        # self.next_residual_predictor.model.adaLN_modulation[-1].weight.data.zero_()
+        # self.next_residual_predictor.model.adaLN_modulation[-1].bias.data.zero_()
+        self.next_residual_predictor.model.adaLN_modulation[-1].weight.data.mul_(init_adaln)
+        self.next_residual_predictor.model.adaLN_modulation[-1].bias.data.mul_(init_adaln_gamma)
 
         # sab.ada_gss.data[:, :, 2:].mul_(init_adaln)
         # sab.ada_gss.data[:, :, :2].mul_(init_adaln_gamma)
@@ -230,16 +232,19 @@ class GeneratorV3SelfAttention(nn.Module):
                 # from low resolution to high resolution
                 # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
                 # NOTE: therefore, we manually split image into batch 16
-            with torch.no_grad():
-                codes = self.compressor.encode(image)
-            all_forwards_for_residual = list()
-            formerLevel = None
-            for level, code in enumerate(codes[:-1]):
-                # list - 1 of [n, c, 2h, 2w]
-                all_forwards_for_residual.append(
-                    self.residual_forward(code, formerLevel, level)
-                )
-                formerLevel = all_forwards_for_residual[-1]
+            with torch.autocast("cuda", enabled=False):
+                with torch.no_grad():
+                    codes = self.compressor.encode(image.float())
+                all_forwards_for_residual = list()
+                formerLevel = None
+                for level, code in enumerate(codes[:-1]):
+                    # list - 1 of [n, c, 2h, 2w]
+                    all_forwards_for_residual.append(
+                        self.residual_forward(code, formerLevel, level)
+                    )
+                    formerLevel = all_forwards_for_residual[-1]
+
+
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
@@ -265,8 +270,10 @@ class GeneratorV3SelfAttention(nn.Module):
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
 
+            all_forwards_for_residual = [x.to(torch.float16) for x in all_forwards_for_residual]
+
             rawPredictions = self.next_residual_predictor(
-                [None, *all_forwards_for_residual], self.class_pos_embed[condition]
+                [None, *all_forwards_for_residual], self.class_pos_embed[condition].to(torch.float16)
             )
 
             loss = list()
@@ -277,7 +284,7 @@ class GeneratorV3SelfAttention(nn.Module):
                 pre = rawPredictions[:, curIdx : curIdx + (h * w)]
                 pre = pre.permute(0, 2, 1).reshape(bs, -1, h, w)
                 predictions.append(pre)
-                loss.append(F.cross_entropy(pre, gt, reduction="none", label_smoothing=0.1))
+                loss.append((h * w, F.cross_entropy(pre, gt, reduction="none", label_smoothing=0.1)))
                 curIdx += h * w
 
             # loss = [
@@ -293,17 +300,17 @@ class GeneratorV3SelfAttention(nn.Module):
             # restoredCodes.insert(
             #     0, first_level.detach().clone().argmax(1, keepdim=True)
             # )
-            with torch.no_grad():
+            with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 restored = self.compressor.decode(restoredCodes)
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
             return (
                 [*predictions],
-                sum([l.sum() for l in loss]) / len(image),
+                sum([(hw * l).sum() for hw, l in loss]) / len(image) / (curIdx + 1),
                 codes,
                 restored,
-                [l.mean() for l in loss],
+                [l.mean() for _, l in loss],
             )
         else:
             # inference
@@ -717,7 +724,7 @@ class ProjLayer(nn.Module):
     def __init__(self, hidden_size, scale_factor=4):
         super().__init__()
         self.hidden_size = hidden_size
-        self.norm = nn.LayerNorm(hidden_size, eps=1e-6)
+        self.norm = nn.LayerNorm(hidden_size)
         self.proj = nn.Linear(hidden_size, scale_factor * hidden_size, bias=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -892,7 +899,7 @@ class Transformer(nn.Module):
         depth=28,
         num_heads=16,
         vocab_size=4096,
-        norm_eps=1e-5,
+        norm_eps=1e-6,
         qk_norm=False,
         # learn_sigma=True,
     ):
@@ -1061,7 +1068,7 @@ class AnyResolutionModel(nn.Module):
         depth=28,
         num_heads=16,
         qk_norm=False,
-        norm_eps=1e-5,
+        norm_eps=1e-6,
     ):
         super().__init__()
         # self.token_dim = codebooks[0][-1]

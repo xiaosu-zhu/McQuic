@@ -1,37 +1,39 @@
 model:
-  key: GeneratorV3
+  key: GeneratorV3SelfAttention
   params:
-    channel: 32
-    k: [4096, 4096, 4096, 4096, 4096]
-    m: [1, 1, 1, 1, 1]
+    channel: 256
+    k: 4096
+    size: [16, 8, 8, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
     denseNorm: false
     qk_norm: true
-    norm_eps: 1e-5
-    loadFrom: compressor.ckpt
+    norm_eps: 1.e-6
+    loadFrom: compressor/val_40000.ckpt
 train:
-  totalStep: 10000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 8
+  totalStep: 75000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+  batchSize: 28
   epoch: 20
   valFreq: 2500
   trainSet: /ssdfs/datahome/tj24011/datasets/raw/imagenet/imagenet-1k/data
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
-  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/generation_saved_imagenet_attn
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/generation_saved_imagenet_selfattn
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py
     # - some/modules/to/be/registered2.py
   optim:
-    key: FusedLAMB
+    key: Adam
     params:
-      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
-      weight_decay: 0.0
+      lr: 4.e-5 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      weight_decay: 0.05
+      betas: !!python/tuple [0.9, 0.95]
+      fused: true
       # use_nvlamb: true
   schdr:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 10000 # totalimage / gpus / batchsize * epochs
-      warmup_steps: 250
+      first_cycle_steps: 75000 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 750
       gamma: 1.0
       lrScaleRatio: 0.0
   gpu:

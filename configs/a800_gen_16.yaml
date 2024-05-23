@@ -1,18 +1,19 @@
 model:
-  key: Generator
+  key: GeneratorV3SelfAttention
   params:
-    mode: forward
-    channel: 32
-    k: [4096, 4096, 4096, 4096, 4096]
-    m: [1, 1, 1, 1, 1]
+    channel: 256
+    k: 4096
+    size: [16, 8, 8, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
     denseNorm: false
-    loadFrom: compressor.ckpt
+    qk_norm: true
+    norm_eps: 1.e-5
+    loadFrom: compressor/val_40000.ckpt
 train:
   totalStep: 25000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 144
+  batchSize: 48
   epoch: 2
   valFreq: 2500
-  trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/cc3m-wds/*train*.tar
+  trainSet: /ssdfs/datahome/tj24011/datasets/raw/imagenet/imagenet-1k
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
   saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/generation_saved
   target: MsSSIM
@@ -23,7 +24,7 @@ train:
     key: FusedLAMB
     params:
       lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
-      weight_decay: 0.001
+      weight_decay: 0.0
       # use_nvlamb: true
   schdr:
     # key: Placeholder

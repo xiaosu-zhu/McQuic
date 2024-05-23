@@ -284,39 +284,33 @@ class DummySaver(Saver):
 def parseOptimGroup(namedModules, namedParams, excludeClass, excludeName):
     included = set()
     excluded = set()
+    for name, param in namedParams:
+        continueFlag = False
+        for excName in excludeName:
+            if excName in name:
+                excluded.add(param)
+                continueFlag = True
+                break
+
     for mn, m in namedModules:
         for pn, p in m.named_parameters():
-            if not p.requires_grad:
-                continue
-            fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
-
-            continueFlag = False
-            for excName in excludeName:
-                if excName in pn:
-                    excluded.add(fpn)
-                    continueFlag = True
-                    break
-            if continueFlag:
-                continue
-
             if isinstance(m, excludeClass):
                 excluded.add(fpn)
-            else:
-                included.add(fpn)
 
 
+    all_params = {p for _, p in namedParams}
+    included = all_params - excluded
     # validate that we considered every parameter
     param_dict = {pn: p for pn, p in namedParams if p.requires_grad}
-    # inter_params = included & excluded
-    # union_params = included | excluded
-    # if not len(inter_params) == 0:
-    #     raise ValueError(f"parameters {str(inter_params)} made it into both decay/no_decay sets!")
-    # if not len(param_dict.keys() - union_params) == 0:
-    #     raise ValueError(f"parameters {(str(param_dict.keys() - union_params))} were not separated into either decay/no_decay set!")
-    included = set(param_dict.keys()) - excluded
+    inter_params = included & excluded
+    union_params = included | excluded
+    if not len(inter_params) == 0:
+        raise ValueError(f"parameters {str(inter_params)} made it into both decay/no_decay sets!")
+    if not len(all_params - union_params) == 0:
+        raise ValueError(f"parameters {(str(all_params - union_params))} were not separated into either decay/no_decay set!")
 
     # create the pytorch optimizer object
-    return [param_dict[pn] for pn in sorted(list(included))], [param_dict[pn] for pn in sorted(list(excluded))]
+    return list(included), list(excluded)
 
 
 def initializeBaseConfigs(logger: Union[logging.Logger, LoggerBase] = logging.root):

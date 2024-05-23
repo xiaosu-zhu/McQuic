@@ -75,7 +75,7 @@ class _baseGenTrainer(Restorable):
         self.saver.debug("[%s] Creating optimizer...", self.PrettyStep)
         # optimizer = trackingFunctionCalls(optimizer, self.saver)
 
-        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.Embedding, ), ['norm', 'pos_embed', 'bias'])
+        included, excluded = parseOptimGroup(model.named_modules(), model.named_parameters(), (torch.nn.Embedding, ), ['norm', 'pos_embed', 'codebook', 'bias'])
 
         optimizer_grouped_parameters = [
             {
@@ -89,7 +89,7 @@ class _baseGenTrainer(Restorable):
         ]
 
         # NOTE: tokenizer can't use fp16
-        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params, betas=(0.9, 0.95), broadcast_fp16=False)
+        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -169,7 +169,7 @@ class _baseGenTrainer(Restorable):
 
         model = self._model.module
         # self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
-        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, betas=(0.9, 0.95), **self.config.Train.Optim.Params)
+        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
@@ -265,8 +265,9 @@ class _baseGenTrainer(Restorable):
 
                 self._model.zero_grad()
 
-                predictions, loss, codes, xHat, subLosses = self._model(images, texts)
-                self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
+                with torch.autocast('cuda', dtype=torch.float16):
+                    predictions, loss, codes, xHat, subLosses = self._model(images, texts)
+                    self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
 
@@ -281,7 +282,7 @@ class _baseGenTrainer(Restorable):
                 # print(sum(x[1] for x in all_grad))
                 # print(all_grad[:10])
 
-                norm = self._optimizer.clip_grad_norm(4.0)
+                norm = self._optimizer.clip_grad_norm(2.0)
 
                 # self._optimizer.step()
                 scaler.step(self._optimizer)
