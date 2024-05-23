@@ -89,7 +89,7 @@ class _baseGenTrainer(Restorable):
         ]
 
         # NOTE: tokenizer can't use fp16
-        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
+        self._optimizer = OSS(optimizer_grouped_parameters, optimizer, **self.config.Train.Optim.Params, betas=(0.9, 0.95), broadcast_fp16=False)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -169,7 +169,7 @@ class _baseGenTrainer(Restorable):
 
         model = self._model.module
         # self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
-        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, **self.config.Train.Optim.Params)
+        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, betas=(0.9, 0.95), **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
