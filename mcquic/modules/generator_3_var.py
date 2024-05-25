@@ -219,9 +219,13 @@ class GeneratorVAR(nn.Module):
                 x = x.permute(0, 2, 3, 1).reshape(n, h*w, -1)
                 new_all_forwards_for_residual.append(x.to(torch.bfloat16))
 
+
+            new_all_forwards_for_residual = torch.cat(new_all_forwards_for_residual, 1)
+            new_all_forwards_for_residual.requires_grad_()
+
             rawPredictions = self.next_residual_predictor(
                 # [B], [B, L, D]
-                condition, self.input_transform(torch.cat(new_all_forwards_for_residual, 1))
+                condition, self.input_transform(new_all_forwards_for_residual)
             )
 
             loss = list()
@@ -232,7 +236,7 @@ class GeneratorVAR(nn.Module):
                 pre = rawPredictions[:, curIdx : curIdx + (h * w)]
                 pre = pre.permute(0, 2, 1).reshape(bs, -1, h, w)
                 predictions.append(pre)
-                loss.append((h * w, F.cross_entropy(pre, gt, reduction="none", label_smoothing=0.1)))
+                loss.append((h * w, F.cross_entropy(pre, gt, reduction="none", label_smoothing=0.0)))
                 curIdx += h * w
 
             # loss = [

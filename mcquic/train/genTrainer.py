@@ -248,10 +248,8 @@ class _baseGenTrainer(Restorable):
         scaler = ShardedGradScaler()
 
         images, texts, xHat, codes = None, None, None, None
-
+        trainLoader = trainLoaderFn()
         while True:
-            self.saver.info("[%s] Start a new iteration.", self.PrettyStep)
-            trainLoader = trainLoaderFn()
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for data in trainLoader:
@@ -298,8 +296,6 @@ class _baseGenTrainer(Restorable):
                     gc.collect()
 
             self.saver.info("[%s] All of dataset's sample consumed, start a new iteration.", self.PrettyStep)
-            trainLoader.dataset.close()
-            del trainLoader
             gc.collect()
             gc.collect()
             if self._step >= self._totalStep:
