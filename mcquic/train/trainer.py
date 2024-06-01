@@ -155,6 +155,8 @@ class _baseTrainer(Restorable):
 
         self.resetScheduler(self._scheduler.last_epoch)
 
+        self._totalStep = self.config.Train.TotalStep
+
     def named_parameters(self):
         for name, param in self._model.named_parameters():
             if param.requires_grad:
@@ -268,10 +270,10 @@ class _baseTrainer(Restorable):
                 self._model.zero_grad()
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                xHat, (reconLoss, lpipsLoss), codes, logits = self._model(images)
+                xHat, (reconLoss, mseLoss, lpipsLoss), codes, logits = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (reconLoss + lpipsLoss).backward()
+                (0.5 * reconLoss + 0.5 * mseLoss + 2 * lpipsLoss).backward()
 
                 # scaler.unscale_(self._optimizer)
 

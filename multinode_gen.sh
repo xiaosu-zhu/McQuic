@@ -6,8 +6,8 @@
 #SBATCH --ntasks=2
 #SBATCH --gres=gpu:a800:8
 #SBATCH --cpus-per-task=48
-#SBATCH --output=slurm-%j.out
-#SBATCH --error=slurm-%j.err
+#SBATCH --output=slurm/slurm-%j.out
+#SBATCH --error=slurm/slurm-%j.err
 
 # ntask should be equal to N
 

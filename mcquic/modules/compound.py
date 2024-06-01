@@ -9,7 +9,6 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.loss import Distortion, Rate
-from mcquic.loss.lpips import LPIPS
 from mcquic.modules.compressor import BaseCompressor
 
 _device_t = Union[int, device]
@@ -17,11 +16,15 @@ _devices_t = Sequence[_device_t]
 
 
 class Compound(Module):
-    def __init__(self, compressor: BaseCompressor, distortion: Distortion, lpips: LPIPS):
+    def __init__(self, compressor: BaseCompressor, distortion: Distortion, lpips):
         super().__init__()
         self._compressor = compressor
         self._distortion = distortion
         self._lpips = lpips
+        self._lpips.eval()
+
+        for param in self._lpips.parameters():
+            param.requires_grad = False
 
     def train(self, mode: bool = True):
         retValue = super().train(mode)
@@ -32,8 +35,11 @@ class Compound(Module):
     def forward(self, x: Tensor):
         xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(xHat, x, codes, logits)
-        lpips = self._lpips(xHat, x)
-        return xHat, (distortion, lpips.mean()), codes, logits
+        xHatSmall = F.interpolate(xHat, (224, 224), mode='bilinear')
+        xSmall = F.interpolate(x, (224, 224), mode='bilinear')
+        lpips = self._lpips(xHatSmall, xSmall)
+        mse = F.mse_loss(xHat, x)
+        return xHat, (distortion, mse, lpips.mean()), codes, logits
 
     @property
     def Freq(self):

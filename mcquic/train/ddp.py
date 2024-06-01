@@ -19,7 +19,7 @@ from mcquic.utils.registry import *
 import mcquic.utils.registry
 import mcquic.train.lrSchedulers as _
 import mcquic.loss
-from mcquic.loss.lpips import LPIPS
+import lpips
 from mcquic.modules.generator_3 import *
 from mcquic.modules.generator_3_var import *
 from mcquic.modules.generator_3_self_attn import *
@@ -76,11 +76,11 @@ def _registerBuiltinFunctions():
     LrSchedulerRegistry.register("OneCycle")(torch.optim.lr_scheduler.OneCycleLR)
 
 
-def modelFn(modelParams, lossTarget) -> Tuple[BaseCompressor, mcquic.loss.Distortion, LPIPS]:
+def modelFn(modelParams, lossTarget):
     compressor = Neon(**modelParams)
     criterion = LossRegistry.get(lossTarget)()
-    lpips = LPIPS()
-    return compressor, criterion, lpips
+    lpipsLoss = lpips.LPIPS(net='vgg')
+    return compressor, criterion, lpipsLoss
 
 
 def genModelFn(modelParams, modelTarget):

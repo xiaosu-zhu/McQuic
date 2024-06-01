@@ -19,6 +19,7 @@ compressor/
 clic/
 new_tokenizer/
 *.pth
+saved*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

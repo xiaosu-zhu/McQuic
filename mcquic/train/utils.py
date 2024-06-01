@@ -185,7 +185,7 @@ class Saver:
             if isinstance(value, torch.nn.Module):
                 value.load_state_dict(stateDict, strict=strict)
             elif callable(getattr(value, "load_state_dict", None)):
-                value.load_state_dict(stateDict)
+                value.load_state_dict(stateDict, strict=strict)
             else:
                 if isinstance(value, torch.Tensor):
                     value.data = stateDict
@@ -273,7 +273,7 @@ class DummySaver(Saver):
             if isinstance(value, torch.nn.Module):
                 value.load_state_dict(stateDict, strict=strict)
             elif callable(getattr(value, "load_state_dict", None)):
-                value.load_state_dict(stateDict)
+                value.load_state_dict(stateDict, strict=strict)
             else:
                 if isinstance(value, torch.Tensor):
                     value.data = stateDict
