@@ -248,8 +248,12 @@ class _baseGenTrainer(Restorable):
         scaler = ShardedGradScaler()
 
         images, texts, xHat, codes = None, None, None, None
-        trainLoader = trainLoaderFn()
+        trainLoader, sampler = trainLoaderFn()
+
+        epoch = 0
         while True:
+            sampler.set_epoch(epoch)
+            epoch += 1
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for data in trainLoader:

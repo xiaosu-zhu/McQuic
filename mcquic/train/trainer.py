@@ -256,9 +256,8 @@ class _baseTrainer(Restorable):
         # localRank = int(os.environ['LOCAL_RANK'])
 
         while True:
-            trainLoader = trainLoaderFn()
+            trainLoader, sampler = trainLoaderFn()
             self.saver.info("[%s] Start a new iteration.", self.PrettyStep)
-            trainLoader = trainLoaderFn()
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for images in trainLoader:

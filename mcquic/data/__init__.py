@@ -23,7 +23,7 @@ from mcquic.data.transforms import (
     getEvalTransform,
     getTrainingPreprocessWithText,
 )
-from mcquic.data.dataset import Basic, BasicLMDB
+from mcquic.data.dataset import Basic, BasicLMDB, JourneyDB
 
 from torchvision.transforms.functional import to_tensor
 from torchvision.io.image import ImageReadMode, decode_image
@@ -107,19 +107,21 @@ def getTrainLoader(
     # NOTE: they (wds) recommend to batch in advance, not in dataloader
     # NOTE: don't use their (wds) collate function, it is wrong.
     if gen:
-        trainDataset = (
-            load_dataset(
-                "webdataset", data_dir=datasetPath, split="train", streaming=True
-            )
-            .shuffle(seed=3407, buffer_size=10_000)
-            .map(wdsImageNetWithLabel)
-            .map(getTrainingPreprocessWithText())
-            # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
-            # .shuffle(500)
-            # .map(wdsImageNetWithLabel)
-            # .map(getTrainingPreprocessWithText())
-            # .batched(batchSize, collation_fn=default_collate, partial=False)
-        )
+        # trainDataset = (
+        #     load_dataset(
+        #         "webdataset", data_dir=datasetPath, split="train", streaming=True
+        #     )
+        #     .shuffle(seed=3407, buffer_size=10_000)
+        #     .map(wdsImageNetWithLabel)
+        #     .map(getTrainingPreprocessWithText())
+        #     # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
+        #     # .shuffle(500)
+        #     # .map(wdsImageNetWithLabel)
+        #     # .map(getTrainingPreprocessWithText())
+        #     # .batched(batchSize, collation_fn=default_collate, partial=False)
+        # )
+        trainDataset = JourneyDB(os.path.join(datasetPath, 'train'), wdsDecodeWithText)
+
     else:
         allTarGZ = glob.glob(str(datasetPath))
         trainDataset = (
@@ -136,19 +138,24 @@ def getTrainLoader(
             .batched(batchSize, collation_fn=default_collate, partial=False)
         )
     logger.debug("Create training set: %s", trainDataset)
+
+    sampler = DistributedSampler() if gen else None
+
     # NOTE: we use native dataloader
     trainLoader = DataLoader(
         trainDataset,
         batch_size=batchSize if gen else None,
+        sampler=sampler,
         num_workers=(
-            min(min(batchSize // 2, 48), trainDataset.n_shards)
+            # min(min(batchSize // 2, 48), trainDataset.n_shards)
+            min(batchSize // 2, 48)
             if gen
             else min(batchSize + 4, 16)
         ),
         pin_memory=True,
-        persistent_workers=False,
+        persistent_workers=gen,
     )
-    return trainLoader
+    return trainLoader, sampler
 
 
 def getValLoader(

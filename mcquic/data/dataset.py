@@ -8,7 +8,10 @@ import io
 
 import lmdb
 import torch
+import jsonlines
 from torch import Tensor
+from torch import nn
+from torch.utils.data import Dataset
 from torchvision.io import read_image
 from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.datasets import VisionDataset
@@ -62,6 +65,34 @@ def _makeDataset(directory: StrPath, extensions: Optional[Tuple[str, ...]] = Non
             if is_valid_file(path):
                 instances.append(path)
     return instances
+
+
+class JourneyDB(Dataset):
+    def __init__(self, root: StrPath, transform: Optional[Callable] = None):
+        super().__init__(self)
+        self.root = root
+        self.transform = transform if transform is not None else nn.Identity()
+        self.records = list()
+        with jsonlines.open(os.path.join(root, 'train_anno_realease_repath.jsonl')) as reader:
+            for obj in reader:
+                self.records.append(obj)
+
+    def __str__(self) -> str:
+        return f"<JourneyDB> at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, index):
+        obj = self.records[index]
+
+        sample = dict()
+        with open(os.path.join(self.root, 'img', obj['img_path']), 'rb') as fp:
+            binary = fp.read()
+        sample['jpg'] = binary
+        sample['txt'] = obj['Task2']['Caption']
+        return self.transform(sample)
+
 
 
 class Basic(VisionDataset):
