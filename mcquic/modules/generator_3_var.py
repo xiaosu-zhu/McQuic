@@ -58,19 +58,19 @@ class GeneratorVAR(nn.Module):
 
         self.compressor = Neon(channel, k, size, denseNorm)
 
-        # logging.debug("Start loading clip...")
-        # self.text_encoder = CLIPTextModel.from_pretrained(
-        #     "openai/clip-vit-base-patch32", local_files_only=True
-        # )
-        # logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
-        # self.text_tokenizer = CLIPProcessor.from_pretrained(
-        #     "openai/clip-vit-base-patch32", local_files_only=True
-        # )
-        # logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
-        # for params in self.text_encoder.parameters():
-        #     params.requires_grad_(False)
+        logging.debug("Start loading clip...")
+        self.text_encoder = CLIPTextModel.from_pretrained(
+            "openai/clip-vit-base-patch32", local_files_only=True
+        )
+        logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
+        self.text_tokenizer = CLIPProcessor.from_pretrained(
+            "openai/clip-vit-base-patch32", local_files_only=True
+        )
+        logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
+        for params in self.text_encoder.parameters():
+            params.requires_grad_(False)
 
-        # clip_text_channels = self.text_encoder.text_model.config.hidden_size
+        clip_text_channels = self.text_encoder.text_model.config.hidden_size
 
         # NOTE: text_to_first_level: This transforms text embeddings to the first level token
         # NOTE: next_residual_predictor: we only need first (level - 1) codebook, and corresponding canvas.
@@ -79,7 +79,7 @@ class GeneratorVAR(nn.Module):
 
         depth = 24
 
-        self.next_residual_predictor: VAR = checkpoint_wrapper(VAR(
+        self.next_residual_predictor: VAR = VAR(
             (8, 4096),
             len(IMAGENET2012_LABELS),
             depth=depth,
@@ -89,50 +89,11 @@ class GeneratorVAR(nn.Module):
             attn_l2_norm=True,
             patch_nums=size[::-1],
             drop_path_rate=0.1 * depth/24
-        ))
+        )
         logging.debug("Created any-res transformer.")
 
         self.next_residual_predictor.init_weights(init_adaln=0.5, init_adaln_gamma=1e-5, init_head=0.02, init_std=-1)
 
-
-
-        # from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
-        # from mcquic.nn.blocks import AttentionBlock
-        # from mcquic.nn.convs import conv3x3, conv1x1, pixelShuffle3x3
-        # from mcquic.modules.quantizer import _multiCodebookDeQuantization
-
-
-        # decoders = list()
-        # dequantizers = list()
-
-        # codebook = nn.Parameter(nn.init.trunc_normal_(torch.empty(1, k, self.next_residual_predictor.Cvae), std=math.sqrt(2 / (6 * self.next_residual_predictor.Cvae))))
-
-        # lastSize = size[0] * 2
-        # # reverse adding encoder, decoder and quantizer
-        # for i, thisSize in enumerate(size):
-        #     if thisSize == lastSize // 2:
-        #         # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
-        #         # NOTE: quantizer is from large to small, but _freqEMA is from small to large
-        #         dequantizer = _multiCodebookDeQuantization(codebook)
-
-        #         restoreHead = pixelShuffle3x3(self.next_residual_predictor.Cvae, self.next_residual_predictor.Cvae, 2)
-        #     elif thisSize == lastSize:
-        #         dequantizer = _multiCodebookDeQuantization(codebook)
-
-        #         restoreHead = conv3x3(self.next_residual_predictor.Cvae, self.next_residual_predictor.Cvae)
-        #     else:
-        #         raise ValueError('The given size sequence does not half or equal to from left to right.')
-
-
-        #     lastSize = thisSize
-
-        #     decoders.append(restoreHead)
-        #     dequantizers.append(dequantizer)
-
-
-        # self._decoders: nn.ModuleList = nn.ModuleList(decoders)
-
-        # self._dequantizers: nn.ModuleList = nn.ModuleList(dequantizers)
 
         self.input_transform = nn.Identity() # nn.LayerNorm(self.next_residual_predictor.Cvae, 1e-6)
 
@@ -168,7 +129,7 @@ class GeneratorVAR(nn.Module):
         # self.text_encoder.eval()
         return retValue
 
-    def forward(self, image, condition: torch.Tensor):
+    def forward(self, image, condition: List[str]):
         if self.training:
             ###################### Preparing inputs #########################
                 # list of [n, 1, h, w], len of list == levels
@@ -191,24 +152,24 @@ class GeneratorVAR(nn.Module):
 
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
-                # batch_encoding = self.text_tokenizer(
-                #     text=condition,
-                #     return_attention_mask=True,
-                #     padding=True,
-                #     truncation=True,
-                #     return_tensors="pt",
-                # )
+                batch_encoding = self.text_tokenizer(
+                    text=condition,
+                    return_attention_mask=True,
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                )
 
-                # input_ids = batch_encoding.input_ids.to(image.device)
-                # attention_mask = batch_encoding.attention_mask.to(image.device)
+                input_ids = batch_encoding.input_ids.to(image.device)
+                attention_mask = batch_encoding.attention_mask.to(image.device)
 
-                # # last_hidden_state: [B, max_len, D]
-                # # pooler_output: [B, D]
-                # text_embedding: (
-                #     transformers.modeling_outputs.BaseModelOutputWithPooling
-                # ) = self.text_encoder(
-                #     input_ids, attention_mask=attention_mask, return_dict=True
-                # )
+                # last_hidden_state: [B, max_len, D]
+                # pooler_output: [B, D]
+                text_embedding: (
+                    transformers.modeling_outputs.BaseModelOutputWithPooling
+                ) = self.text_encoder(
+                    input_ids, attention_mask=attention_mask, return_dict=True
+                )
 
             # NOTE: remove product quantization artifacts, since we don't use product quantization
             codes = [c.squeeze(1) for c in codes]
@@ -224,8 +185,8 @@ class GeneratorVAR(nn.Module):
             new_all_forwards_for_residual.requires_grad_()
 
             rawPredictions = self.next_residual_predictor(
-                # [B], [B, L, D]
-                condition, self.input_transform(new_all_forwards_for_residual)
+                # [B, T, D_T], [B, D_T], [B, L, D]
+                text_embedding.last_hidden_state, text_embedding.pooler_output, torch.where(attention_mask==1, 0., -torch.inf), self.input_transform(new_all_forwards_for_residual)
             )
 
             loss = list()
@@ -594,7 +555,7 @@ class SharedAdaLin(nn.Linear):
 
 class VAR(nn.Module):
     def __init__(
-        self, codebook_size,
+        self, clip_text_channels,
         num_classes=1000, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
         norm_eps=1e-6, shared_aln=False, cond_drop_rate=0.1,
         attn_l2_norm=False,
@@ -629,7 +590,8 @@ class VAR(nn.Module):
         init_std = math.sqrt(1 / self.C / 3)
         self.num_classes = num_classes
         self.uniform_prob = torch.full((1, num_classes), fill_value=1.0 / num_classes, dtype=torch.float32, device=torch.cuda.current_device())
-        self.class_emb = nn.Embedding(self.num_classes + 1, self.C)
+        self.clip_text_channels = clip_text_channels
+        self.class_emb = nn.Linear(clip_text_channels, self.C)
         nn.init.trunc_normal_(self.class_emb.weight.data, mean=0, std=init_std)
         self.pos_start = nn.Parameter(torch.empty(1, self.first_l, self.C))
         nn.init.trunc_normal_(self.pos_start.data, mean=0, std=init_std)
@@ -653,14 +615,15 @@ class VAR(nn.Module):
         norm_layer = partial(nn.LayerNorm, eps=norm_eps)
         self.drop_path_rate = drop_path_rate
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule (linearly increasing)
+        # NOTE: if use shared_aln, you should disable checkpoint_wrapper
         self.blocks = nn.ModuleList([
-            AdaLNSelfAttn(
+            checkpoint_wrapper(AdaLNSelfAttn(
                 cond_dim=self.D, shared_aln=shared_aln,
                 block_idx=block_idx, embed_dim=self.C, norm_layer=norm_layer, num_heads=num_heads, mlp_ratio=mlp_ratio,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[block_idx], last_drop_p=0 if block_idx == 0 else dpr[block_idx-1],
                 attn_l2_norm=attn_l2_norm,
                 flash_if_available=flash_if_available, fused_if_available=fused_if_available,
-            )
+            ))
             for block_idx in range(depth)
         ])
 
@@ -760,7 +723,7 @@ class VAR(nn.Module):
         for b in self.blocks: b.attn.kv_caching(False)
         return self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)   # de-normalize, from [-1, 1] to [0, 1]
 
-    def forward(self, label_B: torch.LongTensor, x_BLCv_wo_first_l: torch.Tensor) -> torch.Tensor:  # returns logits_BLV
+    def forward(self, text_embedding, text_pooled_embedding, text_mask, x_BLCv_wo_first_l: torch.Tensor) -> torch.Tensor:  # returns logits_BLV
         """
         :param label_B: label_B
         :param x_BLCv_wo_first_l: teacher forcing input (B, self.L-self.first_l, self.Cvae)
@@ -769,8 +732,7 @@ class VAR(nn.Module):
         bg, ed = self.begin_ends[self.prog_si] if self.prog_si >= 0 else (0, self.L)
         B = x_BLCv_wo_first_l.shape[0]
         with torch.cuda.amp.autocast(enabled=False):
-            label_B = torch.where(torch.rand(B, device=label_B.device) < self.cond_drop_rate, self.num_classes, label_B)
-            sos = cond_BD = self.class_emb(label_B)
+            sos = cond_BD = self.class_emb(text_pooled_embedding)
             sos = sos.unsqueeze(1).expand(B, self.first_l, -1) + self.pos_start.expand(B, self.first_l, -1)
 
             if self.prog_si == 0: x_BLC = sos
@@ -785,15 +747,36 @@ class VAR(nn.Module):
         main_type = torch.matmul(temp, temp).dtype
 
         x_BLC = x_BLC.to(dtype=main_type)
+
+        # concate text with input
+        # [B, T+L, C]
+        x_BLC = torch.cat([self.class_emb(text_embedding), x_BLC], 1)
+
         cond_BD_or_gss = cond_BD_or_gss.to(dtype=main_type)
+
+        # [1, 1, L, L]
         attn_bias = attn_bias.to(dtype=main_type)
+        attn_bias = attn_bias.expand(B, 1, ed, ed)
+
+        # concate with text_mask, (0 for valid, -inf for masked)
+        # [B, 1, T+L, T+L]
+        # row t (0~T): [text_mask, all_invalid]
+        # row l (T~T+L): [text_mask, raw_mask]
+        text_length = text_mask.shape[-1]
+        expanded_bias = attn_bias.new_empty(B, 1, text_length + ed, text_length + ed).fill_(-torch.inf)
+
+        # fill first text_length columns (B, 1, T+L, T) with text_mask (B, 1, 1, T)
+        expanded_bias[:, :, :, :text_length] = text_mask[:, None, None, :] #.expand(B, 1, text_length + ed, text_length)
+        # fill lower right with attn_bias
+        expanded_bias[:, :, text_length:, text_length:] = attn_bias
 
         AdaLNSelfAttn.forward
         for i, b in enumerate(self.blocks):
-            x_BLC = b(x=x_BLC, cond_BD=cond_BD_or_gss, attn_bias=attn_bias)
+            x_BLC = b(x=x_BLC, cond_BD=cond_BD_or_gss, attn_bias=expanded_bias)
         x_BLC = self.get_logits(x_BLC.float(), cond_BD)
 
         if self.prog_si == 0:
+            raise NotImplementedError
             if isinstance(self.word_embed, nn.Linear):
                 x_BLC[0, 0, 0] += self.word_embed.weight[0, 0] * 0 + self.word_embed.bias[0] * 0
             else:
@@ -802,7 +785,9 @@ class VAR(nn.Module):
                     if p.requires_grad:
                         s += p.view(-1)[0] * 0
                 x_BLC[0, 0, 0] += s
-        return x_BLC    # logits BLV, V is vocab_size
+
+        # drop first text_length, only pick desired output
+        return x_BLC[:, text_length:]    # logits BLV, V is vocab_size
 
     def init_weights(self, init_adaln=0.5, init_adaln_gamma=1e-5, init_head=0.02, init_std=0.02, conv_std_or_gain=0.02):
         if init_std < 0: init_std = (1 / self.C / 3) ** 0.5     # init_std < 0: automated
