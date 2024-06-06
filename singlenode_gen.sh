@@ -4,7 +4,7 @@
 #SBATCH -p A800
 #SBATCH -N 1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:a800:8
+#SBATCH --gres=gpu:a800:2
 #SBATCH --cpus-per-task=48
 #SBATCH --output=slurm/slurm-%j.out
 #SBATCH --error=slurm/slurm-%j.err
@@ -22,8 +22,8 @@ conda activate mcquic
 TOKENIZERS_PARALLELISM=false NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 srun torchrun \
 --nnodes 1 \
 --max_restarts 3 \
---nproc_per_node 8 \
+--nproc_per_node 2 \
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint localhost:0 \
-mcquic/train/__main__.py -G configs/imagenet/a800_gen_16_forward.yaml
+mcquic/train/__main__.py -G configs/journey.yaml

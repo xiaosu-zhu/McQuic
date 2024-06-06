@@ -10,6 +10,7 @@ import logging
 import os
 import io
 from PIL import Image
+import pickle
 
 Image.MAX_IMAGE_PIXELS = None
 import glob
@@ -24,6 +25,8 @@ from mcquic.data.transforms import (
     getTrainingPreprocessWithText,
 )
 from mcquic.data.dataset import Basic, BasicLMDB, JourneyDB
+
+import jsonlines
 
 from torchvision.transforms.functional import to_tensor
 from torchvision.io.image import ImageReadMode, decode_image
@@ -81,16 +84,19 @@ def wdsDecodeWithText(sample):
 def wdsImageNetWithLabel(sample):
     from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES, IMAGENET2012_LABELS
 
-    # with io.BytesIO(sample["jpeg"]) as stream:
-    #     img = Image.open(stream).convert("RGB")
-    #     image = to_tensor(img.copy()).detach().clone()
-    #     img.close()
-
     label = IMAGENET2012_LABELS[sample["__key__"].split("_")[0]]
     # caption = f"a photo of {label}"
     image = sample["jpeg"].convert("RGB")
 
     return {"jpeg": image, "label": label}
+
+
+def wdsJouneyDBWithLabel(sample, records):
+    text = records[sample['__key__']]['Task2']['Caption']
+    # caption = f"a photo of {label}"
+    image = sample["jpg"].convert("RGB")
+
+    return {"jpeg": image, "label": text}
 
 
 def getTrainLoader(
@@ -107,21 +113,27 @@ def getTrainLoader(
     # NOTE: they (wds) recommend to batch in advance, not in dataloader
     # NOTE: don't use their (wds) collate function, it is wrong.
     if gen:
-        # trainDataset = (
-        #     load_dataset(
-        #         "webdataset", data_dir=datasetPath, split="train", streaming=True
-        #     )
-        #     .shuffle(seed=3407, buffer_size=10_000)
-        #     .map(wdsImageNetWithLabel)
-        #     .map(getTrainingPreprocessWithText())
-        #     # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
-        #     # .shuffle(500)
-        #     # .map(wdsImageNetWithLabel)
-        #     # .map(getTrainingPreprocessWithText())
-        #     # .batched(batchSize, collation_fn=default_collate, partial=False)
-        # )
-        trainDataset = JourneyDB(os.path.join(datasetPath, 'train'), wdsDecodeWithText)
+        with open(os.path.join(datasetPath, 'data', 'train', 'train_anno_realease_repath.pkl'), 'rb') as fp:
+            records = pickle.load(fp)
 
+        def wdsJouneyDBWithLabelWrapper(sample):
+            return wdsJouneyDBWithLabel(sample, records)
+
+        trainDataset = (
+            load_dataset(
+                "webdataset", data_dir=datasetPath, split="train", streaming=True
+            )
+            .shuffle(seed=3407, buffer_size=10_000)
+            .map(wdsJouneyDBWithLabelWrapper)
+            .map(getTrainingPreprocessWithText())
+            .remove_columns(["jpg"])
+            # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
+            # .shuffle(500)
+            # .map(wdsImageNetWithLabel)
+            # .map(getTrainingPreprocessWithText())
+            # .batched(batchSize, collation_fn=default_collate, partial=False)
+        )
+        
     else:
         allTarGZ = glob.glob(str(datasetPath))
         trainDataset = (
@@ -139,23 +151,20 @@ def getTrainLoader(
         )
     logger.debug("Create training set: %s", trainDataset)
 
-    sampler = DistributedSampler() if gen else None
-
     # NOTE: we use native dataloader
     trainLoader = DataLoader(
         trainDataset,
         batch_size=batchSize if gen else None,
-        sampler=sampler,
         num_workers=(
-            # min(min(batchSize // 2, 48), trainDataset.n_shards)
-            min(batchSize // 2, 48)
+            min(min(batchSize // 2, 48), trainDataset.n_shards)
             if gen
             else min(batchSize + 4, 16)
         ),
         pin_memory=True,
-        persistent_workers=gen,
+        persistent_workers=False,
     )
-    return trainLoader, sampler
+
+    return trainLoader
 
 
 def getValLoader(

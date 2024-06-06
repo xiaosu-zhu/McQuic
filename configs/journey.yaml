@@ -1,0 +1,41 @@
+model:
+  key: GeneratorVAR
+  params:
+    # For compressor
+    channel: 256
+    k: 4096
+    size: [16, 8, 8, 8, 8, 4, 4, 4, 4, 2, 2, 2, 2, 1, 1, 1, 1]
+    denseNorm: false
+    loadFrom: saved_final/latest/val_200000.ckpt
+train:
+  totalStep: 75000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
+  batchSize: 32
+  epoch: 20
+  valFreq: 20000
+  trainSet: /ssdfs/datahome/tj24011/datasets/raw/journeydb/
+  valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/gen_journey
+  target: MsSSIM
+  externalLib: []
+    # - some/modules/to/be/registered1.py
+    # - some/modules/to/be/registered2.py
+  optim:
+    key: Adam
+    params:
+      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      weight_decay: 0.0
+      betas: !!python/tuple [0.9, 0.95]
+      fused: true
+      # use_nvlamb: true
+  schdr:
+    # key: Placeholder
+    key: CosineAnnealingWarmupRestarts
+    params:
+      first_cycle_steps: 75000 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 750
+      gamma: 1.0
+      lrScaleRatio: 0.0
+  gpu:
+    gpus: 8
+    vRam: -1
+    wantsMore: false

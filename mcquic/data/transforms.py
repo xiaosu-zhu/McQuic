@@ -31,7 +31,9 @@ def getTrainingPreprocessWithText():
     def call(x):
         img = x["jpeg"]
         text = x["label"]
-        return {"jpeg": transform(img), "label": text}
+
+        sample = {"jpeg": transform(img), "label": text}
+        return sample
     return call
 
 def getTrainingTransform(gen: bool = False):

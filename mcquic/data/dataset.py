@@ -6,12 +6,14 @@ from pathlib import Path
 import glob
 import io
 
+import pickle
 import lmdb
+import datasets
 import torch
 import jsonlines
 from torch import Tensor
 from torch import nn
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 from torchvision.io import read_image
 from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.datasets import VisionDataset
@@ -20,6 +22,13 @@ from vlutils.runtime import relativePath
 from vlutils.types import StrPath
 from PIL import Image
 from PIL import ImageFile
+
+
+from mcquic.data.transforms import (
+    getTrainingPreprocess,
+    getEvalTransform,
+    getTrainingPreprocessWithText,
+)
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -68,30 +77,60 @@ def _makeDataset(directory: StrPath, extensions: Optional[Tuple[str, ...]] = Non
 
 
 class JourneyDB(Dataset):
-    def __init__(self, root: StrPath, transform: Optional[Callable] = None):
-        super().__init__(self)
+    def __init__(self, root: StrPath, maxTxns: int = 1):
+        super().__init__()
         self.root = root
-        self.transform = transform if transform is not None else nn.Identity()
-        self.records = list()
-        with jsonlines.open(os.path.join(root, 'train_anno_realease_repath.jsonl')) as reader:
-            for obj in reader:
-                self.records.append(obj)
+        self.dataset = datasets.load_dataset(
+                "webdataset", data_dir=root, split="train", streaming=True
+            )
+            .shuffle(seed=3407, buffer_size=10_000)
+            .map(self.wdsJouneyDBWithLabelWrapper)
+            .map(getTrainingPreprocessWithText())
+            .remove_columns(["jpg"])
+
+
+        self._root = root
+        self._maxTxns = maxTxns
+        # env and txn is lazy-loaded in ddp. They can't be pickled
+        self._env: Union[lmdb.Environment, None] = None
+        self._txn: Union[lmdb.Transaction, None] = None
+        # Length is needed for DistributedSampler, but we can't use env to get it, env can't be pickled.
+        # So we decide to read from metadata placed in the same folder --- see src/misc/datasetCreate.py
+        with open(os.path.join(root, "metadata.json"), "r") as fp:
+            metadata = json.load(fp)
+        self._length = metadata["length"]
+        self._repeat = repeat
+
+    def _initEnv(self):
+        self._env = lmdb.open(self.root, map_size=int(1024 ** 4), subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=self._maxTxns, lock=False)
+        self._txn = self._env.begin(write=False, buffers=True)
+
+    def wdsJouneyDBWithLabel(self, sample):
+        if self._env is None or self._txn is None:
+            self._initEnv()
+
+        record = pickle.loads(self._txn.get(sample['__key__'].encode('utf-8')))
+        # caption = f"a photo of {label}"
+        image = sample["jpg"].convert("RGB")
+
+        return {"jpeg": image, "label": record['Task2']['Caption']}
+
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._txn is not None:
+            self._txn.__exit__(exc_type, exc_val, exc_tb)
+        if self._env is not None:
+            self._env.close()
+
 
     def __str__(self) -> str:
         return f"<JourneyDB> at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
 
-    def __len__(self):
-        return len(self.records)
-
-    def __getitem__(self, index):
-        obj = self.records[index]
-
-        sample = dict()
-        with open(os.path.join(self.root, 'img', obj['img_path']), 'rb') as fp:
-            binary = fp.read()
-        sample['jpg'] = binary
-        sample['txt'] = obj['Task2']['Caption']
-        return self.transform(sample)
+    def __iter__(self):
+        return iter(self)
 
 
 

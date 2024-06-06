@@ -11,6 +11,7 @@ import math
 import torch.nn.functional as F
 import random
 from fairscale.nn.checkpoint import checkpoint_wrapper
+import jsonlines
 
 # from flash_attn import flash_attn_qkvpacked_func, flash_attn_func, flash_attn_varlen_func
 from apex.normalization import FusedRMSNorm as RMSNorm
@@ -80,8 +81,7 @@ class GeneratorVAR(nn.Module):
         depth = 24
 
         self.next_residual_predictor: VAR = VAR(
-            (8, 4096),
-            len(IMAGENET2012_LABELS),
+            (8, 4096), clip_text_channels,
             depth=depth,
             embed_dim=1536,
             num_heads=16,
@@ -555,8 +555,7 @@ class SharedAdaLin(nn.Linear):
 
 class VAR(nn.Module):
     def __init__(
-        self, clip_text_channels,
-        num_classes=1000, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
+        self, codebook_size, clip_text_channels, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
         norm_eps=1e-6, shared_aln=False, cond_drop_rate=0.1,
         attn_l2_norm=False,
         patch_nums=(1, 2, 3, 4, 5, 6, 8, 10, 13, 16),   # 10 steps by default
@@ -588,8 +587,6 @@ class VAR(nn.Module):
 
         # 2. class embedding
         init_std = math.sqrt(1 / self.C / 3)
-        self.num_classes = num_classes
-        self.uniform_prob = torch.full((1, num_classes), fill_value=1.0 / num_classes, dtype=torch.float32, device=torch.cuda.current_device())
         self.clip_text_channels = clip_text_channels
         self.class_emb = nn.Linear(clip_text_channels, self.C)
         nn.init.trunc_normal_(self.class_emb.weight.data, mean=0, std=init_std)

@@ -248,12 +248,9 @@ class _baseGenTrainer(Restorable):
         scaler = ShardedGradScaler()
 
         images, texts, xHat, codes = None, None, None, None
-        trainLoader, sampler = trainLoaderFn()
+        trainLoader = trainLoaderFn()
 
-        epoch = 0
         while True:
-            sampler.set_epoch(epoch)
-            epoch += 1
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for data in trainLoader:
@@ -268,7 +265,7 @@ class _baseGenTrainer(Restorable):
                 self._model.zero_grad()
 
                 with torch.autocast('cuda', dtype=torch.bfloat16):
-                    predictions, loss, codes, xHat, subLosses = self._model(images, texts.to(self.localRank, non_blocking=True))
+                    predictions, loss, codes, xHat, subLosses = self._model(images, texts)
                     self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 scaler.scale(loss).backward()
                 # loss.backward()
