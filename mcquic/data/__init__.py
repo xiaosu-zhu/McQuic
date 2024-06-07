@@ -19,6 +19,8 @@ from vlutils.logger import LoggerBase
 from vlutils.saver import StrPath
 from torch.utils.data import default_collate
 
+from datasets.distributed import split_dataset_by_node
+
 from mcquic.data.transforms import (
     getTrainingPreprocess,
     getEvalTransform,
@@ -144,6 +146,8 @@ def getTrainLoader(
             .batched(batchSize, collation_fn=default_collate, partial=False)
         )
     logger.debug("Create training set: %s", trainDataset)
+
+    trainDataset = split_dataset_by_node(trainDataset, world_size=int(os.environ['WORLD_SIZE']), rank=int(os.environ['RANK']))
 
     # NOTE: we use native dataloader
     trainLoader = DataLoader(

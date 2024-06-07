@@ -54,6 +54,7 @@ class _baseGenTrainer(Restorable):
         usingMultiNode = self.worldSize > torch.cuda.device_count()
 
         self._step = 0
+        self._epoch = 0
 
         self._totalStep = config.Train.TotalStep
 
@@ -251,6 +252,7 @@ class _baseGenTrainer(Restorable):
         trainLoader = trainLoaderFn()
 
         while True:
+            trainLoader.dataset.set_epoch(self._epoch)
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
             for data in trainLoader:
@@ -299,6 +301,7 @@ class _baseGenTrainer(Restorable):
             self.saver.info("[%s] All of dataset's sample consumed, start a new iteration.", self.PrettyStep)
             gc.collect()
             gc.collect()
+            self._epoch += 1
             if self._step >= self._totalStep:
                 break
             # self._epochFinish(epochFinishHook, images=images, restored=xHat, codes=codes, logits=logits, **trainingArgs)
