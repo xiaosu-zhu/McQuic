@@ -7,6 +7,8 @@ import tarfile
 from io import BytesIO
 import json
 from joblib import Parallel, delayed
+from PIL import Image
+import PIL
 
 
 def main(path):
@@ -47,6 +49,14 @@ def rewrite_tars(src, tgt, chunk):
 
             # write file content
             file_content = srcTar.extractfile(srcInfo).read()
+
+            file_io = BytesIO(file_content)
+            try:
+                a = Image.open(file_io)
+            except (PIL.UnidentifiedImageError, PIL.Image.DecompressionBombError):
+                continue
+
+
             new_tarinfo = tarfile.TarInfo(name=srcInfo.name.replace('/', '_'))
             new_tarinfo.size = len(file_content)
             tgtTar.addfile(new_tarinfo, BytesIO(file_content))

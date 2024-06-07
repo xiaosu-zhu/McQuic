@@ -154,6 +154,8 @@ class _baseGenTrainer(Restorable):
 
         self.resetScheduler(self._scheduler.last_epoch)
 
+        self._totalStep = self.config.Train.TotalStep
+
     def named_parameters(self):
         for name, param in self._model.named_parameters():
             if param.requires_grad:
