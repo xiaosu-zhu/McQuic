@@ -8,11 +8,11 @@ model:
     denseNorm: false
     loadFrom: saved_final/latest/val_200000.ckpt
 train:
-  totalStep: 75000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 32
-  epoch: 20
-  valFreq: 20000
-  trainSet: /ssdfs/datahome/tj24011/datasets/raw/journeydb/
+  totalStep: 40000 # totalimage / gpus / batchsize * epochs (4120000 / 16 / 80 * 10)
+  batchSize: 80
+  epoch: 10
+  valFreq: 10000
+  trainSet: /ssdfs/datahome/tj24011/datasets/raw/journeydb-wds/
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
   saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/gen_journey
   target: MsSSIM
@@ -31,8 +31,8 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 75000 # totalimage / gpus / batchsize * epochs
-      warmup_steps: 750
+      first_cycle_steps: 40000 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 400
       gamma: 1.0
       lrScaleRatio: 0.0
   gpu:

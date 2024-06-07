@@ -24,7 +24,7 @@ from mcquic.data.transforms import (
     getEvalTransform,
     getTrainingPreprocessWithText,
 )
-from mcquic.data.dataset import Basic, BasicLMDB, JourneyDB
+from mcquic.data.dataset import Basic, BasicLMDB
 
 import jsonlines
 
@@ -91,8 +91,8 @@ def wdsImageNetWithLabel(sample):
     return {"jpeg": image, "label": label}
 
 
-def wdsJouneyDBWithLabel(sample, records):
-    text = records[sample['__key__']]['Task2']['Caption']
+def wdsJouneyDBWithLabel(sample):
+    text = sample['txt']
     # caption = f"a photo of {label}"
     image = sample["jpg"].convert("RGB")
 
@@ -113,18 +113,12 @@ def getTrainLoader(
     # NOTE: they (wds) recommend to batch in advance, not in dataloader
     # NOTE: don't use their (wds) collate function, it is wrong.
     if gen:
-        with open(os.path.join(datasetPath, 'data', 'train', 'train_anno_realease_repath.pkl'), 'rb') as fp:
-            records = pickle.load(fp)
-
-        def wdsJouneyDBWithLabelWrapper(sample):
-            return wdsJouneyDBWithLabel(sample, records)
-
         trainDataset = (
             load_dataset(
                 "webdataset", data_dir=datasetPath, split="train", streaming=True
             )
             .shuffle(seed=3407, buffer_size=10_000)
-            .map(wdsJouneyDBWithLabelWrapper)
+            .map(wdsJouneyDBWithLabel)
             .map(getTrainingPreprocessWithText())
             .remove_columns(["jpg"])
             # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
@@ -133,7 +127,7 @@ def getTrainLoader(
             # .map(getTrainingPreprocessWithText())
             # .batched(batchSize, collation_fn=default_collate, partial=False)
         )
-        
+
     else:
         allTarGZ = glob.glob(str(datasetPath))
         trainDataset = (
@@ -156,7 +150,7 @@ def getTrainLoader(
         trainDataset,
         batch_size=batchSize if gen else None,
         num_workers=(
-            min(min(batchSize // 2, 48), trainDataset.n_shards)
+            min(min(batchSize // 2, 8), trainDataset.n_shards)
             if gen
             else min(batchSize + 4, 16)
         ),

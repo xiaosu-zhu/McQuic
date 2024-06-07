@@ -76,64 +76,6 @@ def _makeDataset(directory: StrPath, extensions: Optional[Tuple[str, ...]] = Non
     return instances
 
 
-class JourneyDB(Dataset):
-    def __init__(self, root: StrPath, maxTxns: int = 1):
-        super().__init__()
-        self.root = root
-        self.dataset = datasets.load_dataset(
-                "webdataset", data_dir=root, split="train", streaming=True
-            )
-            .shuffle(seed=3407, buffer_size=10_000)
-            .map(self.wdsJouneyDBWithLabelWrapper)
-            .map(getTrainingPreprocessWithText())
-            .remove_columns(["jpg"])
-
-
-        self._root = root
-        self._maxTxns = maxTxns
-        # env and txn is lazy-loaded in ddp. They can't be pickled
-        self._env: Union[lmdb.Environment, None] = None
-        self._txn: Union[lmdb.Transaction, None] = None
-        # Length is needed for DistributedSampler, but we can't use env to get it, env can't be pickled.
-        # So we decide to read from metadata placed in the same folder --- see src/misc/datasetCreate.py
-        with open(os.path.join(root, "metadata.json"), "r") as fp:
-            metadata = json.load(fp)
-        self._length = metadata["length"]
-        self._repeat = repeat
-
-    def _initEnv(self):
-        self._env = lmdb.open(self.root, map_size=int(1024 ** 4), subdir=True, readonly=True, readahead=False, meminit=False, max_spare_txns=self._maxTxns, lock=False)
-        self._txn = self._env.begin(write=False, buffers=True)
-
-    def wdsJouneyDBWithLabel(self, sample):
-        if self._env is None or self._txn is None:
-            self._initEnv()
-
-        record = pickle.loads(self._txn.get(sample['__key__'].encode('utf-8')))
-        # caption = f"a photo of {label}"
-        image = sample["jpg"].convert("RGB")
-
-        return {"jpeg": image, "label": record['Task2']['Caption']}
-
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._txn is not None:
-            self._txn.__exit__(exc_type, exc_val, exc_tb)
-        if self._env is not None:
-            self._env.close()
-
-
-    def __str__(self) -> str:
-        return f"<JourneyDB> at `{relativePath(self.root)}` with transform: \r\n`{self.transform}`"
-
-    def __iter__(self):
-        return iter(self)
-
-
-
 class Basic(VisionDataset):
     """A Basic dataset that reads all images from a directory.
     """
