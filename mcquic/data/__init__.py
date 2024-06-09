@@ -119,7 +119,7 @@ def getTrainLoader(
             load_dataset(
                 "webdataset", data_dir=datasetPath, split="train", streaming=True
             )
-            .shuffle(seed=3407, buffer_size=10_000)
+            .shuffle(buffer_size=10_000)
             .map(wdsJouneyDBWithLabel)
             .map(getTrainingPreprocessWithText())
             .remove_columns(["jpg"])

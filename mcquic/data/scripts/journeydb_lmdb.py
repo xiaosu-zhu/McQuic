@@ -9,6 +9,10 @@ import json
 from joblib import Parallel, delayed
 from PIL import Image
 import PIL
+import datasets
+from torch.utils.data import DataLoader
+from torch.utils.data import default_collate
+from tqdm import tqdm
 
 
 def main(path):
@@ -37,6 +41,9 @@ def rewrite_tars(src, tgt, chunk):
                 # tgtTar.addfile(srcInfo)
                 continue
 
+            if not srcInfo.name.endswith('jpg'):
+                continue
+
             # 000/[UUID].jpg
             name = srcInfo.name
             key = name.removesuffix('.jpg')
@@ -53,7 +60,7 @@ def rewrite_tars(src, tgt, chunk):
             file_io = BytesIO(file_content)
             try:
                 a = Image.open(file_io)
-            except (PIL.UnidentifiedImageError, PIL.Image.DecompressionBombError):
+            except:
                 continue
 
 
@@ -73,10 +80,32 @@ def rewrite_tars(src, tgt, chunk):
     srcTar.close()
     tgtTar.close()
 
+
+from mcquic.data.transforms import (
+    getTrainingPreprocess,
+    getEvalTransform,
+    getTrainingPreprocessWithText,
+)
+def wdsJouneyDBWithLabel(sample):
+    text = sample['txt']
+    # caption = f"a photo of {label}"
+    image = sample["jpg"].convert("RGB")
+
+    return {"jpeg": image, "label": text}
+
+
+def test_dataset(tgt):
+    dataset = datasets.load_dataset('webdataset', data_dir=tgt, split="train", streaming=True).map(wdsJouneyDBWithLabel).map(getTrainingPreprocessWithText()).remove_columns(["jpg"])
+    loader = DataLoader(dataset, batch_size=48, num_workers=24)
+    for sample in tqdm(loader):
+        continue
+    print('test passed')
+
 if __name__ == '__main__':
     path = sys.argv[1]
     if len(sys.argv) > 2:
         tgt = sys.argv[2]
-        result = Parallel(32)(delayed(rewrite_tars)(path, tgt, i) for i in range(200))
+        result = Parallel(32)(delayed(rewrite_tars)(os.path.join(path, 'data', 'train'), os.path.join(tgt, 'data', 'train'), i) for i in range(200))
+        test_dataset(tgt)
     else:
         main(path)

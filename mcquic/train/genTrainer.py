@@ -146,7 +146,7 @@ class _baseGenTrainer(Restorable):
     def restoreStates(self, path: StrPath):
         self.saver.debug("[%s] Restored state dict from `%s`", self.PrettyStep, path)
 
-        self.saver.load(path, torch.device(f"cuda:{self.localRank}"), logger=self.saver, trainer=self)
+        self.saver.load(path, torch.device(f"cuda:{self.localRank}"), strict=False, logger=self.saver, trainer=self)
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
