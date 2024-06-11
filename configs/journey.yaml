@@ -9,7 +9,7 @@ model:
     loadFrom: saved_final/latest/val_200000.ckpt
 train:
   totalStep: 60000 # totalimage / gpus / batchsize * epochs (4120000 / 16 / 80 * 10)
-  batchSize: 96
+  batchSize: 48
   epoch: 10
   valFreq: 10000
   trainSet: /ssdfs/datahome/tj24011/datasets/raw/journeydb-wds/
