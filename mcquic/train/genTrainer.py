@@ -23,8 +23,8 @@ from vlutils.runtime import relativePath
 from rich import filesize
 import torch.nn.functional as F
 from fairscale.optim.oss import OSS
-from fairscale.nn.data_parallel import ShardedDataParallel as SDP
 from fairscale.optim import AdaScale
+from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.train.utils import Saver, parseOptimGroup
 from mcquic.consts import Consts
@@ -88,9 +88,11 @@ class _baseGenTrainer(Restorable):
         #         "weight_decay": 0.0,
         #     },
         # ]
+        self.saver.debug("[%s] Creating DDP...", self.PrettyStep)
+        self._model = DistributedDataParallel(model, device_ids=[self.localRank])
+        self.saver.debug("[%s] DDP created.", self.PrettyStep)
 
-        # NOTE: tokenizer can't use fp16
-        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
+        self._optimizer = OSS([p for p in self._model.parameters() if p.requires_grad], optimizer, **self.config.Train.Optim.Params, broadcast_fp16=False)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
 
@@ -99,10 +101,6 @@ class _baseGenTrainer(Restorable):
         self._scheduler = scheduler(self._optimizer, **self.config.Train.Schdr.Params)
         self.schdrFn = scheduler
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
-
-        self.saver.debug("[%s] Creating Sharded DDP...", self.PrettyStep)
-        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False, reduce_buffer_size=2 ** 23 if usingMultiNode else 0)
-        self.saver.debug("[%s] Sharded DDP created.", self.PrettyStep)
 
         self.tmpFile = tmpFile
 
@@ -170,17 +168,16 @@ class _baseGenTrainer(Restorable):
     def resetOptimizer(self):
         del self._optimizer
 
-        model = self._model.module
         # self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
-        self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, **self.config.Train.Optim.Params)
+        self._optimizer = OSS([p for p in self._model.parameters() if p.requires_grad], self.optimFn, **self.config.Train.Optim.Params)
 
         for group in self._optimizer.param_groups:
             group.setdefault('initial_lr', group['lr'])
 
         self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
 
-        self._model = SDP(model, self._optimizer)
-        self.saver.debug("[%s] Sharded DDP reset.", self.PrettyStep)
+        # self._model = DistributedDataParallel(model, device_ids=[self.localRank])
+        # self.saver.debug("[%s] DDP reset.", self.PrettyStep)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
@@ -253,6 +250,7 @@ class _baseGenTrainer(Restorable):
         images, texts, xHat, codes = None, None, None, None
         trainLoader = trainLoaderFn()
 
+        self._epoch += 1
         while True:
             trainLoader.dataset.set_epoch(self._epoch)
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)

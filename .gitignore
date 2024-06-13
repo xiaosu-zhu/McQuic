@@ -20,7 +20,7 @@ clic/
 new_tokenizer/
 *.pth
 saved*
-gen_journey/
+gen_journey*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
