@@ -591,7 +591,6 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         quantizers = list()
         dequantizers = list()
 
-        codebook = nn.Parameter(nn.init.trunc_normal_(torch.empty(1, k, channel), std=math.sqrt(2 / (5 * channel))))
 
         lastSize = size[0] * 2
         # reverse adding encoder, decoder and quantizer
@@ -603,6 +602,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                     ResidualBlockWithStride(channel * 4, channel * 4, 2, 1, denseNorm),
                     conv1x1(channel * 4, channel, bias=False)
                 )
+                codebook = nn.Parameter(nn.init.trunc_normal_(torch.empty(1, k, channel), std=math.sqrt(2 / (5 * channel))))
                 # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
                 # NOTE: quantizer is from large to small, but _freqEMA is from small to large
                 quantizer = _multiCodebookQuantization(codebook, self._entropyCoder._freqEMA[-(i+1)])
@@ -613,7 +613,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                     ResidualBlockShuffle(channel * 4, channel * 4, 2, 1, denseNorm),
                     AttentionBlock(channel * 4, 1, denseNorm),
                     ResidualBlock(channel * 4, channel, 1, denseNorm)
-                ) if i < len(size) - 1 else nn.Identity()
+                ) if (i > 0) else nn.Identity()
 
                 restoreHead = nn.Sequential(
                     conv1x1(channel, channel * 4, bias=False),
@@ -628,6 +628,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                     ResidualBlock(channel * 4, channel * 4, 1, denseNorm),
                     conv1x1(channel * 4, channel, bias=False)
                 )
+                codebook = nn.Parameter(nn.init.trunc_normal_(torch.empty(1, k, channel), std=math.sqrt(2 / (5 * channel))))
                 # codebook = nn.Parameter(nn.init.zeros_(torch.empty(mi, ki, channel // mi)))
                 # NOTE: quantizer is from large to small, but _freqEMA is from small to large
                 quantizer = _multiCodebookQuantization(codebook, self._entropyCoder._freqEMA[-(i+1)])
@@ -638,7 +639,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                     ResidualBlock(channel * 4, channel * 4, 1, denseNorm),
                     AttentionBlock(channel * 4, 1, denseNorm),
                     ResidualBlock(channel * 4, channel, 1, denseNorm)
-                ) if i < len(size) - 1 else nn.Identity()
+                ) if (i > 0) else nn.Identity()
 
                 restoreHead = nn.Sequential(
                     conv1x1(channel, channel * 4, bias=False),

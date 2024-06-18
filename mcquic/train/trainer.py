@@ -22,7 +22,8 @@ from vlutils.base import Restorable, FrequecyHook
 from vlutils.runtime import relativePath
 from rich import filesize
 from fairscale.optim.oss import OSS
-from fairscale.nn.data_parallel import ShardedDataParallel as SDP
+# from fairscale.nn.data_parallel import ShardedDataParallel as SDP
+from torch.nn.parallel import DistributedDataParallel
 
 from mcquic.train.utils import Saver, parseOptimGroup
 from mcquic.consts import Consts
@@ -91,6 +92,12 @@ class _baseTrainer(Restorable):
         # optimizer = trackingFunctionCalls(optimizer, self.saver)
         # For generator, we set weight_deacy to 0, so there is no need to use params_group
         # self._optimizer = optimizer(self.trainableParams(), **self.config.Train.Optim.Params)
+
+        self.saver.debug("[%s] Creating DDP...", self.PrettyStep)
+        self._model = DistributedDataParallel(model, device_ids=[self.localRank])
+        self.saver.debug("[%s] DDP created.", self.PrettyStep)
+
+
         self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], optimizer, **self.config.Train.Optim.Params)
         self.optimFn = optimizer
         self.saver.debug("[%s] Optimizer created.", self.PrettyStep)
@@ -100,10 +107,6 @@ class _baseTrainer(Restorable):
         self._scheduler = scheduler(self._optimizer, **self.config.Train.Schdr.Params)
         self.schdrFn = scheduler
         self.saver.debug("[%s] LR scheduler created.", self.PrettyStep)
-
-        self.saver.debug("[%s] Creating Sharded DDP...", self.PrettyStep)
-        self._model = SDP(model, self._optimizer, auto_refresh_trainable=False, reduce_buffer_size=2**23 if usingMultiNode else 0)
-        self.saver.debug("[%s] Sharded DDP created.", self.PrettyStep)
 
         self.tmpFile = tmpFile
 
@@ -171,7 +174,7 @@ class _baseTrainer(Restorable):
     def resetOptimizer(self):
         del self._optimizer
 
-        model = self._model.module
+        # model = self._model.module
         # self._optimizer = self.optimFn(self.trainableParams(), **self.config.Train.Optim.Params)
         self._optimizer = OSS([p for p in model.parameters() if p.requires_grad], self.optimFn, **self.config.Train.Optim.Params)
 
@@ -180,8 +183,8 @@ class _baseTrainer(Restorable):
 
         self.saver.debug("[%s] Optimizer reset.", self.PrettyStep)
 
-        self._model = SDP(model, self._optimizer)
-        self.saver.debug("[%s] Sharded DDP reset.", self.PrettyStep)
+        # self._model = SDP(model, self._optimizer)
+        # self.saver.debug("[%s] Sharded DDP reset.", self.PrettyStep)
 
     def resetScheduler(self, lastEpoch=-1):
         del self._scheduler
@@ -256,7 +259,7 @@ class _baseTrainer(Restorable):
         # localRank = int(os.environ['LOCAL_RANK'])
 
         while True:
-            trainLoader, sampler = trainLoaderFn()
+            trainLoader = trainLoaderFn()
             self.saver.info("[%s] Start a new iteration.", self.PrettyStep)
             self.saver.info("[%s] Fresh training data loader created.", self.PrettyStep)
             # self._epochStart(epochStartHook, **trainingArgs)
@@ -272,7 +275,7 @@ class _baseTrainer(Restorable):
                 xHat, (reconLoss, mseLoss, lpipsLoss), codes, logits = self._model(images)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (0.5 * reconLoss + 0.5 * mseLoss + 2 * lpipsLoss).backward()
+                (reconLoss + mseLoss + 2 * lpipsLoss).backward()
 
                 # scaler.unscale_(self._optimizer)
 
@@ -285,7 +288,7 @@ class _baseTrainer(Restorable):
 
                 # scaler.update()
 
-                self._stepFinish(stepFinishHook, reconLoss=reconLoss, lpipsLoss=lpipsLoss, codes=codes, images=images, restored=xHat, logits=logits, norm=norm, **trainingArgs)
+                self._stepFinish(stepFinishHook, reconLoss=reconLoss, mseLoss=mseLoss, lpipsLoss=lpipsLoss, codes=codes, images=images, restored=xHat, logits=logits, norm=norm, **trainingArgs)
                 del images
                 if self._step >= self._totalStep:
                     break
@@ -419,7 +422,7 @@ class MainTrainer(_baseTrainer):
         self.save(os.path.join(self.saver.SaveDir, "result.ckpt"))
         self.summary()
 
-    def _stepFinishHook(self, *_, reconLoss, lpipsLoss, norm, **__):
+    def _stepFinishHook(self, *_, reconLoss, lpipsLoss, mseLoss, norm, **__):
         distortionDB = self._model.module.formatDistortion(reconLoss)
         moment = self.diffTracker(distortionDB)
 
@@ -429,7 +432,7 @@ class MainTrainer(_baseTrainer):
         if self._step % (self.config.Train.ValFreq // 1000) != 0:
             return
         if self.rank == 0:
-            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Loss_lpips": lpipsLoss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
+            wandb.log({f"Stat/Loss_{self.config.Train.Target}": distortionDB, "Stat/Loss_lpips": lpipsLoss, "Stat/Loss_mse": mseLoss, "Stat/Lr": self._scheduler.get_last_lr()[0], "Stat/Norm": norm}, step=self._step)
         if self._step % (self.config.Train.ValFreq // 100) == 0:
             if torch.isnan(moment) or moment < 0.1:
                 self.saver.critical('Loss becomes NAN. Train crashed.')

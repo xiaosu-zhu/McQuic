@@ -10,7 +10,7 @@ import numpy as np
 import math
 import torch.nn.functional as F
 import random
-# from fairscale.nn.checkpoint import checkpoint_wrapper
+from fairscale.nn.checkpoint import checkpoint_wrapper
 import jsonlines
 
 # from flash_attn import flash_attn_qkvpacked_func, flash_attn_func, flash_attn_varlen_func
@@ -216,11 +216,13 @@ class GeneratorVAR(nn.Module):
             with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 restored = self.compressor.decode(restoredCodes)
 
+            N = curIdx * len(image)
+
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
             return (
                 [*predictions],
-                sum([(l).sum() for hw, l in loss]) / len(image),
+                sum([l.sum() for _, l in loss]) / N,
                 codes,
                 restored,
                 [l.mean() for _, l in loss],
@@ -614,13 +616,13 @@ class VAR(nn.Module):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule (linearly increasing)
         # NOTE: if use shared_aln, you should disable checkpoint_wrapper
         self.blocks = nn.ModuleList([
-            AdaLNSelfAttn(
+            checkpoint_wrapper(AdaLNSelfAttn(
                 cond_dim=self.D, shared_aln=shared_aln,
                 block_idx=block_idx, embed_dim=self.C, norm_layer=norm_layer, num_heads=num_heads, mlp_ratio=mlp_ratio,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[block_idx], last_drop_p=0 if block_idx == 0 else dpr[block_idx-1],
                 attn_l2_norm=attn_l2_norm,
                 flash_if_available=flash_if_available, fused_if_available=fused_if_available,
-            )
+            ))
             for block_idx in range(depth)
         ])
 
@@ -671,7 +673,7 @@ class VAR(nn.Module):
         :param more_smooth: smoothing the pred using gumbel softmax; only used in visualization, not used in FID/IS benchmarking
         :return: if returns_vemb: list of embedding h_BChw := vae_embed(idx_Bl), else: list of idx_Bl
         """
-        if g_seed is None: 
+        if g_seed is None:
             rng = None
         else: self.rng.manual_seed(g_seed); rng = self.rng
 
@@ -688,7 +690,7 @@ class VAR(nn.Module):
         cur_L = 0
         f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])
 
-        for b in self.blocks: 
+        for b in self.blocks:
             b.attn.kv_caching(True)
         for si, pn in enumerate(self.patch_nums):   # si: i-th segment
             ratio = si / self.num_stages_minus_1
@@ -719,7 +721,7 @@ class VAR(nn.Module):
                 next_token_map = self.word_embed(next_token_map) + lvl_pos[:, cur_L:cur_L + self.patch_nums[si+1] ** 2]
                 next_token_map = next_token_map.repeat(2, 1, 1)   # double the batch sizes due to CFG
 
-        for b in self.blocks: 
+        for b in self.blocks:
             b.attn.kv_caching(False)
         return self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)   # de-normalize, from [-1, 1] to [0, 1]
 

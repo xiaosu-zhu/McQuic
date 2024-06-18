@@ -9,7 +9,7 @@ model:
     loadFrom: saved_final/latest/val_200000.ckpt
 train:
   totalStep: 300000 # totalimage / gpus / batchsize * epochs (4120000 / 16 / 80 * 10)
-  batchSize: 16
+  batchSize: 24
   epoch: 10
   valFreq: 10000
   trainSet: /ssdfs/datahome/tj24011/datasets/raw/journeydb-wds/
@@ -31,7 +31,7 @@ train:
     # key: Placeholder
     key: CosineAnnealingWarmupRestarts
     params:
-      first_cycle_steps: 60000 # totalimage / gpus / batchsize * epochs
+      first_cycle_steps: 300000 # totalimage / gpus / batchsize * epochs
       warmup_steps: 3000
       gamma: 1.0
       lrScaleRatio: 0.0

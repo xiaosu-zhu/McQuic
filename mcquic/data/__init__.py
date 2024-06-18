@@ -147,7 +147,8 @@ def getTrainLoader(
         )
     logger.debug("Create training set: %s", trainDataset)
 
-    trainDataset = split_dataset_by_node(trainDataset, world_size=int(os.environ['WORLD_SIZE']), rank=int(os.environ['RANK']))
+    if gen:
+        trainDataset = split_dataset_by_node(trainDataset, world_size=int(os.environ['WORLD_SIZE']), rank=int(os.environ['RANK']))
 
     # NOTE: we use native dataloader
     trainLoader = DataLoader(
