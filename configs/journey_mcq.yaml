@@ -1,0 +1,41 @@
+model:
+  key: GeneratorVARMCQ
+  params:
+    # For compressor
+    channel: 256
+    k: 4096
+    size: [16, 8, 4, 2, 1]
+    denseNorm: false
+    loadFrom: saved_mcq/val_40000.ckpt
+train:
+  totalStep: 300000 # totalimage / gpus / batchsize * epochs (4120000 / 16 / 80 * 10)
+  batchSize: 24
+  epoch: 10
+  valFreq: 10000
+  trainSet: /ssdfs/datahome/tj24011/datasets/raw/journeydb-wds/
+  valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/gen_mcq
+  target: MsSSIM
+  externalLib: []
+    # - some/modules/to/be/registered1.py
+    # - some/modules/to/be/registered2.py
+  optim:
+    key: Adam
+    params:
+      lr: 1.e-4 # PSNR: 5.e-3 # don't try to tune lr, it is best
+      weight_decay: 0.0
+      betas: !!python/tuple [0.9, 0.95]
+      fused: true
+      # use_nvlamb: true
+  schdr:
+    # key: Placeholder
+    key: CosineAnnealingWarmupRestarts
+    params:
+      first_cycle_steps: 300000 # totalimage / gpus / batchsize * epochs
+      warmup_steps: 3000
+      gamma: 1.0
+      lrScaleRatio: 0.0
+  gpu:
+    gpus: 8
+    vRam: -1
+    wantsMore: false

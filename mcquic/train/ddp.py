@@ -24,6 +24,7 @@ from mcquic.modules.generator_3 import *
 from mcquic.modules.generator_3_var import *
 from mcquic.modules.generator_3_self_attn import *
 from mcquic.modules.generator_3_self_attn_wo_ada import *
+from mcquic.modules.generator_3_var_mcq import *
 
 from mcquic.train.utils import getSaver, initializeBaseConfigs
 from mcquic.train.trainer import getTrainer

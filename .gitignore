@@ -21,6 +21,7 @@ new_tokenizer/
 *.pth
 saved*
 gen_journey*/
+gen_*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

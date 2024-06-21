@@ -26,4 +26,4 @@ TOKENIZERS_PARALLELISM=false NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 srun torchrun
 --rdzv_id $RANDOM \
 --rdzv_backend c10d \
 --rdzv_endpoint localhost:0 \
-mcquic/train/__main__.py -G configs/journey.yaml
+mcquic/train/__main__.py -G configs/journey_mcq.yaml

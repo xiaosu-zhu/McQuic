@@ -485,7 +485,7 @@ class MainGenTrainer(_baseGenTrainer):
         payload['Train/Generation'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(restored[:8])]
 
         # gtRestored = self._model.module.compressor.idxBl_to_img(codes, True, True)
-        gtRestored = self._model.module.compressor.decode([c.unsqueeze(1)[:8] for c in codes])
+        gtRestored = self._model.module.compressor.decode([c[:8] for c in codes])
         payload['Train/Reconstruction'] = [wandb.Image(to_pil_image(x)) for x in self.validator.tensorToImage(gtRestored)]
 
         self.run.log({'Train/Text': wandb.Table(data=[[t] for t in texts[:8]], columns=['txt'])}, step=self._step)

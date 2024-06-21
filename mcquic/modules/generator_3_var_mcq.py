@@ -45,7 +45,7 @@ to_ntuple = _ntuple
 
 
 @GeneratorRegistry.register
-class GeneratorVAR(nn.Module):
+class GeneratorVARMCQ(nn.Module):
     def __init__(
         self,
         channel: int,
@@ -81,7 +81,7 @@ class GeneratorVAR(nn.Module):
         depth = 24
 
         self.next_residual_predictor: VAR = VAR(
-            (8, 4096), clip_text_channels,
+            (4, 4096, 16), clip_text_channels,
             depth=depth,
             embed_dim=1536,
             num_heads=16,
@@ -555,17 +555,18 @@ class SharedAdaLin(nn.Linear):
 
 class VAR(nn.Module):
     def __init__(
-        self, codebook_size, clip_text_channels, multi_codebook_size, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
+        self, codebook_size, clip_text_channels, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
         norm_eps=1e-6, shared_aln=False, cond_drop_rate=0.1,
         attn_l2_norm=False,
         patch_nums=(1, 2, 3, 4, 5, 6, 8, 10, 13, 16),   # 10 steps by default
         flash_if_available=True, fused_if_available=True,
     ):
         super().__init__()
-        self.multi_codebook_size = multi_codebook_size
+        m, k, d = codebook_size
+        self.multi_codebook_size = m
         # 0. hyperparameters
         assert embed_dim % num_heads == 0
-        self.Cvae, self.V = codebook_size
+        self.Cvae, self.V = d*m, k
         self.depth, self.C, self.D, self.num_heads = depth, embed_dim, embed_dim, num_heads
 
         self.cond_drop_rate = cond_drop_rate
@@ -644,8 +645,9 @@ class VAR(nn.Module):
         self.register_buffer('attn_bias_for_masking', attn_bias_for_masking.contiguous())
 
         # 6. classifier head
+        self.create_cls_heads(norm_layer)
 
-    def create_cls_heads(self):
+    def create_cls_heads(self, norm_layer):
         head_nms = list()
         heads = list()
         for i, patch in enumerate(self.patch_nums):
@@ -678,7 +680,7 @@ class VAR(nn.Module):
                 head_nm = self.head_nms[i * self.multi_codebook_size + m]
                 head = self.heads[i * self.multi_codebook_size + m]
                 # pick the corresponding part
-                this_patch_logits.append(self.head(self.head_nm(h.float(), cond_BD).float()).float())
+                this_patch_logits.append(head(head_nm(h.float(), cond_BD).float()).float())
             # [B, M, l, K]
             this_patch_logits = torch.stack(this_patch_logits, 1)
             all_logits.append(this_patch_logits)
@@ -843,17 +845,19 @@ class VAR(nn.Module):
                 if with_bias: m.bias.data.zero_()
 
         if init_head >= 0:
-            if isinstance(self.head, nn.Linear):
-                self.head.weight.data.mul_(init_head)
-                self.head.bias.data.zero_()
-            elif isinstance(self.head, nn.Sequential):
-                self.head[-1].weight.data.mul_(init_head)
-                self.head[-1].bias.data.zero_()
+            for m in self.heads:
+                if isinstance(m, nn.Linear):
+                    m.weight.data.mul_(init_head)
+                    m.bias.data.zero_()
+                elif isinstance(m, nn.Sequential):
+                    m[-1].weight.data.mul_(init_head)
+                    m[-1].bias.data.zero_()
 
-        if isinstance(self.head_nm, AdaLNBeforeHead):
-            self.head_nm.ada_lin[-1].weight.data.mul_(init_adaln)
-            if hasattr(self.head_nm.ada_lin[-1], 'bias') and self.head_nm.ada_lin[-1].bias is not None:
-                self.head_nm.ada_lin[-1].bias.data.zero_()
+        for m in self.head_nms:
+            if isinstance(m, AdaLNBeforeHead):
+                m.ada_lin[-1].weight.data.mul_(init_adaln)
+                if hasattr(m.ada_lin[-1], 'bias') and m.ada_lin[-1].bias is not None:
+                    m.ada_lin[-1].bias.data.zero_()
 
         depth = len(self.blocks)
         for block_idx, sab in enumerate(self.blocks):
