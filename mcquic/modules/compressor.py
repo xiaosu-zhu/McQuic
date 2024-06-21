@@ -6,7 +6,7 @@ import mcquic
 from mcquic.consts import Consts
 from mcquic.data.transforms import AlignedPadding
 from mcquic.nn import pixelShuffle3x3
-from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride
+from mcquic.nn import ResidualBlock, ResidualBlockShuffle, ResidualBlockWithStride, ResidualBlockUpSample
 from mcquic.nn.blocks import AttentionBlock
 from mcquic.nn.convs import conv3x3
 from mcquic.utils.specification import FileHeader, ImageSize

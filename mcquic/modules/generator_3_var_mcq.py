@@ -132,10 +132,10 @@ class GeneratorVAR(nn.Module):
     def forward(self, image, condition: List[str]):
         if self.training:
             ###################### Preparing inputs #########################
-                # list of [n, 1, h, w], len of list == levels
-                # from low resolution to high resolution
-                # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
-                # NOTE: therefore, we manually split image into batch 16
+            # list of [n, m, h, w], len of list == levels
+            # from low resolution to high resolution
+            # NOTE: for reflection padding, the input tensor size (`.numel()`) should not exceed 2^32
+            # NOTE: therefore, we manually split image into batch 16
             with torch.autocast("cuda", enabled=False):
                 with torch.no_grad():
                     codes = self.compressor.encode(image.float())
@@ -171,9 +171,6 @@ class GeneratorVAR(nn.Module):
                     input_ids, attention_mask=attention_mask, return_dict=True
                 )
 
-            # NOTE: remove product quantization artifacts, since we don't use product quantization
-            codes = [c.squeeze(1) for c in codes]
-
             new_all_forwards_for_residual = list()
             for x in all_forwards_for_residual:
                 n, c, h, w = x.shape
@@ -184,6 +181,7 @@ class GeneratorVAR(nn.Module):
             new_all_forwards_for_residual = torch.cat(new_all_forwards_for_residual, 1)
             new_all_forwards_for_residual.requires_grad_()
 
+            # [B, M, L, C]
             rawPredictions = self.next_residual_predictor(
                 # [B, T, D_T], [B, D_T], [B, L, D]
                 text_embedding.last_hidden_state, text_embedding.pooler_output, torch.where(attention_mask==1, 0., -torch.inf), self.input_transform(new_all_forwards_for_residual)
@@ -192,12 +190,15 @@ class GeneratorVAR(nn.Module):
             loss = list()
             curIdx = 0
             predictions = list()
+
             for gt in codes:
-                bs, h, w = gt.shape
-                pre = rawPredictions[:, curIdx : curIdx + (h * w)]
-                pre = pre.permute(0, 2, 1).reshape(bs, -1, h, w)
+                bs, m, h, w = gt.shape
+                # [n, m, h*w, k]
+                pre = rawPredictions[:, :, curIdx : curIdx + (h * w)]
+                # [n, k, m, h, w]
+                pre = pre.permute(0, 3, 1, 2).reshape(bs, -1, m, h, w)
                 predictions.append(pre)
-                loss.append((h * w, F.cross_entropy(pre, gt, reduction="none", label_smoothing=0.0)))
+                loss.append((m * h * w, F.cross_entropy(pre, gt, reduction="none", label_smoothing=0.0)))
                 curIdx += h * w
 
             # loss = [
@@ -205,9 +206,9 @@ class GeneratorVAR(nn.Module):
             #     for pre, gt in zip([*predictions], codes)
             # ]
 
-            # list of [n, 1, h, w], len of list == levels
+            # list of [n, m, h, w], len of list == levels
             restoredCodes = [
-                pre.detach().clone().argmax(1, keepdim=True) for pre in predictions
+                pre.detach().clone().argmax(1, keepdim=False) for pre in predictions
             ]
             # [n, 1, h, w]
             # restoredCodes.insert(
@@ -216,7 +217,8 @@ class GeneratorVAR(nn.Module):
             with torch.no_grad(), torch.autocast('cuda', enabled=False):
                 restored = self.compressor.decode(restoredCodes)
 
-            N = curIdx * len(image)
+            # bs*m*L
+            N = curIdx * len(image) * m
 
             # first_level: [n, k, h, w]
             # predictions: list of [n, k, h, w], len of list == levels - 1 (give previous embedding, predict next code)
@@ -553,13 +555,14 @@ class SharedAdaLin(nn.Linear):
 
 class VAR(nn.Module):
     def __init__(
-        self, codebook_size, clip_text_channels, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
+        self, codebook_size, clip_text_channels, multi_codebook_size, depth=16, embed_dim=1024, num_heads=16, mlp_ratio=4., drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
         norm_eps=1e-6, shared_aln=False, cond_drop_rate=0.1,
         attn_l2_norm=False,
         patch_nums=(1, 2, 3, 4, 5, 6, 8, 10, 13, 16),   # 10 steps by default
         flash_if_available=True, fused_if_available=True,
     ):
         super().__init__()
+        self.multi_codebook_size = multi_codebook_size
         # 0. hyperparameters
         assert embed_dim % num_heads == 0
         self.Cvae, self.V = codebook_size
@@ -641,8 +644,19 @@ class VAR(nn.Module):
         self.register_buffer('attn_bias_for_masking', attn_bias_for_masking.contiguous())
 
         # 6. classifier head
-        self.head_nm = AdaLNBeforeHead(self.C, self.D, norm_layer=norm_layer)
-        self.head = nn.Linear(self.C, self.V)
+
+    def create_cls_heads(self):
+        head_nms = list()
+        heads = list()
+        for i, patch in enumerate(self.patch_nums):
+            for m in range(self.multi_codebook_size):
+                head_nms.append(AdaLNBeforeHead(self.C, self.D, norm_layer=norm_layer))
+                heads.append(nn.Linear(self.C, self.V))
+
+        # num_level * multi_codebook
+        self.head_nms = nn.ModuleList(head_nms)
+        self.heads = nn.ModuleList(heads)
+
 
     def get_logits(self, h_or_h_and_residual: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], cond_BD: Optional[torch.Tensor]):
         if not isinstance(h_or_h_and_residual, torch.Tensor):
@@ -650,7 +664,26 @@ class VAR(nn.Module):
             h = resi + self.blocks[-1].drop_path(h)
         else:                               # fused_add_norm is not used
             h = h_or_h_and_residual
-        return self.head(self.head_nm(h.float(), cond_BD).float()).float()
+
+        current = 0
+
+        all_logits = list()
+        for i, patch in enumerate(self.patch_nums):
+            # [B, l==patch**2, C]
+            sub_h = h[:, current:current + (patch ** 2)]
+            current += patch ** 2
+            this_patch_logits = list()
+            for m in range(self.multi_codebook_size):
+                # match this level + this sub-codebook
+                head_nm = self.head_nms[i * self.multi_codebook_size + m]
+                head = self.heads[i * self.multi_codebook_size + m]
+                # pick the corresponding part
+                this_patch_logits.append(self.head(self.head_nm(h.float(), cond_BD).float()).float())
+            # [B, M, l, K]
+            this_patch_logits = torch.stack(this_patch_logits, 1)
+            all_logits.append(this_patch_logits)
+        # [B, M, L, C]
+        return torch.cat(all_logits, -2)
 
     @torch.no_grad()
     def autoregressive_infer_cfg(
@@ -771,21 +804,21 @@ class VAR(nn.Module):
         AdaLNSelfAttn.forward
         for i, b in enumerate(self.blocks):
             x_BLC = b(x=x_BLC, cond_BD=cond_BD_or_gss, attn_bias=expanded_bias)
-        x_BLC = self.get_logits(x_BLC.float(), cond_BD)
+        x_BLC = self.get_logits(x_BLC[:, text_length:].float(), cond_BD)
 
         if self.prog_si == 0:
             raise NotImplementedError
-            if isinstance(self.word_embed, nn.Linear):
-                x_BLC[0, 0, 0] += self.word_embed.weight[0, 0] * 0 + self.word_embed.bias[0] * 0
-            else:
-                s = 0
-                for p in self.word_embed.parameters():
-                    if p.requires_grad:
-                        s += p.view(-1)[0] * 0
-                x_BLC[0, 0, 0] += s
+            # if isinstance(self.word_embed, nn.Linear):
+            #     x_BLC[0, 0, 0] += self.word_embed.weight[0, 0] * 0 + self.word_embed.bias[0] * 0
+            # else:
+            #     s = 0
+            #     for p in self.word_embed.parameters():
+            #         if p.requires_grad:
+            #             s += p.view(-1)[0] * 0
+            #     x_BLC[0, 0, 0] += s
 
         # drop first text_length, only pick desired output
-        return x_BLC[:, text_length:]    # logits BLV, V is vocab_size
+        return x_BLC    # logits BLV, V is vocab_size
 
     def init_weights(self, init_adaln=0.5, init_adaln_gamma=1e-5, init_head=0.02, init_std=0.02, conv_std_or_gain=0.02):
         if init_std < 0: init_std = (1 / self.C / 3) ** 0.5     # init_std < 0: automated

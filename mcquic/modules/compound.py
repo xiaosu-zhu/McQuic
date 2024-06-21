@@ -35,9 +35,9 @@ class Compound(Module):
     def forward(self, x: Tensor):
         xHat, yHat, codes, logits = self._compressor(x)
         distortion = self._distortion(xHat, x, codes, logits)
-        xHatSmall = F.interpolate(xHat, (224, 224), mode='bilinear')
-        xSmall = F.interpolate(x, (224, 224), mode='bilinear')
-        lpips = self._lpips(xHatSmall, xSmall)
+        # xHatSmall = F.interpolate(xHat, (224, 224), mode='bilinear')
+        # xSmall = F.interpolate(x, (224, 224), mode='bilinear')
+        lpips = self._lpips(xHat, x)
         mse = F.mse_loss(xHat, x)
         return xHat, (distortion, mse, lpips.mean()), codes, logits
 

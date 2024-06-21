@@ -4,7 +4,7 @@
 #SBATCH -p A800
 #SBATCH -N 1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:a800:8
+#SBATCH --gres=gpu:a800:2
 #SBATCH --cpus-per-task=48
 #SBATCH --output=slurm/slurm-%j.out
 #SBATCH --error=slurm/slurm-%j.err
@@ -18,4 +18,4 @@ module load cuda/12.1
 source /ssdfs/datahome/tj24011/software/miniconda3/etc/profile.d/conda.sh
 conda activate mcquic
 
-TOKENIZERS_PARALLELISM=false NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 srun torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=8 mcquic/train/__main__.py configs/a800_8.yaml
+TOKENIZERS_PARALLELISM=false NCCL_P2P_LEVEL=NVL OMP_NUM_THREADS=16 srun torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 mcquic/train/__main__.py configs/a800_16.yaml

@@ -52,6 +52,7 @@ from mcquic.nn.convs import MaskedConv2d, conv1x1, conv3x3, pixelShuffle3x3, pix
 __all__ = [
     "ResidualBlockWithStride",
     "ResidualBlockShuffle",
+    "ResidualBlockUpSample",
     "ResidualBlock",
     "ResidualBlockMasked",
     "AttentionBlock",
@@ -159,6 +160,45 @@ class ResidualBlockShuffle(_residulBlock):
             pixelShuffle3x3(inChannels, outChannels, upsample))
 
 
+
+@ModuleRegistry.register
+class ResidualBlockUpSample(_residulBlock):
+    """Residual block with PixelShuffle for up-sampling.
+
+    Default structure:
+    ```plain
+        +--------------+
+        | Input ----╮  |
+        | SiLU      |  |
+        | PixShuf3  |  |
+        | IGDN      |  |
+        | Conv3s1   |  |
+        | + <-------╯  |
+        | Output       |
+        +--------------+
+    ```
+    """
+    def __init__(self, inChannels: int, outChannels: int, upsample: int = 2, groups: int = 1, denseNorm: bool = False):
+        """Usage:
+        ```python
+            # A block performs 2x up-sampling
+            block = ResidualBlockShuffle(128, 128)
+        ```
+        Args:
+            inChannels (int): Channels of input.
+            outChannels (int): Channels of output.
+            upsample (int): Up-sampling rate (default: 2).
+            groups (int): Group convolution (default: 1).
+        """
+        super().__init__(
+            # TODO: test additional norm
+            nn.SiLU(),
+            nn.Sequential(conv3x3(inChannels, outChannels), nn.Upsample(scale_factor=upsample, mode='bilinear', align_corners=True)),
+            InvGenDivNorm(outChannels),
+            conv3x3(outChannels, outChannels),
+            nn.Upsample(scale_factor=upsample, mode='bilinear', align_corners=True))
+
+
 @ModuleRegistry.register
 class ResidualBlock(_residulBlock):
     """Basic residual block.
@@ -195,7 +235,7 @@ class ResidualBlock(_residulBlock):
             # TODO: test additional norm
             nn.SiLU(),
             conv3x3(inChannels, outChannels),
-            nn.GroupNorm(groups, outChannels) if denseNorm else nn.SiLU(),
+            nn.SiLU(), # nn.GroupNorm(groups, outChannels),
             conv3x3(outChannels, outChannels),
             skip)
 
