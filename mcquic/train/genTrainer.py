@@ -148,7 +148,7 @@ class _baseGenTrainer(Restorable):
 
         self.saver.debug("[%s] Restore network parameters finished.", self.PrettyStep)
 
-        self.resetOptimizer()
+        # self.resetOptimizer()
 
         self.resetScheduler(self._scheduler.last_epoch)
 
