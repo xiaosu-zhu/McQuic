@@ -154,3 +154,4 @@ dmypy.json
 .pyre/
 
 tmp/
+results/

@@ -12,7 +12,7 @@ train:
   valFreq: 20000
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
-  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/saved
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/results/tokenizers/saved_mcq
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py

@@ -148,8 +148,6 @@ class GeneratorVARMCQ(nn.Module):
                         )
                         formerLevel = all_forwards_for_residual[-1]
 
-
-
                 # input_ids: [B, max_len] int ids, where `49407` for padding
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
                 batch_encoding = self.text_tokenizer(
