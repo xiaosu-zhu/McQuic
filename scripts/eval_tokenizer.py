@@ -72,7 +72,7 @@ def main(args):
         T.Normalize(0.5, 0.5),
     ])
     detransform = DeTransform().to(0)
-    dataset = CustomImageDataset(args.inp_path, transform=eval_transform)
+    dataset = CustomImageDataset(data_path, transform=eval_transform)
     dataloader = DataLoader(
         dataset,
         batch_size=1,
@@ -116,7 +116,7 @@ def main(args):
     print(f"PSNR: {mean_psnr}, MS-SSIM: {mean_msssim}")
     
     # 5. save results
-    res_path = f"./results/eval/{args.dataset}"
+    res_path = f"./results/eval/{args.dataset}_{args.steps}"
     os.makedirs(res_path, exist_ok=True)
     for idx, item in enumerate(img_restored):
         # cv2_image = np.transpose(item, (1, 2, 0))
@@ -128,10 +128,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--num_gpus", type=int, default=1)
+    parser.add_argument("--steps", type=str, default="")
     parser.add_argument("--ckpt", type=str, default="results/tokenizers/saved_mcq/val_20000.ckpt")
     parser.add_argument("--precision", default="fp32", choices=["bf16", "fp32"])
     parser.add_argument("--hf_token", type=str, default=None, help="huggingface read token for accessing gated repo.")
-    parser.add_argument("--dataset", type=str, default="kodak", choice=["kodak", "clic2024"], help="huggingface read token for accessing gated repo.")
+    parser.add_argument("--dataset", type=str, default="kodak", choices=["kodak", "clic2024"], help="huggingface read token for accessing gated repo.")
     parser.add_argument("--root", type=str, default="/ssdfs/datahome/tj24011/datasets/raw", help="infer data")
     
     args = parser.parse_known_args()[0]

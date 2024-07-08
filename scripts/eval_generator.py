@@ -17,9 +17,9 @@ from torchvision.transforms.functional import to_pil_image
 from mcquic.modules.compressor import BaseCompressor, Compressor, Neon
 from mcquic.utils.vision import RandomGamma, RandomPlanckianJitter, RandomAutocontrast, RandomHorizontalFlip, RandomVerticalFlip, PatchWiseErasing
 from mcquic.data.transforms import AlignedCrop
-# from mcquic.validate.metrics import MsSSIM, PSNR
 from mcquic.validate.handlers import MsSSIM, PSNR
 from mcquic.utils.vision import DeTransform
+from mcquic.modules.generator_3_var_mcq import GeneratorVARMCQ
 
 class CustomImageDataset(Dataset):
     def __init__(self, img_dir, transform=None, target_transform=None):
@@ -39,14 +39,20 @@ class CustomImageDataset(Dataset):
             image = self.transform(image)
         return image
 
-def load_model(model_path):
+def load_model(compressor_path, model_path):
     print("load model...")
-    compressor = Neon(channel=256, k=4096, size=[16, 8, 4, 2, 1], denseNorm=False)
-    compressor.eval().cuda()
+    model = GeneratorVARMCQ(
+        channel=256,
+        k=4096,
+        size=[16, 8, 4, 2, 1],
+        denseNorm=False,
+        loadFrom=compressor_path,
+        )
+    model.eval().cuda()
     
     print(f"load checkpoints from {model_path}")
     state_dict = torch.load(model_path, map_location="cpu")
-    compressor.load_state_dict(
+    model.load_state_dict(
         {
             k[len("module._compressor.") :]: v
             for k, v in state_dict["trainer"]["_model"].items()
@@ -64,7 +70,7 @@ def main(args):
     # 1. load model
     ms_ssim = MsSSIM().to(0)
     psnr = PSNR().to(0)
-    compressor = load_model(args.ckpt)
+    generator = load_model(args.ckpt)
     # 2. load data
     eval_transform = T.Compose([
         T.ConvertImageDtype(torch.float32),
