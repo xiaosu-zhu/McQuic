@@ -89,8 +89,10 @@ def wdsImageNetWithLabel(sample, mode="class"):
     """
     from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES, IMAGENET2012_LABELS
 
-    
-    label = IMAGENET2012_CLASSES[sample["__key__"].split("_")[0]]
+    if mode == "class":
+        label = IMAGENET2012_CLASSES[sample["__key__"].split("_")[0]]
+    else:
+        label = IMAGENET2012_CLASSES[sample["__key__"].split("_")[0]]
     # caption = f"a photo of {label}"
     image = sample["jpeg"].convert("RGB")
 
