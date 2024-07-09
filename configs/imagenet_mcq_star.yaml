@@ -6,15 +6,15 @@ model:
     k: 4096
     size: [16, 8, 4, 2, 1]
     denseNorm: false
-    loadFrom: saved_mcq/val_40000.ckpt
+    loadFrom: /GLOBALFS/uestc_jksong_1/hf-repo/mcquic-tokenizers/val_200000.ckpt
 train:
   totalStep: 300000 # totalimage / gpus / batchsize * epochs (4120000 / 16 / 80 * 10)
-  batchSize: 24
+  batchSize: 32
   epoch: 10
   valFreq: 10000
-  trainSet: /ssdfs/datahome/tj24011/datasets/raw/imagenet-wds/
-  valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
-  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/gen_mcq
+  trainSet: /GLOBALFS/uestc_jksong_1/datasets/imagenet-1k
+  valSet: /GLOBALFS/uestc_jksong_1/datasets/kodak
+  saveDir: /GLOBALFS/uestc_jksong_1/McQuic/results/generator/gen_mcq_imagenet
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py

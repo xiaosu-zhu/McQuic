@@ -35,6 +35,8 @@ fi
 
 ADD_ENTRY=SET PYPI_BUILDING=SET pip install -e .
 
+pip install transformers datasets ipython ipykernel jsonlines webdataset gpustat fairscale wandb
+
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     sed -i "1 s|$| -O|" "$(which mcquic)"*

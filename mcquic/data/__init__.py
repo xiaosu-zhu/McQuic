@@ -83,14 +83,18 @@ def wdsDecodeWithText(sample):
     return result, sample["txt"].decode("utf-8")
 
 
-def wdsImageNetWithLabel(sample):
+def wdsImageNetWithLabel(sample, mode="class"):
+    """
+    mode: class or label_id
+    """
     from mcquic.data.imagenet_classes import IMAGENET2012_CLASSES, IMAGENET2012_LABELS
 
-    label = IMAGENET2012_LABELS[sample["__key__"].split("_")[0]]
+    
+    label = IMAGENET2012_CLASSES[sample["__key__"].split("_")[0]]
     # caption = f"a photo of {label}"
     image = sample["jpeg"].convert("RGB")
 
-    return {"jpeg": image, "label": label}
+    return {"jpeg": image, "label": f"Generate an image based on the description below:\n\nThis is {label}"}
 
 
 def wdsJouneyDBWithLabel(sample):
@@ -120,9 +124,9 @@ def getTrainLoader(
                 "webdataset", data_dir=datasetPath, split="train", streaming=True
             )
             .shuffle(seed=3407, buffer_size=10_000)
-            .map(wdsJouneyDBWithLabel)
+            .map(wdsImageNetWithLabel)
             .map(getTrainingPreprocessWithText())
-            .remove_columns(["jpg"])
+            # .remove_columns(["jpg"]) # JourneyDB enable make sure not extra key in dataset instanial
             # wds.WebDataset(allTarGZ, shardshuffle=True, nodesplitter=wds.split_by_node)
             # .shuffle(500)
             # .map(wdsImageNetWithLabel)
