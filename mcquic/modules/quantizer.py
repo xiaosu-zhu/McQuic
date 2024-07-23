@@ -754,8 +754,8 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             oneHots.append(oneHot)
             # [n, m, h, w, k]
             logits.append(logit)
-            # currentLatent = backward(quantized)
-            currentLatent = backward(latent)
+            currentLatent = backward(quantized) # when using 7.03 200k ckpt, enable this line
+            # currentLatent = backward(latent) # fixed residual
 
         ######################## DECODING ########################
         # From smallest quantized latent, scale 2x, and sum with next quantized latent
