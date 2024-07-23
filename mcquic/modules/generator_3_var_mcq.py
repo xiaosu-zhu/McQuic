@@ -21,7 +21,7 @@ from transformers import CLIPTextModel, CLIPProcessor
 
 from mcquic.modules.compressor import Neon
 from mcquic.utils.registry import GeneratorRegistry
-
+import ipdb
 
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
@@ -61,11 +61,11 @@ class GeneratorVARMCQ(nn.Module):
 
         logging.debug("Start loading clip...")
         self.text_encoder = CLIPTextModel.from_pretrained(
-            "openai/clip-vit-base-patch32", local_files_only=True
+            "openai/clip-vit-base-patch32", local_files_only=False
         )
         logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
         self.text_tokenizer = CLIPProcessor.from_pretrained(
-            "openai/clip-vit-base-patch32", local_files_only=True
+            "openai/clip-vit-base-patch32", local_files_only=False
         )
         logging.debug("Loaded clip text model from %s.", "openai/clip-vit-base-patch32")
         for params in self.text_encoder.parameters():
@@ -152,10 +152,10 @@ class GeneratorVARMCQ(nn.Module):
                 # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
                 batch_encoding = self.text_tokenizer(
                     text=condition,
-                    return_attention_mask=True,
                     padding=True,
                     truncation=True,
                     return_tensors="pt",
+                    return_attention_mask=True,
                 )
 
                 input_ids = batch_encoding.input_ids.to(image.device)
@@ -181,13 +181,14 @@ class GeneratorVARMCQ(nn.Module):
 
             # [B, M, L, C]
             rawPredictions = self.next_residual_predictor(
-                # [B, T, D_T], [B, D_T], [B, L, D]
                 text_embedding.last_hidden_state, text_embedding.pooler_output, torch.where(attention_mask==1, 0., -torch.inf), self.input_transform(new_all_forwards_for_residual)
             )
 
             loss = list()
             curIdx = 0
             predictions = list()
+            
+            # import ipdb; ipdb.set_trace()
 
             for gt in codes:
                 bs, m, h, w = gt.shape
@@ -231,75 +232,98 @@ class GeneratorVARMCQ(nn.Module):
             # inference
             ###################### Preparing inputs #########################
             with torch.no_grad():
+                assert image is None, "incorrect input image with text-to-image generation."
                 device = next(self.parameters()).device
-                # # input_ids: [B, max_len] int ids, where `49407` for padding
-                # # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
-                # batch_encoding = self.text_tokenizer(
-                #     text=condition,
-                #     return_attention_mask=True,
-                #     padding=True,
-                #     truncation=True,
-                #     return_tensors="pt",
-                # )
+                # input_ids: [B, max_len] int ids, where `49407` for padding
+                # attention_mask: [B, max_len] {0, 1}. where `1` for valid, `0` for padding mask
+                batch_encoding = self.text_tokenizer(
+                    text=condition,
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                    return_attention_mask=True,
+                )
+                input_ids = batch_encoding.input_ids.to(device)
+                attention_mask = batch_encoding.attention_mask.to(device)
+                # pooler_output: [B, D]
+                text_embedding: (
+                    transformers.modeling_outputs.BaseModelOutputWithPooling
+                ) = self.text_encoder(
+                    input_ids, attention_mask=attention_mask, return_dict=True
+                )
+                # last_hidden_state: [B, max_len, D]
+                prompt_embeds = text_embedding.last_hidden_state
+                prompt_embeds_pooled = text_embedding.pooler_output
 
-                # input_ids = batch_encoding.input_ids.to(device)
-                # attention_mask = batch_encoding.attention_mask.to(device)
-
-                # # last_hidden_state: [B, max_len, D]
-                # # pooler_output: [B, D]
-                # text_embedding: (
-                #     transformers.modeling_outputs.BaseModelOutputWithPooling
-                # ) = self.text_encoder(
-                #     input_ids, attention_mask=attention_mask, return_dict=True
-                # )
                 # compressor.Codebooks: [4096, 32]
-
-                # get class embedding from class_id to embedding
-                class_embed = self.class_pos_embed[condition]
-                # given shape and condition, produce token with secified shape
-                h, w = 1, 1 # first scale is 1x1
-                bs, hidden_size = class_embed.shape
-                # ================= start loop =================
-                first_level_token = self.next_residual_predictor((None, 0), class_embed)
-                first_level_token = first_level_token.unsqueeze(dim=1)
-                first_level_token = first_level_token.permute(0, 2, 1).reshape(
-                    bs, -1, h, w
+                # [B, M, L, C]
+                rawPredictions = self.next_residual_predictor.autoregressive_infer_cfg(
+                    # [B, T, D_T], [B, D_T], [B, L, D]
+                    text_embedding=prompt_embeds, 
+                    text_pooled_embedding=prompt_embeds_pooled, 
+                    text_mask=torch.where(attention_mask==1, 0., -torch.inf),
+                    compressor=self.compressor, 
+                    g_seed=42,
+                    cfg=0,
+                    top_k=0,
+                    top_p=0,
+                    more_smooth=False,
                 )
 
-                first_scale_feat = self.compressor.residual_forward(
-                    first_level_token, None, 0
-                )
+                all_samples = []
+                for code_idx, pre in rawPredictions:
+                    sample = self.compressor._decoder(pre)
+                    all_samples.append(sample)
+                    
+                return all_samples
 
-                predictions = [first_level_token]
-                input_feats = [first_scale_feat]
-                former_level_feat = first_scale_feat.clone()
+                # prepare first token
+                # # get class embedding from class_id to embedding
+                # class_embed = self.class_pos_embed[condition]
+                # # given shape and condition, produce token with secified shape
+                # h, w = 1, 1 # first scale is 1x1
+                # bs, hidden_size = class_embed.shape
+                # # ================= start loop =================
+                # first_level_token = self.next_residual_predictor((None, 0), class_embed)
+                # first_level_token = first_level_token.unsqueeze(dim=1)
+                # first_level_token = first_level_token.permute(0, 2, 1).reshape(
+                #     bs, -1, h, w
+                # )
 
-                for i in range(1, len(self.compressor.Codebooks)):
-                    # [bs, h * w]
-                    next_level_token = self.next_residual_predictor(
-                        (input_feats, i), class_embed
-                    )
-                    # get current scale
-                    scale = int(math.sqrt(next_level_token.shape[-1]))
-                    h, w = scale, scale
-                    # [bs, 1, h, w]
-                    next_level_token = next_level_token.reshape(bs, h, w).unsqueeze(1)
+                # first_scale_feat = self.compressor.residual_forward(
+                #     first_level_token, None, 0
+                # )
 
-                    # [bs, tok_dim, h, w]
-                    next_scale_feat = self.compressor.residual_forward(
-                        next_level_token, former_level_feat, i
-                    )
-                    former_level_feat = next_scale_feat.clone()
-                    predictions.append(next_level_token)
-                    input_feats.append(next_scale_feat)
+                # predictions = [first_level_token]
+                # input_feats = [first_scale_feat]
+                # former_level_feat = first_scale_feat.clone()
 
-                # # list of [bs, hi, wi]
-                # predictions.insert(0, first_level)
-                # # list of [bs, 1, hi, wi]
-                # predictions = [p.unsqueeze(1) for p in predictions]
-                restored = self.compressor.decode(predictions)
+                # for i in range(1, len(self.compressor.Codebooks)):
+                #     # [bs, h * w]
+                #     next_level_token = self.next_residual_predictor(
+                #         (input_feats, i), class_embed
+                #     )
+                #     # get current scale
+                #     scale = int(math.sqrt(next_level_token.shape[-1]))
+                #     h, w = scale, scale
+                #     # [bs, 1, h, w]
+                #     next_level_token = next_level_token.reshape(bs, h, w).unsqueeze(1)
 
-                return predictions, restored
+                #     # [bs, tok_dim, h, w]
+                #     next_scale_feat = self.compressor.residual_forward(
+                #         next_level_token, former_level_feat, i
+                #     )
+                #     former_level_feat = next_scale_feat.clone()
+                #     predictions.append(next_level_token)
+                #     input_feats.append(next_scale_feat)
+
+                # # # list of [bs, hi, wi]
+                # # predictions.insert(0, first_level)
+                # # # list of [bs, 1, hi, wi]
+                # # predictions = [p.unsqueeze(1) for p in predictions]
+                # restored = self.compressor.decode(predictions)
+
+                # return predictions, restored
 
 
 
@@ -310,20 +334,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def sample_with_top_k_top_p_(logits_BlV: torch.Tensor, top_k: int = 0, top_p: float = 0.0, rng=None, num_samples=1) -> torch.Tensor:  # return idx, shaped (B, l)
-    B, l, V = logits_BlV.shape
+def sample_with_top_k_top_p_(logits_BmlV: torch.Tensor, top_k: int = 0, top_p: float = 0.0, rng=None, num_samples=1) -> torch.Tensor:  # return idx, shaped (B, l)
+    B, m, l, V = logits_BmlV.shape
     if top_k > 0:
-        idx_to_remove = logits_BlV < logits_BlV.topk(top_k, largest=True, sorted=False, dim=-1)[0].amin(dim=-1, keepdim=True)
-        logits_BlV.masked_fill_(idx_to_remove, -torch.inf)
+        idx_to_remove = logits_BmlV < logits_BmlV.topk(top_k, largest=True, sorted=False, dim=-1)[0].amin(dim=-1, keepdim=True)
+        logits_BmlV.masked_fill_(idx_to_remove, -torch.inf)
     if top_p > 0:
-        sorted_logits, sorted_idx = logits_BlV.sort(dim=-1, descending=False)
+        sorted_logits, sorted_idx = logits_BmlV.sort(dim=-1, descending=False)
         sorted_idx_to_remove = sorted_logits.softmax(dim=-1).cumsum_(dim=-1) <= (1 - top_p)
         sorted_idx_to_remove[..., -1:] = False
-        logits_BlV.masked_fill_(sorted_idx_to_remove.scatter(sorted_idx.ndim - 1, sorted_idx, sorted_idx_to_remove), -torch.inf)
+        logits_BmlV.masked_fill_(sorted_idx_to_remove.scatter(sorted_idx.ndim - 1, sorted_idx, sorted_idx_to_remove), -torch.inf)
     # sample (have to squeeze cuz torch.multinomial can only be used for 2D tensor)
     replacement = num_samples >= 0
     num_samples = abs(num_samples)
-    return torch.multinomial(logits_BlV.softmax(dim=-1).view(-1, V), num_samples=num_samples, replacement=replacement, generator=rng).view(B, l, num_samples)
+    return torch.multinomial(logits_BmlV.softmax(dim=-1).view(-1, V), num_samples=num_samples, replacement=replacement, generator=rng).view(B, m, l, num_samples)
 
 
 def gumbel_softmax_with_rng(logits: torch.Tensor, tau: float = 1, hard: bool = False, eps: float = 1e-10, dim: int = -1, rng: torch.Generator = None) -> torch.Tensor:
@@ -445,7 +469,8 @@ class SelfAttention(nn.Module):
         # only used during inference
         self.caching, self.cached_k, self.cached_v = False, None, None
 
-    def kv_caching(self, enable: bool): self.caching, self.cached_k, self.cached_v = enable, None, None
+    def kv_caching(self, enable: bool): 
+        self.caching, self.cached_k, self.cached_v = enable, None, None
 
     # NOTE: attn_bias is None during inference because kv cache is enabled
     def forward(self, x, attn_bias):
@@ -456,8 +481,12 @@ class SelfAttention(nn.Module):
         # qkv: BL3Hc
 
         using_flash = self.using_flash and attn_bias is None and qkv.dtype != torch.float32
-        if using_flash or self.using_xform: q, k, v = qkv.unbind(dim=2); dim_cat = 1   # q or k or v: BLHc
-        else: q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(dim=0); dim_cat = 2               # q or k or v: BHLc
+        if using_flash or self.using_xform: 
+            q, k, v = qkv.unbind(dim=2)
+            dim_cat = 1   # q or k or v: BLHc
+        else: 
+            q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(dim=0)
+            dim_cat = 2               # q or k or v: BHLc
 
         if self.attn_l2_norm:
             scale_mul = self.scale_mul_1H11.clamp_max(self.max_scale_mul).exp()
@@ -466,8 +495,12 @@ class SelfAttention(nn.Module):
             k = F.normalize(k, dim=-1)
 
         if self.caching:
-            if self.cached_k is None: self.cached_k = k; self.cached_v = v
-            else: k = self.cached_k = torch.cat((self.cached_k, k), dim=dim_cat); v = self.cached_v = torch.cat((self.cached_v, v), dim=dim_cat)
+            if self.cached_k is None: 
+                self.cached_k = k
+                self.cached_v = v
+            else: 
+                k = self.cached_k = torch.cat((self.cached_k, k), dim=dim_cat)
+                v = self.cached_v = torch.cat((self.cached_v, v), dim=dim_cat)
 
         dropout_p = self.attn_drop if self.training else 0.0
         if using_flash:
@@ -667,27 +700,39 @@ class VAR(nn.Module):
 
         current = 0
 
-        all_logits = list()
-        for i, patch in enumerate(self.patch_nums):
-            # [B, l==patch**2, C]
-            sub_h = h[:, current:current + (patch ** 2)]
-            current += patch ** 2
-            this_patch_logits = list()
-            for m in range(self.multi_codebook_size):
-                # match this level + this sub-codebook
-                head_nm = self.head_nms[i * self.multi_codebook_size + m]
-                head = self.heads[i * self.multi_codebook_size + m]
-                # pick the corresponding part
-                this_patch_logits.append(head(head_nm(h.float(), cond_BD).float()).float())
-            # [B, M, l, K]
-            this_patch_logits = torch.stack(this_patch_logits, 1)
-            all_logits.append(this_patch_logits)
-        # [B, M, L, C]
-        return torch.cat(all_logits, -2)
+        if self.training:
+            all_logits = list()
+            for i, patch in enumerate(self.patch_nums):
+                # [B, l==patch**2, C]
+                this_patch_logits = list()
+                for m in range(self.multi_codebook_size):
+                    # match this level + this sub-codebook
+                    head_nm = self.head_nms[i * self.multi_codebook_size + m]
+                    head = self.heads[i * self.multi_codebook_size + m]
+                    # pick the corresponding part
+                    this_patch_logits.append(head(head_nm(h.float(), cond_BD).float()).float())
+                # [B, M, l, K]
+                this_patch_logits = torch.stack(this_patch_logits, 1)
+                all_logits.append(this_patch_logits)
+            # [B, M, L, C]
+            return torch.cat(all_logits, -2)
+        else:
+            for i, patch in enumerate(self.patch_nums):
+                # [B, l==patch**2, C]
+                this_patch_logits = list()
+                for m in range(self.multi_codebook_size):
+                    # match this level + this sub-codebook
+                    head_nm = self.head_nms[i * self.multi_codebook_size + m]
+                    head = self.heads[i * self.multi_codebook_size + m]
+                    # pick the corresponding part
+                    this_patch_logits.append(head(head_nm(h.float(), cond_BD).float()).float())
+                # [B, M, l, K]
+                this_patch_logits = torch.stack(this_patch_logits, 1)
+                return this_patch_logits
 
     @torch.no_grad()
     def autoregressive_infer_cfg(
-        self, B: int, label_B: Optional[Union[int, torch.LongTensor]],
+        self, text_embedding, text_pooled_embedding, text_mask, compressor,
         g_seed: Optional[int] = None, cfg=1.5, top_k=0, top_p=0.0,
         more_smooth=False,
     ) -> torch.Tensor:   # returns reconstructed image (B, 3, H, W) in [0, 1]
@@ -706,53 +751,82 @@ class VAR(nn.Module):
             rng = None
         else: self.rng.manual_seed(g_seed); rng = self.rng
 
-        if label_B is None:
-            label_B = torch.multinomial(self.uniform_prob, num_samples=B, replacement=True, generator=rng).reshape(B)
-        elif isinstance(label_B, int):
-            label_B = torch.full((B,), fill_value=self.num_classes if label_B < 0 else label_B, device=self.lvl_1L.device)
-
-        sos = cond_BD = self.class_emb(torch.cat((label_B, torch.full_like(label_B, fill_value=self.num_classes)), dim=0))
-
+        all_results = []
+        B, seqlen, _ = text_embedding.shape
+        # get sos and condition embedding
+        sos = cond_BD = self.class_emb(text_pooled_embedding).expand(2 * B, -1)
+        # added pos_start and expand into 2 * B
+        sos = sos.unsqueeze(1).expand(2 * B, self.first_l, -1) + self.pos_start.expand(2 * B, self.first_l, -1)
+        # get level position embedding
         lvl_pos = self.lvl_embed(self.lvl_1L) + self.pos_1LC
-        next_token_map = sos.unsqueeze(1).expand(2 * B, self.first_l, -1) + self.pos_start.expand(2 * B, self.first_l, -1) + lvl_pos[:, :self.first_l]
-
+        # get first token map
+        next_token_map = sos + lvl_pos[:, :self.first_l]
+        # get text condition embedding
+        text_cond = self.class_emb(text_embedding).expand(2 * B, seqlen, -1)
+        # first level map with text prompt [B, T+1, D]
+        next_token_map = torch.cat([text_cond, next_token_map], dim=1)
         cur_L = 0
-        f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])
 
         for b in self.blocks:
             b.attn.kv_caching(True)
+
         for si, pn in enumerate(self.patch_nums):   # si: i-th segment
             ratio = si / self.num_stages_minus_1
             # last_L = cur_L
-            cur_L += pn*pn
             # assert self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].sum() == 0, f'AR with {(self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L] != 0).sum()} / {self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].numel()} mask item'
             cond_BD_or_gss = self.shared_ada_lin(cond_BD)
-            x = next_token_map
-            AdaLNSelfAttn.forward
-            for b in self.blocks:
-                x = b(x=x, cond_BD=cond_BD_or_gss, attn_bias=None)
-            logits_BlV = self.get_logits(x, cond_BD)
+            # autoregressive to generate next-scale
+            # torch.Size([B, scale_length, text_dim])
+            x = next_token_map # (29 + 1 + 4 + 16 + 64 + 256, kvcache so not to be this)
+
+            # AdaLNSelfAttn.forward
+            for block in self.blocks:
+                x = block(x=x, cond_BD=cond_BD_or_gss, attn_bias=None) # [B, M, L, D]
+
+            # import ipdb; ipdb.set_trace()
+            # get logits
+            if si == 0:
+                # first scale with text prompt
+                logits_BmlV = self.get_logits(x[:, seqlen:].float(), cond_BD) # [B, M, L, V]
+                # logits_BmlV = logits_BmlV[:, :, -1, :].unsqueeze(2)
+            else:
+                logits_BmlV = self.get_logits(x.float(), cond_BD) # [B, M, L, V]
+            
+            # update current length
+            cur_L += pn*pn
 
             t = cfg * ratio
-            logits_BlV = (1+t) * logits_BlV[:B] - t * logits_BlV[B:]
+            logits_BmlV = (1+t) * logits_BmlV[:B] - t * logits_BmlV[B:]
 
-            idx_Bl = sample_with_top_k_top_p_(logits_BlV, rng=rng, top_k=top_k, top_p=top_p, num_samples=1)[:, :, 0]
+            idx_Bl = sample_with_top_k_top_p_(logits_BmlV, rng=rng, top_k=top_k, top_p=top_p, num_samples=1)[:, :, :, 0] # [B, M, L]
             if not more_smooth: # this is the default case
-                h_BChw = self.vae_quant_proxy[0].embedding(idx_Bl)   # B, l, Cvae
+                # h_BChw = self.vae_quant_proxy[0].embedding(idx_Bl)   # B, l, Cvae
+                idx_Bmhw = idx_Bl.reshape(B, -1, pn, pn) # [B, M, h, w] 
+                # decode
+                if si == 0:
+                    next_h_BChw = compressor.residual_forward(idx_Bmhw, None, si)
+                else:
+                    next_h_BChw = compressor.residual_forward(idx_Bmhw, next_h_BChw, si)
+                # h_BChw = compressor._quantizer._dequantizers[-(si+1)].decode(idx_Bmhw) # code: [B, C, h, w]
+                # next_h_BChw = compressor._quantizer._decoders[-(si+1)](h_BChw) # next scale feature map (upsample results)
             else:   # not used when evaluating FID/IS/Precision/Recall
                 gum_t = max(0.27 * (1 - ratio * 0.95), 0.005)   # refer to mask-git
                 h_BChw = gumbel_softmax_with_rng(logits_BlV.mul(1 + ratio), tau=gum_t, hard=False, dim=-1, rng=rng) @ self.vae_quant_proxy[0].embedding.weight.unsqueeze(0)
 
-            h_BChw = h_BChw.transpose_(1, 2).reshape(B, self.Cvae, pn, pn)
-            f_hat, next_token_map = self.vae_quant_proxy[0].get_next_autoregressive_input(si, len(self.patch_nums), f_hat, h_BChw)
+            all_results.append((idx_Bmhw, next_h_BChw)) # (idx, SUM of decoders)
+            # h_BChw = h_BChw.transpose_(1, 2).reshape(B, self.Cvae, pn, pn)
+            # f_hat, next_token_map = self.vae_quant_proxy[0].get_next_autoregressive_input(si, len(self.patch_nums), f_hat, h_BChw)
             if si != self.num_stages_minus_1:   # prepare for next stage
-                next_token_map = next_token_map.view(B, self.Cvae, -1).transpose(1, 2)
-                next_token_map = self.word_embed(next_token_map) + lvl_pos[:, cur_L:cur_L + self.patch_nums[si+1] ** 2]
-                next_token_map = next_token_map.repeat(2, 1, 1)   # double the batch sizes due to CFG
+                next_h_BLC = next_h_BChw.view(B, self.Cvae, -1).transpose(1, 2)
+                # next_token_map = next_token_map.view(B, self.Cvae, -1).transpose(1, 2)
+                next_h_BLC = self.word_embed(next_h_BLC) + lvl_pos[:, cur_L:cur_L + self.patch_nums[si+1] ** 2]
+                next_token_map = next_h_BLC.repeat(2, 1, 1)   # double the batch sizes due to CFG
 
         for b in self.blocks:
             b.attn.kv_caching(False)
-        return self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)   # de-normalize, from [-1, 1] to [0, 1]
+
+        return all_results
+        # return self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)   # de-normalize, from [-1, 1] to [0, 1]
 
     def forward(self, text_embedding, text_pooled_embedding, text_mask, x_BLCv_wo_first_l: torch.Tensor) -> torch.Tensor:  # returns logits_BLV
         """
@@ -766,8 +840,10 @@ class VAR(nn.Module):
             sos = cond_BD = self.class_emb(text_pooled_embedding)
             sos = sos.unsqueeze(1).expand(B, self.first_l, -1) + self.pos_start.expand(B, self.first_l, -1)
 
-            if self.prog_si == 0: x_BLC = sos
-            else: x_BLC = torch.cat((sos, self.word_embed(x_BLCv_wo_first_l.float())), dim=1)
+            if self.prog_si == 0: 
+                x_BLC = sos
+            else: 
+                x_BLC = torch.cat((sos, self.word_embed(x_BLCv_wo_first_l.float())), dim=1)
             x_BLC += self.lvl_embed(self.lvl_1L[:, :ed].expand(B, -1)) + self.pos_1LC[:, :ed] # lvl: BLC;  pos: 1LC
 
         attn_bias = self.attn_bias_for_masking[:, :, :ed, :ed]

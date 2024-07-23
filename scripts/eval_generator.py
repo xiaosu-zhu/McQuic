@@ -3,6 +3,7 @@ import os
 import json
 import argparse
 import cv2
+import time
 import numpy as np
 from PIL import Image
 
@@ -21,23 +22,6 @@ from mcquic.validate.handlers import MsSSIM, PSNR
 from mcquic.utils.vision import DeTransform
 from mcquic.modules.generator_3_var_mcq import GeneratorVARMCQ
 
-class CustomImageDataset(Dataset):
-    def __init__(self, img_dir, transform=None, target_transform=None):
-        self.img_dir = img_dir
-        self.transform = transform
-        self.img_list = os.listdir(self.img_dir)
-
-    def __len__(self):
-        return len(self.img_list)
-
-    def __getitem__(self, idx):
-        if not self.img_list[idx].endswith(".png") or self.img_list[idx].endswith(".jpg"):
-            raise ValueError("Mistake format")
-        img_path = os.path.join(self.img_dir, self.img_list[idx])
-        image = read_image(img_path, ImageReadMode.UNCHANGED)
-        if self.transform:
-            image = self.transform(image)
-        return image
 
 def load_model(compressor_path, model_path):
     print("load model...")
@@ -49,95 +33,79 @@ def load_model(compressor_path, model_path):
         loadFrom=compressor_path,
         )
     model.eval().cuda()
-    
-    print(f"load checkpoints from {model_path}")
-    state_dict = torch.load(model_path, map_location="cpu")
-    model.load_state_dict(
-        {
-            k[len("module._compressor.") :]: v
-            for k, v in state_dict["trainer"]["_model"].items()
-            if "_lpips" not in k
-        }
-    )
-    for params in compressor.parameters():
-        params.requires_grad_(False)
 
-    return compressor
+    return model
 
 
 def main(args):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     data_path = os.path.join(args.root, args.dataset)
     # 1. load model
     ms_ssim = MsSSIM().to(0)
     psnr = PSNR().to(0)
-    generator = load_model(args.ckpt)
+    generator = load_model(args.tokenizer_path, args.ckpt)
+    
     # 2. load data
+    with open("/ssdfs/datahome/tj24011/workspace/McQuic/results/test.txt", "r") as f:
+        data = f.readlines()
+    
     eval_transform = T.Compose([
         T.ConvertImageDtype(torch.float32),
         AlignedCrop(256),
         T.Normalize(0.5, 0.5),
     ])
     detransform = DeTransform().to(0)
-    dataset = CustomImageDataset(args.inp_path, transform=eval_transform)
-    dataloader = DataLoader(
-        dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True,
-        drop_last=False,
-    )
+    # dataset = CustomImageDataset(args.inp_path, transform=eval_transform)
+    # dataloader = DataLoader(
+    #     dataset,
+    #     batch_size=1,
+    #     shuffle=False,
+    #     num_workers=0,
+    #     pin_memory=True,
+    #     drop_last=False,
+    # )
     # 3. inference
     print("inference data")
     psnr_res = []
     msssim_res = []
     img_restored = []
-    # import ipdb
-    # ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     with torch.no_grad():
-        for item in tqdm(dataloader):
-            # print(item.shape)
-            image = item.cuda()
-            # to_pil_image(image.squeeze(0) * 255).save(f"./inp_1.png")
-            codes, binaries, headers = compressor.compress(image)
-            # print(len(codes))
-            image_res = compressor.decompress(binaries, headers)
-            image = detransform(image)
-            image_res = detransform(image_res)
-            # import ipdb
-            # ipdb.set_trace()
-            img_restored.append(to_pil_image(image_res.squeeze(0)))
-            # img_restored.append(image_res.squeeze(0).detach().cpu().numpy())
-            p_res = psnr.handle(images=image, restored=image_res)[0]
-            # print(p_res)
-            m_res = ms_ssim.handle(images=image, restored=image_res)[0]
-            # print(m_res)
-            psnr_res.append(p_res)
-            msssim_res.append(m_res)
-    
-    # 4. calculate metrics
-    mean_psnr = sum(psnr_res) / len(psnr_res)
-    mean_msssim = sum(msssim_res) / len(msssim_res)
+        for idx, item in enumerate(tqdm(data)):
+            t0 = time.time()
+            samples = generator(None, item)
+            t1 = time.time()
+            dt = t1 - t0
+            for i, sample in enumerate(samples):
+                img = detransform(sample)
+                img = to_pil_image(img.squeeze(0))
+                img.save(f"./{idx}_{i}.png")
+            print(f"generated, cost: {dt * 1000}s")
 
-    print(f"PSNR: {mean_psnr}, MS-SSIM: {mean_msssim}")
+    # 4. calculate metrics
+    # mean_psnr = sum(psnr_res) / len(psnr_res)
+    # mean_msssim = sum(msssim_res) / len(msssim_res)
+
+    # print(f"PSNR: {mean_psnr}, MS-SSIM: {mean_msssim}")
     
     # 5. save results
-    res_path = f"./results/eval/{args.dataset}"
+    res_path = f"./results/eval/generator/{args.dataset}"
     os.makedirs(res_path, exist_ok=True)
-    for idx, item in enumerate(img_restored):
-        # cv2_image = np.transpose(item, (1, 2, 0))
-        # cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
-        # cv2.imwrite(os.path.join(res_path, f"{idx}.png"), cv2_image)
-        item.save(os.path.join(res_path, f"{idx}.png"))
+    # for idx, item in enumerate(img_restored):
+    #     # cv2_image = np.transpose(item, (1, 2, 0))
+    #     # cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+    #     # cv2.imwrite(os.path.join(res_path, f"{idx}.png"), cv2_image)
+    #     item.save(os.path.join(res_path, f"{idx}.png"))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--ckpt", type=str, default="results/tokenizers/saved_mcq/val_20000.ckpt")
+    parser.add_argument("--tokenizer_path", type=str, default="results/tokenizers/saved_mcq/val_20000.ckpt")
     parser.add_argument("--precision", default="fp32", choices=["bf16", "fp32"])
     parser.add_argument("--hf_token", type=str, default=None, help="huggingface read token for accessing gated repo.")
-    parser.add_argument("--dataset", type=str, default="kodak", choice=["kodak", "clic2024"], help="huggingface read token for accessing gated repo.")
+    parser.add_argument("--dataset", type=str, default="kodak", choices=["kodak", "clic2024"], help="huggingface read token for accessing gated repo.")
     parser.add_argument("--root", type=str, default="/ssdfs/datahome/tj24011/datasets/raw", help="infer data")
     
     args = parser.parse_known_args()[0]
