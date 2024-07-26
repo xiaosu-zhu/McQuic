@@ -1,6 +1,7 @@
 import math
 from typing import Callable, Dict, List, Tuple, Union
 
+import numpy as np
 import torch
 from torch import nn
 import torch.distributed as dist
@@ -12,7 +13,6 @@ from mcquic.utils.specification import CodeSize
 from mcquic import Consts
 from mcquic.nn.base import gumbelSoftmax
 from mcquic.nn.gdn import GenDivNorm, InvGenDivNorm
-
 
 
 class GradMultiply(torch.autograd.Function):
@@ -686,24 +686,34 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             allLatents.append(x)
         # calculate smallest code, and produce residuals from small to large
         currentLatent = torch.zeros_like(allLatents[-1])
+        # i = 0
         for quantizer, dequantizer, backward, latent in zip(self._quantizers[::-1], self._dequantizers[::-1], self._backwards[::-1], allLatents[::-1]):
             residual = latent - currentLatent
+            # np.save(f"results/comparision/newest/40k/kodim05_beforeQ_scale{i}.npy", residual.detach().cpu().numpy())
             code = quantizer.encode(residual)
             quantized = dequantizer.decode(code)
+            # np.save(f"results/comparision/newest/40k/kodim05_afterQ_scale{i}.npy", quantized.detach().cpu().numpy())
             # [n, m, h, w]
             codes.append(code)
-            currentLatent = backward(quantized)
+            # currentLatent = backward(quantized)
+            currentLatent = backward(latent)
+            # np.save(f"results/comparision/newest/40k/kodim05_img_feature_scale{i}.npy", latent.detach().cpu().numpy())
+            # i += 1
         # lv * [n, m, h, w]
         return codes
 
     def decode(self, codes: List[torch.Tensor]) -> Union[torch.Tensor, None]:
         formerLevel = None
+        # i = 0
         for decoder, dequantizer, code in zip(self._decoders[::-1], self._dequantizers[::-1], codes):
             quantized = dequantizer.decode(code)
             if formerLevel is None:
                 formerLevel = decoder(quantized)
+                # np.save(f"results/comparision/newest/40k/kodim05_decoded_scale{i}.npy", quantized.detach().cpu().numpy())
             else:
+                # np.save(f"results/comparision/newest/40k/kodim05_decoded_scale{i}.npy", (quantized + formerLevel).detach().cpu().numpy())
                 formerLevel = decoder(quantized + formerLevel)
+            # i += 1
         return formerLevel
 
     def residual_forward(self, code: torch.Tensor, formerLevel: torch.Tensor, level: int):

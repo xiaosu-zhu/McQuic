@@ -76,10 +76,15 @@ def main(args):
             samples = generator(None, item)
             t1 = time.time()
             dt = t1 - t0
-            for i, sample in enumerate(samples):
-                img = detransform(sample)
-                img = to_pil_image(img.squeeze(0))
-                img.save(f"./{idx}_{i}.png")
+            
+            img = detransform(samples)
+            img = img = to_pil_image(img.squeeze(0))
+            img.save(f"./0.png")
+            
+            # for i, sample in enumerate(samples):
+            #     img = detransform(sample)
+            #     img = to_pil_image(img.squeeze(0))
+            #     img.save(f"./{idx}_{i}.png")
             print(f"generated, cost: {dt * 1000}s")
 
     # 4. calculate metrics

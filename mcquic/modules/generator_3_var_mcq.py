@@ -193,7 +193,7 @@ class GeneratorVARMCQ(nn.Module):
             for gt in codes:
                 bs, m, h, w = gt.shape
                 # [n, m, h*w, k]
-                pre = rawPredictions[:, :, curIdx : curIdx + (h * w)]
+                pre = rawPredictions[:, :, curIdx : curIdx + (h * w)]  # 1705
                 # [n, k, m, h, w]
                 pre = pre.permute(0, 3, 1, 2).reshape(bs, -1, m, h, w)
                 predictions.append(pre)
@@ -269,13 +269,19 @@ class GeneratorVARMCQ(nn.Module):
                     top_p=0,
                     more_smooth=False,
                 )
-
-                all_samples = []
-                for code_idx, pre in rawPredictions:
-                    sample = self.compressor._decoder(pre)
-                    all_samples.append(sample)
+                # import ipdb; ipdb.set_trace()
+                all_codes = []
+                for logits, pre in rawPredictions:
+                    bs, m, h_w, V = logits.shape
+                    h = w = int(math.sqrt(h_w))
+                    logits = logits.permute(0, 3, 1, 2).reshape(bs, -1, m, h, w)
+                    all_codes.append(logits.detach().clone().argmax(1, keepdim=False))
+                    # sample = self.compressor._decoder(pre)
+                    # all_codes.append(sample)
+                with torch.autocast("cuda", enabled=False):
+                    restored = self.compressor.decode(all_codes)
                     
-                return all_samples
+                return restored
 
                 # prepare first token
                 # # get class embedding from class_id to embedding
@@ -783,7 +789,6 @@ class VAR(nn.Module):
             for block in self.blocks:
                 x = block(x=x, cond_BD=cond_BD_or_gss, attn_bias=None) # [B, M, L, D]
 
-            # import ipdb; ipdb.set_trace()
             # get logits
             if si == 0:
                 # first scale with text prompt
@@ -813,7 +818,7 @@ class VAR(nn.Module):
                 gum_t = max(0.27 * (1 - ratio * 0.95), 0.005)   # refer to mask-git
                 h_BChw = gumbel_softmax_with_rng(logits_BlV.mul(1 + ratio), tau=gum_t, hard=False, dim=-1, rng=rng) @ self.vae_quant_proxy[0].embedding.weight.unsqueeze(0)
 
-            all_results.append((idx_Bmhw, next_h_BChw)) # (idx, SUM of decoders)
+            all_results.append((logits_BmlV, next_h_BChw)) # (idx, SUM of decoders)
             # h_BChw = h_BChw.transpose_(1, 2).reshape(B, self.Cvae, pn, pn)
             # f_hat, next_token_map = self.vae_quant_proxy[0].get_next_autoregressive_input(si, len(self.patch_nums), f_hat, h_BChw)
             if si != self.num_stages_minus_1:   # prepare for next stage
