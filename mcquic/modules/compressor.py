@@ -239,3 +239,14 @@ class Neon(BaseCompressor):
     def residual_forward(self, code, formerLevel, level):
         # [n, c, h*2, w*2] <- ([n, m, h, w], int)
         return self._quantizer.residual_forward(code, formerLevel, level)
+
+    def forward(self, x: torch.Tensor, alpha: float = 0.0):
+        if self.training:
+            # compatible with torch checkpointing
+            x.requires_grad_()
+            y = self._encoder(x)
+            import ipdb; ipdb.set_trace()
+            # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
+            yHat, y_1, quantizeds, dequantizeds, codes, logits = self._quantizer(y)
+            xHat = self._decoder(alpha * y_1 + (1 - alpha) * yHat)
+            return xHat, quantizeds, dequantizeds, codes, logits

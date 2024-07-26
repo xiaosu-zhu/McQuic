@@ -740,6 +740,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
 
     def forward(self, x: torch.Tensor):
         quantizeds = list()
+        dequantizeds = list()
         codes = list()
         oneHots = list()
         logits = list()
@@ -748,11 +749,11 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
         for encoder in self._encoders:
             x = encoder(x)
             allLatents.append(x)
-
+        firstLatent = allLatents[0]
         ######################## ENCODING ########################
         # calculate smallest code, and produce residuals from small to large
         currentLatent = torch.zeros_like(allLatents[-1])
-        for quantizer, dequantizer, backward, latent in zip(self._quantizers[::-1], self._dequantizers[::-1], self._backwards[::-1], allLatents[::-1]):
+        for quantizer, dequantizer, decoder, latent in zip(self._quantizers[::-1], self._dequantizers[::-1], self._decoders[::-1], allLatents[::-1]):
             residual = latent - currentLatent
             sample, code, oneHot, logit = quantizer(residual)
             quantized = dequantizer(sample)
@@ -764,17 +765,18 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             oneHots.append(oneHot)
             # [n, m, h, w, k]
             logits.append(logit)
-            currentLatent = backward(quantized) # when using 7.03 200k ckpt, enable this line
-            # currentLatent = backward(latent) # fixed residual
+            # [n, m, h * 2, w * 2]
+            dequantizeds.append(currentLatent + quantized)
+            currentLatent = decoder(currentLatent + quantized)
 
-        ######################## DECODING ########################
-        # From smallest quantized latent, scale 2x, and sum with next quantized latent
-        formerLevel = torch.zeros_like(quantizeds[0])
-        for decoder, quantized in zip(self._decoders[::-1], quantizeds):
-            # ↓ restored
-            formerLevel = decoder(formerLevel + quantized)
+        # ######################## DECODING ########################
+        # # From smallest quantized latent, scale 2x, and sum with next quantized latent
+        # formerLevel = torch.zeros_like(quantizeds[0])
+        # for decoder, quantized in zip(self._decoders[::-1], quantizeds):
+        #     # ↓ restored
+        #     formerLevel = decoder(formerLevel + quantized)
 
         # update freq in entropy coder
         self._entropyCoder(oneHots)
 
-        return formerLevel, codes, logits
+        return currentLatent, firstLatent, quantizeds, dequantizeds, codes, logits

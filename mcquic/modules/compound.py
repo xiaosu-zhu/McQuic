@@ -32,14 +32,16 @@ class Compound(Module):
         self._distortion.eval()
         return retValue
 
-    def forward(self, x: Tensor):
-        xHat, yHat, codes, logits = self._compressor(x)
+    def forward(self, x: Tensor, alpha: float=0.0):
+        xHat, quantizeds, dequantizeds, codes, logits = self._compressor(x, alpha)
+        q_dis = torch.tensor([F.mse(q, deq) for q, deq, in zip(quantizeds, dequantizeds)]) # type? float32?
         distortion = self._distortion(xHat, x, codes, logits)
         # xHatSmall = F.interpolate(xHat, (224, 224), mode='bilinear')
         # xSmall = F.interpolate(x, (224, 224), mode='bilinear')
         lpips = self._lpips(xHat, x)
         mse = F.mse_loss(xHat, x)
-        return xHat, (distortion, mse, lpips.mean()), codes, logits
+
+        return xHat, (distortion, mse, lpips.mean(), q_dis.mean()), codes, logits
 
     @property
     def Freq(self):
