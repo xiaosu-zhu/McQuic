@@ -65,7 +65,16 @@ for subfolder in subfolders:
     for idx, (after, before) in enumerate(zip(afterQ_list, beforeQ_list)):
         after = np.load(os.path.join(newest_subfolder, after))
         before = np.load(os.path.join(newest_subfolder, before))
-        eps = np.mean(np.abs(before - after))
+        af_norm = np.linalg.norm(after)
+        be_norm = np.linalg.norm(before)
+        
+        f1 = np.load(os.path.join(newest_subfolder, beforeQ_list[-1]))
+        f1_norm = np.linalg.norm(f1)
+        f1 = f1 / f1_norm
+        after =  after / af_norm
+        before = before / be_norm
+
+        eps = np.mean(np.abs(after - f1))
     
         print("newest, after-beforeF", idx, eps)
 
