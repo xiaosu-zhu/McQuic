@@ -66,17 +66,23 @@ def main(args):
     psnr = PSNR().to(0)
     compressor = load_model(args.ckpt)
     # 2. load data
-    eval_transform = T.Compose([
-        T.ConvertImageDtype(torch.float32),
-        AlignedCrop(256),
-        T.Resize((256, 256)),
-        T.Normalize(0.5, 0.5),
-    ])
+    def eval_trans(example):
+        eval_transform = T.Compose([
+            T.ConvertImageDtype(torch.float32),
+            AlignedCrop(256),
+            T.Resize((256, 256)),
+            T.Normalize(0.5, 0.5),
+        ])
+        image = example['jpeg']
+        return eval_transform(image)
     detransform = DeTransform().to(0)
-    dataset = CustomImageDataset(data_path, transform=eval_transform)
+    # dataset = CustomImageDataset(data_path, transform=eval_transform)
+    dataset = load_dataset(
+        "webdataset", data_dir="/ssdfs/datahome/tj24011/datasets/raw/imagenet/imagenet-1k", split="validation", streaming=False
+    ).map(eval_trans)
     dataloader = DataLoader(
         dataset,
-        batch_size=1,
+        batch_size=4,
         shuffle=False,
         num_workers=0,
         pin_memory=True,
@@ -160,22 +166,11 @@ def main(args):
                 pre_res = img
                 img = detransform(img)
                 to_pil_image(img.squeeze(0)).save(f"./{idx}.png")
-            # for idx, res in enumerate(intermedia_res):
-            #     # if pre_res is None:
-            #     #     pre_res = compressor._decoder(res)
-            #     img = compressor._decoder(res)
-            #     # print((pre_res - img).abs().mean()) # 0, 0.0161, 0.0548, 0.1398, 0.2945
-            #     pre_res = img
-            #     img = detransform(img)
-            #     to_pil_image(img.squeeze(0)).save(f"./{idx}.png")
 
-            # print(len(codes))
             image_res = compressor.decompress(binaries, headers)
             image = detransform(image)
             image_res = detransform(image_res)
             # image_res = detransform(yhat)
-            # import ipdb
-            # ipdb.set_trace()
             img_restored.append(to_pil_image(image_res.squeeze(0)))
             # img_restored.append(image_res.squeeze(0).detach().cpu().numpy())
             p_res = psnr.handle(images=image, restored=image_res)[0]
