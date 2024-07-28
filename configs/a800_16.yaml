@@ -7,12 +7,12 @@ model:
     denseNorm: false
 train:
   totalStep: 200000 # totalimage / gpus / batchsize * epochs (6354785 / 8 / 6 * 1.5)
-  batchSize: 4
+  batchSize: 16
   epoch: 2
-  valFreq: 20000
+  valFreq: 5000
   trainSet: /ssdfs/datahome/tj24011/datasets/webdataset/openimages_raw/*.tar.gz
   valSet: /ssdfs/datahome/tj24011/datasets/raw/kodak
-  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/results/tokenizers/saved_mcq_fixed_residual
+  saveDir: /ssdfs/datahome/tj24011/workspace/McQuic/results/tokenizers/saved_mcq_new_residual_v3_1
   target: MsSSIM
   externalLib: []
     # - some/modules/to/be/registered1.py

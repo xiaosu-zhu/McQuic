@@ -245,8 +245,10 @@ class Neon(BaseCompressor):
             # compatible with torch checkpointing
             x.requires_grad_()
             y = self._encoder(x)
-            import ipdb; ipdb.set_trace()
             # [n, c, h, w], [n, m, h, w], [n, m, h, w, k]
-            yHat, y_1, quantizeds, dequantizeds, codes, logits = self._quantizer(y)
-            xHat = self._decoder(alpha * y_1 + (1 - alpha) * yHat)
-            return xHat, quantizeds, dequantizeds, codes, logits
+            # xHat torch.Size([2, 3, 256, 256])
+            # yHat torch.Size([2, 64, 32, 32])
+            # y torch.Size([2, 64, 32, 32])
+            yHat, quantizeds, dequantizeds, codes, logits = self._quantizer(y)
+            xHat = self._decoder(alpha * y + (1 - alpha) * yHat)
+            return y, yHat, xHat, quantizeds, dequantizeds, codes, logits
