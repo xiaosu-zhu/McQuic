@@ -767,6 +767,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             oneHots.append(oneHot)
             # [n, m, h, w, k]
             logits.append(logit)
+            # [B, M, H, W]
             allLatentHats.append(currentLatent + quantized)
             # [B, M, H * 2, W * 2]
             currentLatent = decoder(currentLatent + quantized)
