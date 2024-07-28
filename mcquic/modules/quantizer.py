@@ -611,12 +611,12 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                 quantizer = _multiCodebookQuantization(codebook, self._entropyCoder._freqEMA[-(i+1)])
                 dequantizer = _multiCodebookDeQuantization(codebook)
 
-                # backward = nn.Sequential(
-                #     conv1x1(channel, channel, bias=False),
-                #     ResidualBlockShuffle(channel, channel, 2, m, denseNorm),
-                #     AttentionBlock(channel, m, denseNorm),
-                #     ResidualBlock(channel, channel, m, denseNorm)
-                # ) if (i > 0) else nn.Identity()
+                backward = nn.Sequential(
+                    conv1x1(channel, channel, bias=False),
+                    ResidualBlockShuffle(channel, channel, 2, m, denseNorm),
+                    AttentionBlock(channel, m, denseNorm),
+                    ResidualBlock(channel, channel, m, denseNorm)
+                ) if (i > 0) else nn.Identity()
 
                 restoreHead = nn.Sequential(
                     conv1x1(channel, channel, bias=False),
@@ -637,12 +637,12 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
                 quantizer = _multiCodebookQuantization(codebook, self._entropyCoder._freqEMA[-(i+1)])
                 dequantizer = _multiCodebookDeQuantization(codebook)
 
-                # backward = nn.Sequential(
-                #     conv1x1(channel, channel, bias=False),
-                #     ResidualBlock(channel, channel, m, denseNorm),
-                #     AttentionBlock(channel, m, denseNorm),
-                #     ResidualBlock(channel, channel, m, denseNorm)
-                # ) if (i > 0) else nn.Identity()
+                backward = nn.Sequential(
+                    conv1x1(channel, channel, bias=False),
+                    ResidualBlock(channel, channel, m, denseNorm),
+                    AttentionBlock(channel, m, denseNorm),
+                    ResidualBlock(channel, channel, m, denseNorm)
+                ) if (i > 0) else nn.Identity()
 
                 restoreHead = nn.Sequential(
                     conv1x1(channel, channel, bias=False),
@@ -657,14 +657,14 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             lastSize = thisSize
 
             encoders.append(latentStageEncoder)
-            # backwards.append(backward)
+            backwards.append(backward)
             decoders.append(restoreHead)
             quantizers.append(quantizer)
             dequantizers.append(dequantizer)
 
         self._encoders: nn.ModuleList = nn.ModuleList(encoders)
         self._decoders: nn.ModuleList = nn.ModuleList(decoders)
-        # self._backwards: nn.ModuleList = nn.ModuleList(backwards)
+        self._backwards: nn.ModuleList = nn.ModuleList(backwards)
         self._quantizers: nn.ModuleList = nn.ModuleList(quantizers)
         self._dequantizers: nn.ModuleList = nn.ModuleList(dequantizers)
 
@@ -691,7 +691,7 @@ class ResidualBackwardQuantizer(VariousMQuantizer):
             residual = latent - currentLatent
             # np.save(f"results/comparision/newest/40k/kodim05_beforeQ_scale{i}.npy", residual.detach().cpu().numpy())
             code = quantizer.encode(residual)
-            quantized = dequantizer.decode(code)
+            # quantized = dequantizer.decode(code)
             # np.save(f"results/comparision/newest/40k/kodim05_afterQ_scale{i}.npy", quantized.detach().cpu().numpy())
             # [n, m, h, w]
             codes.append(code)

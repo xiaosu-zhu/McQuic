@@ -13,6 +13,7 @@ from torchvision import transforms as T
 from torchvision.io import read_image
 from torchvision.io.image import ImageReadMode, decode_image
 from torchvision.transforms.functional import to_pil_image
+from datasets import load_dataset
 
 from mcquic.modules.compressor import BaseCompressor, Compressor, Neon
 from mcquic.utils.vision import RandomGamma, RandomPlanckianJitter, RandomAutocontrast, RandomHorizontalFlip, RandomVerticalFlip, PatchWiseErasing
@@ -66,94 +67,167 @@ def main(args):
     psnr = PSNR().to(0)
     compressor = load_model(args.ckpt)
     # 2. load data
-    eval_transform = T.Compose([
-        T.ConvertImageDtype(torch.float32),
-        AlignedCrop(256),
-        T.Resize((256, 256)),
-        T.Normalize(0.5, 0.5),
-    ])
+    def eval_trans(example):
+        eval_transform = T.Compose([
+            T.ToTensor(),
+            T.ConvertImageDtype(torch.float32),
+            # AlignedCrop(256),
+            # T.Resize((256, 256)),
+            T.RandomResizedCrop((256, 256)),
+            T.Normalize(0.5, 0.5),
+        ])
+        image = example['jpeg']
+        return {"img_tensor": eval_transform(image)}
+
+    def filter_incorrect(example):
+        is_filter = False
+        is_jpeg = False
+        if example['jpeg'].mode != "L":
+            is_jpeg = True
+        if example['jpeg'].size[0] > 256 or example['jpeg'].size[1] > 256:
+            is_filter = True
+        return is_filter and is_jpeg
+        
     detransform = DeTransform().to(0)
-    dataset = CustomImageDataset(data_path, transform=eval_transform)
+    # dataset = CustomImageDataset(data_path, transform=eval_transform)
+    dataset = load_dataset(
+        "webdataset", data_dir="/ssdfs/datahome/tj24011/datasets/raw/imagenet/imagenet-1k", split="validation", streaming=True
+    ).filter(filter_incorrect).map(eval_trans)
+    
+    dataset = dataset.remove_columns("jpeg")
     dataloader = DataLoader(
         dataset,
-        batch_size=1,
+        batch_size=64,
         shuffle=False,
-        num_workers=0,
+        num_workers=1,
         pin_memory=True,
         drop_last=False,
     )
     # 3. inference
     print("inference data")
-    psnr_res = []
-    msssim_res = []
-    img_restored = []
-    # import ipdb
-    # ipdb.set_trace()
+    all_res_dis_v1 = []
+    all_res_dis_v2 = []
+    # import ipdb; ipdb.set_trace()
     with torch.no_grad():
         for item in tqdm(dataloader):
             # print(item.shape)
-            image = item.cuda()
+            image = item['img_tensor'].cuda()
             # to_pil_image(image.squeeze(0) * 255).save(f"./inp_1.png")
             # x = compressor._padding(image)
             # y = compressor._encoder(x)
             # yhat = compressor._decoder(y)
-            codes, binaries, headers = compressor.compress(image)
+            # codes, binaries, headers = compressor.compress(image)
+            # encoder
+            x = compressor._encoder(image)
+            # quantizer.encode
+            allLatents = [] # large to small
+            for encoder in compressor._quantizer._encoders:
+                x = encoder(x)
+                allLatents.append(x)
+            _all_latents = [x.flatten(2).norm(p=2, dim=1).detach().cpu() for x in allLatents]
+
+            codes = []
+            currentLatent = torch.zeros_like(allLatents[-1])
+            for quantizer, dequantizer, backward, latent in zip(compressor._quantizer._quantizers[::-1], compressor._quantizer._dequantizers[::-1], compressor._quantizer._backwards[::-1], allLatents[::-1]):
+                residual = latent - currentLatent
+                code = quantizer.encode(residual)
+                codes.append(code)
+                currentLatent = backward(latent)
+
             # visualization, visualize image per scale with accumulation
+            # quantizer.decode
             intermedia_res = []
+            intermedia_res_f1 = []
             formerLevel = None
             for idx, (decoder, dequantizer, code) in enumerate(zip(compressor._quantizer._decoders[::-1], compressor._quantizer._dequantizers[::-1], codes)):
                 quantized = dequantizer.decode(code)
                 if formerLevel is None:
-                    formerLevel = decoder(quantized)
+                    intermedia_formerLevel = quantized.clone()
+                    _f = quantized.clone()
+                    formerLevel = decoder(quantized) # for next scale
                 else:
-                    formerLevel = decoder(quantized + formerLevel)
+                    intermedia_formerLevel = (quantized + formerLevel).clone()
+                    _f = quantized + formerLevel
+                    formerLevel = decoder(_f) # for next scale
                 
-                intermedia_formerLevel = formerLevel.clone()
+                intermedia_f1 = _f.clone()
                 for _decoder in compressor._quantizer._decoders[-idx-2::-1]:
-                    intermedia_formerLevel = _decoder(intermedia_formerLevel)
-                intermedia_res.append(intermedia_formerLevel)
+                    intermedia_f1 = _decoder(intermedia_f1)
+                intermedia_res.append(intermedia_formerLevel.flatten(2).norm(p=2, dim=1).detach().cpu())
+                intermedia_res_f1.append(intermedia_f1.flatten(2).norm(p=2, dim=1).detach().cpu())
+                
+            # vis_v1: f1 - f1', f2 - f2', ...
+            patch_dis_v1 = [] # 1, 2, 4, 8, 16
+            for f, fhat in zip(_all_latents[::-1], intermedia_res):
+                # f_norm = np.linalg.norm(f)
+                # fhat_norm = np.linalg.norm(fhat)
+                # f = f / f_norm # (batchsize, feature_map, h, w)
+                # fhat = fhat / fhat_norm
+                patch_dis_v1.append((f - fhat).abs().mean())
+            all_res_dis_v1.append(patch_dis_v1)
             
-            # import ipdb; ipdb.set_trace()
-            # pre_res = None
-            for idx, res in enumerate(intermedia_res):
-                # if pre_res is None:
-                #     pre_res = compressor._decoder(res)
-                img = compressor._decoder(res)
-                # print((pre_res - img).abs().mean()) # 0, 0.0161, 0.0548, 0.1398, 0.2945
-                pre_res = img
-                img = detransform(img)
-                to_pil_image(img.squeeze(0)).save(f"./{idx}.png")
+            # vis_v2: f5' - f1, f4' - f1, ....
+            f1 = _all_latents[0]
+            # f1_norm = np.linalg.norm(f1)
+            # f1 = f1 / f1_norm
+            patch_dis_v2 = []
+            for idx, fhat in enumerate(intermedia_res_f1):
+                # fhat_norm = np.linalg.norm(fhat)
+                # fhat = fhat / fhat_norm
+                patch_dis_v2.append((f1 - fhat).abs().mean())
+            all_res_dis_v2.append(patch_dis_v2)
 
-            # print(len(codes))
-            image_res = compressor.decompress(binaries, headers)
-            image = detransform(image)
-            image_res = detransform(image_res)
-            # image_res = detransform(yhat)
-            # import ipdb
-            # ipdb.set_trace()
-            img_restored.append(to_pil_image(image_res.squeeze(0)))
-            # img_restored.append(image_res.squeeze(0).detach().cpu().numpy())
-            p_res = psnr.handle(images=image, restored=image_res)[0]
-            # print(p_res)
-            m_res = ms_ssim.handle(images=image, restored=image_res)[0]
-            # print(m_res)
-            psnr_res.append(p_res)
-            msssim_res.append(m_res)
+            # decoder    
+            # for idx, res in enumerate(intermedia_res):
+            #     img = compressor._decoder(res)
+            #     pre_res = img
+            #     img = detransform(img)
+            #     to_pil_image(img.squeeze(0)).save(f"./{idx}.png")
+
+            # image_res = compressor.decompress(binaries, headers)
+            # image = detransform(image)
+            # image_res = detransform(image_res)
+            # # image_res = detransform(yhat)
+            # img_restored.append(to_pil_image(image_res.squeeze(0)))
+            # # img_restored.append(image_res.squeeze(0).detach().cpu().numpy())
+            # p_res = psnr.handle(images=image, restored=image_res)[0]
+            # # print(p_res)
+            # m_res = ms_ssim.handle(images=image, restored=image_res)[0]
+            # # print(m_res)
+            # psnr_res.append(p_res)
+            # msssim_res.append(m_res)
     
+    torch.save(all_res_dis_v1, "./all_res_dis_v1.pth")
+    torch.save(all_res_dis_v2, "./all_res_dis_v2.pth")
     # 4. calculate metrics
-    mean_psnr = sum(psnr_res) / len(psnr_res)
-    mean_msssim = sum(msssim_res) / len(msssim_res)
+    res_dict_v1 = {"1": [], "2": [], "4": [], "8": [], "16": []}
+    for batch in all_res_dis_v1:
+        for pn, b in zip(list(res_dict_v1.keys()), batch):
+            res_dict_v1[pn].append(b)
+    
+    res_dict_v2 = {"1": [], "2": [], "4": [], "8": [], "16": []}
+    for batch in all_res_dis_v1:
+        for pn, b in zip(list(res_dict_v2.keys()), batch):
+            res_dict_v2[pn].append(b)
+            
+    for k, v in res_dict_v1.items():
+        print(f"f{k}'-f{k}: {sum(v) / len(v)}")
+    for k, v in res_dict_v2.items():
+        print(f"f{k}'-f1: {sum(v) / len(v)}")     
+        
+    # mean_psnr = sum(psnr_res) / len(psnr_res)
+    # mean_msssim = sum(msssim_res) / len(msssim_res)
 
-    print(f"PSNR: {mean_psnr}, MS-SSIM: {mean_msssim}")
+    # print(f"PSNR: {mean_psnr}, MS-SSIM: {mean_msssim}")
     
     # 5. save results
-    res_path = f"./results/eval/{args.dataset}_{args.steps}"
-    os.makedirs(res_path, exist_ok=True)
-    for idx, item in enumerate(img_restored):
-        # cv2_image = np.transpose(item, (1, 2, 0))
-        # cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
-        # cv2.imwrite(os.path.join(res_path, f"{idx}.png"), cv2_image)
-        item.save(os.path.join(res_path, f"{idx}.png"))
+    # res_path = f"./results/eval/{args.dataset}_{args.steps}"
+    # os.makedirs(res_path, exist_ok=True)
+    # for idx, item in enumerate(img_restored):
+    #     # cv2_image = np.transpose(item, (1, 2, 0))
+    #     # cv2_image = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+    #     # cv2.imwrite(os.path.join(res_path, f"{idx}.png"), cv2_image)
+    #     item.save(os.path.join(res_path, f"{idx}.png"))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -169,10 +243,3 @@ if __name__ == "__main__":
     args = parser.parse_known_args()[0]
     
     main(args)
-
-
-    
-    
-    
-
-

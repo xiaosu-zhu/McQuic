@@ -76,6 +76,8 @@ class AlignedCrop(nn.Module):
             cropRight = -w
 
         x = x[..., cropTop:(-cropBottom), cropLeft:(-cropRight)]
+        print("x", x.shape)
+        print(h, w)
 
         return x
 
