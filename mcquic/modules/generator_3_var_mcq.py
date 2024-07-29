@@ -56,7 +56,7 @@ class GeneratorVARMCQ(nn.Module):
         **var_args
     ):
         super().__init__()
-
+        self.size = size
         self.compressor = Neon(channel, k, size, denseNorm)
 
         logging.debug("Start loading clip...")
@@ -839,6 +839,7 @@ class VAR(nn.Module):
         :param x_BLCv_wo_first_l: teacher forcing input (B, self.L-self.first_l, self.Cvae)
         :return: logits BLV, V is vocab_size
         """
+        # import ipdb; ipdb.set_trace()
         bg, ed = self.begin_ends[self.prog_si] if self.prog_si >= 0 else (0, self.L)
         B = x_BLCv_wo_first_l.shape[0]
         with torch.cuda.amp.autocast(enabled=False):
