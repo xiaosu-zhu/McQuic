@@ -149,6 +149,7 @@ def main(args):
                     if formerLevel is None:
                         intermedia_formerLevel = quantized.clone()
                         _f = quantized.clone()
+                        import ipdb; ipdb.set_trace()
                         formerLevel = decoder(quantized) # for next scale
                     else:
                         intermedia_formerLevel = (quantized + formerLevel).clone()

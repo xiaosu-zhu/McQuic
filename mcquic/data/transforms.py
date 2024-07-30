@@ -15,7 +15,7 @@ def getTrainingPreprocess():
     return T.Compose([
         # T.ToTensor(),
         # T.Resize(512),
-        T.RandomResizedCrop((256, 256), (0.75, 1), (0.95, 1.05)),
+        T.RandomResizedCrop((512, 512), (0.75, 1), (0.95, 1.05)),
         # T.ConvertImageDtype(torch.float32),
         RandomGamma()
     ])
@@ -76,8 +76,6 @@ class AlignedCrop(nn.Module):
             cropRight = -w
 
         x = x[..., cropTop:(-cropBottom), cropLeft:(-cropRight)]
-        print("x", x.shape)
-        print(h, w)
 
         return x
 

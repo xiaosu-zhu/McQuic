@@ -249,6 +249,6 @@ class Neon(BaseCompressor):
             # xHat torch.Size([2, 3, 256, 256])
             # yHat torch.Size([2, 64, 32, 32])
             # y torch.Size([2, 64, 32, 32])
-            yHat, quantizeds, dequantizeds, codes, logits = self._quantizer(y)
-            xHat = self._decoder(alpha * y + (1 - alpha) * yHat)
-            return y, yHat, xHat, quantizeds, dequantizeds, codes, logits
+            yHat, codes, logits = self._quantizer(y)
+            xHat = self._decoder(yHat)
+            return y, yHat, xHat, codes, logits
