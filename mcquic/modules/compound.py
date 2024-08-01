@@ -33,17 +33,16 @@ class Compound(Module):
         return retValue
 
     def forward(self, x: Tensor, alpha: float=0.0):
-        # import ipdb; ipdb.set_trace()
-        y, yHat, xHat, codes, logits = self._compressor(x, alpha)
-        # q_dis = torch.tensor([F.mse_loss(latent, latentHat) for latent, latentHat, in zip(allLatents, allLatentHats[::-1])]).to(x.device) # type? float32?
+        y, yHat, xHat, allLatents, allLatentsHats, codes, logits = self._compressor(x, alpha)
         distortion = self._distortion(xHat, x, codes, logits)
         # xHatSmall = F.interpolate(xHat, (224, 224), mode='bilinear')
         # xSmall = F.interpolate(x, (224, 224), mode='bilinear')
         lpips = self._lpips(xHat, x)
         mse = F.mse_loss(xHat, x)
+        q_dis = torch.tensor([F.mse_loss(latent, latentHat) for latent, latentHat, in zip(allLatents, allLatentHats)]).to(x.device) # type? float32?
         f1_featmap_mse = F.mse_loss(y, yHat)
 
-        return xHat, (distortion, mse, lpips.mean(), f1_featmap_mse), codes, logits
+        return xHat, (distortion, mse, lpips.mean(), f1_featmap_mse, q_dis.mean()), codes, logits
 
     @property
     def Freq(self):
