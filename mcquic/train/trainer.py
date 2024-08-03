@@ -272,11 +272,11 @@ class _baseTrainer(Restorable):
                 self._model.zero_grad()
 
                 # with torch.autocast(device_type="cuda", dtype=torch.float16):
-                alpha = min(1, self._step / self._totalStep)
+                alpha = min(1, 2.0 * self._step / self._totalStep)
                 xHat, (reconLoss, mseLoss, lpipsLoss, f1_featmap_mse, q_disLoss), codes, logits = self._model(images, alpha)
                 self.saver.debug("[%s] Model forwarded.", self.PrettyStep)
                 # scaler.scale(rate + distortion).backward()
-                (reconLoss + mseLoss + 2 * lpipsLoss + f1_featmap_mse + 0.5 * q_disLoss).backward()
+                (reconLoss + mseLoss + 2 * lpipsLoss + 0.5 * f1_featmap_mse + 0.5 * q_disLoss).backward()
 
                 # scaler.unscale_(self._optimizer)
 
